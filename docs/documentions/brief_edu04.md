@@ -8,18 +8,18 @@
 | Nhóm lĩnh vực | A · AI Giáo dục |
 | Tên dự án | Kho tri thức hỗ trợ học thuật X — Bộ trợ lý học thuật & học tập AI |
 | Đơn vị thụ hưởng | Viện Trung tâm hỗ trợ học thuật X, gọi tắt là Trung tâm X |
-| Tên nhóm | **[TỰ ĐIỀN TÊN NHÓM]** |
+| Tên nhóm | **7 cỏ 10 gió** |
 | Giảng viên hướng dẫn | [Tự điền] |
 | Đại diện Trung tâm X | [Tự điền] |
 | Thời gian thực hiện | [Ngày bắt đầu] – [Ngày kết thúc] |
-| Phiên bản tài liệu | 1.0 — ngày 23/09/2026 |
+| Phiên bản tài liệu | 2.0 — 23/09/2026 (đồng bộ tên nhóm/thành viên và số liệu nghiệm thu theo PRD v2.0) |
 
 | STT | Họ và tên | Mã sinh viên | Vai trò chính dự kiến |
 |---|---|---|---|
-| 1 | Nguyễn Văn | [TỰ ĐIỀN MSV 1] | Điều phối, BA, kiểm thử và đánh giá |
-| 2 | [TỰ ĐIỀN HN THÀNH VIÊN 2] | [TỰ ĐIỀN MSV 2] | Backend, xác thực, phân quyền, dữ liệu |
-| 3 | [TỰ ĐIỀN HỌ TÊN THÀNH VIÊN 3] | [TỰ ĐIỀN MSV 3] | AI/RAG, ingestion, routing, đánh giá AI |
-| 4 | [TỰ ĐIỀN HỌ TÊN THÀNH VIÊN 4] | [TỰ ĐIỀN MSV 4] | Frontend, UX/UI, tích hợp, triển khai |
+| 1 (TV1) | Ngô Đinh Minh Nhật | 2A202602569 | Điều phối, BA, kiểm thử và đánh giá |
+| 2 (TV2) | Ngụy Quang Hùng | 2A202602998 | Backend, xác thực, phân quyền, dữ liệu |
+| 3 (TV3) | Nguyễn Văn Việt | 2A202602904 | AI/RAG, ingestion, routing, đánh giá AI |
+| 4 (TV4) | Đinh Văn Bình | 2A202602830 | Frontend, UX/UI, tích hợp, triển khai |
 
 Phân công trên là gợi ý cho nhóm bốn người. Mỗi đầu việc cần một người chịu trách nhiệm và một người kiểm tra chéo; cả nhóm cùng chịu trách nhiệm chất lượng sản phẩm.
 
@@ -52,13 +52,13 @@ Giá trị cốt lõi là giúp người học tìm đúng tài liệu và hiể
 
 Ở phía GV, cần xác minh mức độ lặp lại việc chỉ nguồn/giải thích nền tảng (PP-06). Duyệt đúng bản trích xuất (PP-07), cấp/thu hồi đúng quyền (PP-08), hỗ trợ mà không làm thay bài tính điểm (PP-09) và duy trì dịch vụ trong ngân sách (PP-10) là các yêu cầu kiểm soát đi kèm. Không mặc định các sự cố này đã xảy ra tại Trung tâm X.
 
-Xem [PRD mục 2.4 — Pain point và kế hoạch xác thực](PRD_edu04.md#pain-points) để biết tình huống, nguyên nhân giả định, cách xử lý hiện tại cần xác minh, hậu quả, chỉ số và kế hoạch khảo sát ngày 1–2. Chưa có baseline nên chưa cam kết tỷ lệ tiết kiệm thời gian hoặc giảm khối lượng hỗ trợ GV.
+Bảng PP-01…PP-10 ở trên là bản đầy đủ nhất của phân tích pain point trong bộ tài liệu — [PRD mục 3](PRD_edu04.md) (Đối tượng mục tiêu & Chân dung người dùng, persona và jobs-to-be-done) xây dựng tiếp trên các pain point này nhưng không nhắc lại từng mã PP; PRD v2.0 không còn mục "2.4/#pain-points" riêng như bản trước. Kế hoạch xác thực (phỏng vấn/quan sát ngày 1–2) do nhóm thực hiện theo BL-01 trong [backlog](backlog_edu04.md). Chưa có baseline nên chưa cam kết tỷ lệ tiết kiệm thời gian hoặc giảm khối lượng hỗ trợ GV.
 
 ## 4. Mục tiêu và cách đo
 
 | Mục tiêu | Chỉ tiêu nghiệm thu | Bằng chứng |
 |---|---|---|
-| Trả lời học thuật chính xác | ≥80% trên bộ hỏi đáp có nhãn đã khóa; bộ tối thiểu 30 câu cần ≥24 câu đạt | Bộ test, đáp án tham chiếu, nguồn, phiếu chấm, báo cáo |
+| Trả lời học thuật chính xác | ≥80% trên bộ hỏi đáp có nhãn đã khóa; **100 mẫu holdout chia đều 5 nhóm ×20 mẫu, cần ≥80/100 mẫu đạt đủ rubric** | Bộ test, đáp án tham chiếu, nguồn, phiếu chấm, báo cáo |
 | Có thể kiểm chứng thông tin | Mọi khẳng định học thuật đưa ra phải có nguồn hỗ trợ; kiểm thử nguồn mở đúng trang/slide và đúng quyền | Báo cáo kiểm tra trích dẫn |
 | Bảo vệ tài liệu | Không có ca lộ nội dung trái quyền trong bộ kiểm thử bảo mật đã thống nhất | Test truy cập trực tiếp, tìm kiếm, hội thoại, cache |
 | Giữ liêm chính học thuật | Không cung cấp lời giải/đáp án bài tính điểm trong bộ kiểm thử nghiệm thu | Test trực tiếp, diễn đạt lại và yêu cầu nhiều lượt |
@@ -66,7 +66,7 @@ Xem [PRD mục 2.4 — Pain point và kế hoạch xác thực](PRD_edu04.md#pai
 | Kiểm soát nguồn | Chỉ phiên bản đã duyệt và phát hành mới tham gia tìm kiếm/RAG | Nhật ký duyệt, test tài liệu chờ duyệt/thu hồi |
 | Kiểm soát vận hành | Đo độ trễ p50/p95, token và chi phí theo yêu cầu; có hạn mức cấu hình | Dashboard/log và báo cáo tải |
 
-**Cách hiểu KPI:** độ chính xác là tỷ lệ câu trả lời đạt rubric do người chấm xác nhận, không phải lấy điểm faithfulness của RAGAS làm “80% chính xác”. Chi tiết cách lấy mẫu, chấm và phân biệt các chỉ số nằm ở mục 13 PRD. Kết quả trên 30 câu chỉ phản ánh bộ kiểm chứng nhỏ, không đủ để khẳng định chất lượng mọi môn học.
+**Cách hiểu KPI:** độ chính xác là tỷ lệ câu trả lời đạt rubric do người chấm xác nhận, không phải lấy điểm faithfulness của RAGAS làm "80% chính xác". Chi tiết cách lấy mẫu, chấm và phân biệt các chỉ số nằm ở mục 13 PRD. Kết quả trên 100 câu vẫn là một bộ kiểm chứng có quy mô giới hạn theo 6 môn pilot, không đủ để khẳng định chất lượng mọi môn học ngoài phạm vi đã chọn.
 
 ## 5. Người dùng và bên liên quan
 
@@ -101,16 +101,16 @@ Khi thiếu tài liệu, hệ thống nói rõ chưa đủ cơ sở và gợi ý
 - Knowledge Hub tìm kiếm và xem tài liệu mẫu đã duyệt.
 - Ingestion tối thiểu cho PDF có lớp văn bản và PPTX; PDF scan được nhận diện, thông báo rõ nếu chưa hỗ trợ OCR.
 - HITL tối thiểu: GV có quyền duyệt kiểm tra nội dung và nguồn trước phát hành; có giao diện duyệt cơ bản hoặc quy trình quản trị có lưu vết tương đương.
+- **Dashboard Giảng viên (Must theo PRD v2.0 mục 7.1.10):** quản lý tài liệu, hàng đợi duyệt, lịch sử quyết định, phản hồi và thống kê trong phạm vi môn phụ trách — phải hoàn tất cùng bản cơ bản cuối tuần 3, không đợi đến giai đoạn nâng cao.
 - Chặn đáp án bài tính điểm; chỉ dùng nguồn đúng quyền; ghi nhận lỗi, token và độ trễ.
-- Bộ kiểm chứng tối thiểu 30 câu có nhãn, đạt ≥80%, kèm bộ kiểm thử an toàn riêng.
+- Bộ kiểm chứng bắt buộc **100 mẫu có nhãn (5 nhóm ×20)**, đạt ≥80/100, kèm bộ kiểm thử an toàn riêng (≥40 ca).
 
 ### 7.2. Bản nâng cao
 
 - Router thông minh qua LangGraph điều phối đủ ba trợ lý; cho người dùng chọn thủ công khi cần.
 - Hybrid search BM25 + vector, kết hợp kết quả và reranker.
 - OCR cho PDF scan, kiểm soát chất lượng trích xuất và truy vết về trang.
-- Dashboard GV: quản lý phiên bản, hàng đợi duyệt, thu hồi, phản hồi và thống kê môn.
-- RAGAS đánh giá faithfulness, answer relevancy, context precision; mở rộng bộ kiểm chứng và báo cáo theo môn/nhóm câu hỏi.
+- RAGAS đánh giá faithfulness, answer relevancy, context precision; mở rộng bộ kiểm chứng vượt 100 mẫu bắt buộc và báo cáo theo môn/nhóm câu hỏi.
 - Cache có phân quyền, vô hiệu hóa khi tài liệu thay đổi; semantic dedup có giám sát.
 - Theo dõi chi phí/độ trễ và giới hạn tài nguyên theo người dùng, môn hoặc môi trường.
 
@@ -150,9 +150,9 @@ Ngoài thời hạn 6 tuần và mốc cơ bản cuối tuần 3 do nhóm xác n
 | Giai đoạn | Tuần | Kết quả bàn giao | Phụ trách chính |
 |---|---|---|---|
 | Chốt phạm vi và nền tảng chạy được | 1 | Chốt yêu cầu ngày 1–2; auth/ACL, upload → preview → duyệt → index một file mẫu; app chạy trên môi trường demo; chuẩn bị nhãn song song | TV1 nghiệp vụ/nhãn; TV2 nền tảng; TV3 ingestion; TV4 UI/deploy |
-| Hoàn tất luồng chức năng cơ bản | 2 | Hub/xem nguồn; Academic + Learning; citation, guardrails, lịch sử, phản hồi và thu hồi; chạy thử trên dev | Cả nhóm tích hợp mỗi ngày |
-| Kiểm chứng và nghiệm thu cơ bản | 3 | Đóng tính năng mới; sửa lỗi; ≥24/30 câu holdout đạt; safety/UAT, quota, backup/restore, hướng dẫn và demo | TV1 điều phối; cả nhóm sửa và kiểm chứng |
-| Nâng cao đợt 1 | 4 | Sau cổng cơ bản: ưu tiên router và hybrid/reranker; UI/dashboard phát triển song song | TV3 AI; TV2 hỗ trợ retrieval; TV4 dashboard; TV1 eval |
+| Hoàn tất luồng chức năng cơ bản | 2 | Hub/xem nguồn; Academic + Learning; citation, guardrails, lịch sử, phản hồi và thu hồi; bắt đầu Dashboard GV (Must); chạy thử trên dev | Cả nhóm tích hợp mỗi ngày |
+| Kiểm chứng và nghiệm thu cơ bản | 3 | Đóng tính năng mới; hoàn tất Dashboard GV; sửa lỗi; **≥80/100 mẫu holdout đạt (5 nhóm ×20)**; safety/UAT, quota, backup/restore, hướng dẫn và demo | TV1 điều phối; cả nhóm sửa và kiểm chứng |
+| Nâng cao đợt 1 | 4 | Sau cổng cơ bản: ưu tiên router và hybrid/reranker; mở rộng dashboard vận hành/quota (nâng cao) song song | TV3 AI; TV2 hỗ trợ retrieval; TV4 dashboard vận hành; TV1 eval |
 | Nâng cao đợt 2 | 5 | RAGAS, OCR/cache/dedup theo năng lực và phạm vi cam kết; chốt tính năng cuối tuần | Cả nhóm; không thêm tính năng vượt capacity |
 | Ổn định và bàn giao cuối | 6 | Regression, đo lại chất lượng/chi phí/độ trễ, sửa lỗi, tài liệu và demo; không mở tính năng mới | Cả nhóm; TV1 tổng hợp |
 
@@ -176,6 +176,6 @@ Cuối tuần 3 là mốc nghiệm thu bản cơ bản, không chỉ là mốc v
 2. Web demo có tài khoản theo vai trò, kho tài liệu mẫu được phép sử dụng và ít nhất hai môn theo phạm vi đã chốt.
 3. Hai trợ lý có nguồn; Hub tìm kiếm đúng quyền; quy trình duyệt và thu hồi kiểm chứng được.
 4. Bộ test có nhãn, rubric và báo cáo độ chính xác; kiểm thử phân quyền, citation và liêm chính.
-5. Với mức nâng cao: bằng chứng router ba trợ lý, hybrid/reranker, RAGAS, dashboard và tối ưu đã thực hiện.
+5. Với mức nâng cao: bằng chứng router ba trợ lý, hybrid/reranker, RAGAS, dashboard vận hành/quota và tối ưu đã thực hiện (Dashboard Giảng viên là Must, đã tính ở bản cơ bản).
 6. Brief, PRD, tài liệu thiết kế, hướng dẫn người dùng, vận hành và danh sách hạn chế còn lại.
 7. Biên bản UAT; không còn lỗi chặn phát hành như lộ tài liệu, tự công bố nguồn chưa duyệt hoặc trả đáp án bài tính điểm trong bộ nghiệm thu.

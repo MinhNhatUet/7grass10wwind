@@ -28,10 +28,10 @@ Nhóm cập nhật status trên board hoặc thêm cột trạng thái vào bả
 
 | Mã | Họ tên | MSV | Trách nhiệm gợi ý |
 |---|---|---|---|
-| TV1 | [TỰ ĐIỀN THÀNH VIÊN 1] | [TỰ ĐIỀN MSV] | BA, điều phối, QA/UAT, nhãn và báo cáo |
-| TV2 | [TỰ ĐIỀN THÀNH VIÊN 2] | [TỰ ĐIỀN MSV] | Backend, dữ liệu, auth/ACL, audit, vận hành |
-| TV3 | [TỰ ĐIỀN THÀNH VIÊN 3] | [TỰ ĐIỀN MSV] | Ingestion, AI/RAG, citation, guardrails, eval |
-| TV4 | [TỰ ĐIỀN THÀNH VIÊN 4] | [TỰ ĐIỀN MSV] | Frontend, UX/UI, tích hợp, Docker/demo |
+| TV1 | Ngô Đinh Minh Nhật | 2A202602569 | BA, điều phối, QA/UAT, nhãn và báo cáo |
+| TV2 | Ngụy Quang Hùng | 2A202602998 | Backend, dữ liệu, auth/ACL, audit, vận hành |
+| TV3 | Nguyễn Văn Việt | 2A202602904 | Ingestion, AI/RAG, citation, guardrails, eval |
+| TV4 | Đinh Văn Bình | 2A202602830 | Frontend, UX/UI, tích hợp, Docker/demo |
 
 Owner trong bảng chịu trách nhiệm kéo hạng mục tới Done, không có nghĩa làm một mình. TV1 kiểm tra nghiệp vụ; TV2/TV3 kiểm tra chéo dữ liệu và AI; TV4 kiểm tra tương tác và tích hợp. GV hoặc người được ủy quyền xác nhận nguồn, nhãn và chất lượng học thuật; nhóm không tự thay vai trò chuyên môn này.
 

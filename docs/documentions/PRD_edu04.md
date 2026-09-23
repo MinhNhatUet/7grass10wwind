@@ -7,9 +7,9 @@
 | Nhóm lĩnh vực | A · AI Giáo dục |
 | Tên nhóm | **7 cỏ 10 gió** |
 | Thành viên 1 | Nguyễn Văn Việt - 2A202602904|
-| Thành viên 2 | Ngô Đinh Minh Nhật - [TỰ ĐIỀN MSV] |
-| Thành viên 3 | Ngụy Quang Hùng -  [TỰ ĐIỀN MSV] |
-| Thành viên 4 | Đinh Văn Bình -  [TỰ ĐIỀN MSV] | 
+| Thành viên 2 | Ngô Đinh Minh Nhật - 2A202602569 |
+| Thành viên 3 | Ngụy Quang Hùng - 2A202602998 |
+| Thành viên 4 | Đinh Văn Bình - 2A202602830 | 
 | Phiên bản | 2.0 — 23/09/2026 |
 
 | Brief liên quan | [brief_edu04.md](brief_edu04.md) |
