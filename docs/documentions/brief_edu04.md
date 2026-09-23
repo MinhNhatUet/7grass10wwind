@@ -16,10 +16,10 @@
 
 | STT | Họ và tên | Mã sinh viên | Vai trò chính dự kiến |
 |---|---|---|---|
-| 1 (TV1) | Ngô Đinh Minh Nhật | [TỰ ĐIỀN MSV] | Điều phối, BA, kiểm thử và đánh giá |
-| 2 (TV2) | Ngụy Quang Hùng | [TỰ ĐIỀN MSV] | Backend, xác thực, phân quyền, dữ liệu |
+| 1 (TV1) | Ngô Đinh Minh Nhật | 2A202602569 | Điều phối, BA, kiểm thử và đánh giá |
+| 2 (TV2) | Ngụy Quang Hùng | 2A202602998 | Backend, xác thực, phân quyền, dữ liệu |
 | 3 (TV3) | Nguyễn Văn Việt | 2A202602904 | AI/RAG, ingestion, routing, đánh giá AI |
-| 4 (TV4) | Đinh Văn Bình | [TỰ ĐIỀN MSV] | Frontend, UX/UI, tích hợp, triển khai |
+| 4 (TV4) | Đinh Văn Bình | 2A202602830 | Frontend, UX/UI, tích hợp, triển khai |
 
 Phân công trên là gợi ý cho nhóm bốn người. Mỗi đầu việc cần một người chịu trách nhiệm và một người kiểm tra chéo; cả nhóm cùng chịu trách nhiệm chất lượng sản phẩm.
 
