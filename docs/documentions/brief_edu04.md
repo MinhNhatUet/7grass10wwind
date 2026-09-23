@@ -9,10 +9,8 @@
 | Tên dự án | Kho tri thức hỗ trợ học thuật X — Bộ trợ lý học thuật & học tập AI |
 | Đơn vị thụ hưởng | Viện Trung tâm hỗ trợ học thuật X, gọi tắt là Trung tâm X |
 | Tên nhóm | **7 cỏ 10 gió** |
-| Giảng viên hướng dẫn | [Tự điền] |
-| Đại diện Trung tâm X | [Tự điền] |
-| Thời gian thực hiện | [Ngày bắt đầu] – [Ngày kết thúc] |
-| Phiên bản tài liệu | 2.0 — 23/09/2026 (đồng bộ tên nhóm/thành viên và số liệu nghiệm thu theo PRD v2.0) |
+
+| Phiên bản tài liệu | 2.0 — 23/09/2026 |
 
 | STT | Họ và tên | Mã sinh viên | Vai trò chính dự kiến |
 |---|---|---|---|
