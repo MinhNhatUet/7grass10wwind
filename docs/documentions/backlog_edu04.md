@@ -7,7 +7,7 @@
 | Phiên bản | 2.0 — 23/09/2026  |
 | Trạng thái | Backlog đề xuất để refinement; chưa phải cam kết tiến độ hoặc xác nhận đã triển khai |
 | Căn cứ | [Brief](brief_edu04.md), [PRD](PRD_edu04.md) (v2.0), [Wireframe & UI flow](wireframe&UIflow_edu04.md) (v2.0) |
-| Người quản lý backlog | [TỰ ĐIỀN] |
+
 
 **Thay đổi chính so với bản 1.0:** (1) bộ nghiệm thu accuracy chuyển từ 30 câu/≥24 đạt sang **100 mẫu holdout chia đều 5 nhóm ×20, ngưỡng ≥80/100** theo PRD mục 13.1–13.2; (2) **Dashboard Giảng viên (UI-09, FR-12) là Must**, phải hoàn tất cùng bản cơ bản cuối tuần 3 — không còn nằm gọn trong phạm vi nâng cao E7; (3) sửa các mã FR/UI tham chiếu sai hoặc đã đổi số ở bản 1.0 (ví dụ ký hiệu rút gọn "F-xx" cũ, UI-04/05/07B không còn tồn tại sau khi UI-03 hợp nhất ba trợ lý); (4) liên kết pain point trỏ đúng sang [Brief mục 3](brief_edu04.md) vì PRD v2.0 không còn mục "#pain-points" riêng.
 
