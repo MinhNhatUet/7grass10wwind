@@ -2,27 +2,28 @@
 
 **Bộ bàn giao:** one-page brief, PRD, wireframe/UI flow và GitHub repo setup.  
 **Lịch:** 6 tuần; cơ bản hoàn tất cuối tuần 3. Chốt phạm vi/thiết kế nền ngày 1–2 tuần 1, tiếp tục bổ sung chi tiết cùng triển khai.  
-**Trạng thái:** bộ tài liệu và cấu hình local đã chuẩn bị; xác nhận nghiệp vụ và kiểm chứng thiết lập GitHub còn các mục bên dưới. Không coi “có file” là “đã được GV phê duyệt”.
+**Trạng thái:** bộ tài liệu và cấu hình local đã chuẩn bị; xác nhận nghiệp vụ và kiểm chứng thiết lập GitHub còn các mục bên dưới. Không coi "có file" là "đã được GV phê duyệt".
+**Cập nhật 23/09/2026:** PRD, Wireframe & UI flow và Backlog đã đồng bộ lên v2.0 — điểm đổi chính cần các thành viên nắm: bộ nghiệm thu accuracy dùng **100 mẫu holdout / 5 nhóm ×20 / ngưỡng ≥80/100** (không còn 30 câu/≥24); Dashboard Giảng viên (UI-09) là **Must**, phải xong cùng bản cơ bản cuối tuần 3.
 
 ## 1. Bộ hồ sơ để review và nộp
 
 | Đầu ra | Tài liệu | Nội dung kiểm tra |
-|---|---|---|
-| One-page brief | [one_page_brief_edu04.md](one_page_brief_edu04.md) | Bài toán, đối tượng, giải pháp, scope/KPI, lịch và quyết định mở |
-| PRD | [PRD_edu04.md](PRD_edu04.md) | FR/BR, ACL, HITL, citation, liêm chính, dữ liệu/API, NFR và nghiệm thu |
-| Wireframe | [wireframe&UIflow_edu04.md](wireframe&UIflow_edu04.md) | Màn hình, flow, quyền, trạng thái rỗng/lỗi và nhánh thu hồi |
-| Phân tích hỗ trợ | [PRD mục 2.4 — Pain point](PRD_edu04.md#pain-points) | Phân biệt giả thuyết với bằng chứng, kế hoạch xác thực |
-| Kế hoạch thực thi | [backlog_edu04.md](backlog_edu04.md) | 40 hạng mục, phụ thuộc, owner, AC và lịch 6 tuần |
+|---|---|--
+| PRD | [PRD_edu04.md](PRD_edu04.md) (v2.0) | FR/BR, ACL, HITL, citation, liêm chính, dữ liệu/API, NFR và nghiệm thu |
+| Wireframe | [wireframe&UIflow_edu04.md](wireframe&UIflow_edu04.md) (v2.0) | Màn hình UI-01…UI-10, flow, quyền, trạng thái rỗng/lỗi và nhánh thu hồi |
+| Phân tích hỗ trợ | [brief_edu04.md](brief_edu04.md) mục 3 | Bảng pain point PP-01…PP-10; phân biệt giả thuyết với bằng chứng, kế hoạch xác thực |
+| Kế hoạch thực thi | [backlog_edu04.md](backlog_edu04.md) (v2.0) | 40 hạng mục, phụ thuộc, owner, AC và lịch 6 tuần |
 | Brief đầy đủ | [brief_edu04.md](brief_edu04.md) | Thông tin nhóm và diễn giải mở rộng; không thay bản một trang |
 
-One-page brief là bản Markdown cô đọng cho một trang nội dung; số trang in thực tế phụ thuộc font, khổ giấy và trình xuất. Nếu yêu cầu nộp PDF đúng một trang vật lý, cần render/kiểm tra bản xuất trước nộp; hiện chưa có PDF được kiểm tra.
+**Lưu ý:** không có file `pain_points_edu04.md` riêng trong repo — nội dung pain point (PP-01…PP-10) nằm ở [brief_edu04.md](brief_edu04.md) mục 3. PRD_edu04.md bản v2.0 hiện tại không còn mục "#pain-points" riêng như một số bản backlog cũ từng trỏ tới; đã sửa các liên kết đó sang brief.
+
 
 ## 2. Nội dung cần xác nhận để chốt bài toán
 
 - [x] Xác định luồng giá trị: tìm nguồn → hiểu kiến thức → kiểm chứng.
 - [x] Phân biệt Academic, Learning và Hub; cơ bản chọn trợ lý thủ công.
 - [x] Ghi mốc cứng: cơ bản cuối tuần 3, bàn giao cuối tuần 6.
-- [x] Định nghĩa accuracy ≥80%: tối thiểu 24/30 câu đạt rubric; safety và RAGAS tách riêng.
+- [x] Định nghĩa accuracy ≥80%: bộ holdout **100 mẫu chia đều 5 nhóm ×20**, tối thiểu 80/100 câu đạt đủ 4 tiêu chí rubric (PRD mục 13.1–13.4); safety và RAGAS tách riêng.
 - [x] Thiết kế ACL, duyệt độc lập, thu hồi và chặn đáp án tính điểm.
 - [ ] Điền tên nhóm, 4 thành viên/MSV và người chịu trách nhiệm.
 - [ ] Xác nhận môn pilot, nguồn được phép sử dụng/xử lý bằng AI.

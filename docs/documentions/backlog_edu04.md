@@ -4,10 +4,12 @@
 |---|---|
 | Dự án | Kho tri thức hỗ trợ học thuật X — Bộ trợ lý học thuật & học tập AI |
 | Tên nhóm | [TỰ ĐIỀN TÊN NHÓM] |
-| Phiên bản | 1.0 — 23/09/2026 |
+| Phiên bản | 2.0 — 23/09/2026  |
 | Trạng thái | Backlog đề xuất để refinement; chưa phải cam kết tiến độ hoặc xác nhận đã triển khai |
-| Căn cứ | [Brief](brief_edu04.md), [PRD](PRD_edu04.md), [Wireframe & UI flow](wireframe&UIflow_edu04.md) |
+| Căn cứ | [Brief](brief_edu04.md), [PRD](PRD_edu04.md) (v2.0), [Wireframe & UI flow](wireframe&UIflow_edu04.md) (v2.0) |
 | Người quản lý backlog | [TỰ ĐIỀN] |
+
+**Thay đổi chính so với bản 1.0:** (1) bộ nghiệm thu accuracy chuyển từ 30 câu/≥24 đạt sang **100 mẫu holdout chia đều 5 nhóm ×20, ngưỡng ≥80/100** theo PRD mục 13.1–13.2; (2) **Dashboard Giảng viên (UI-09, FR-12) là Must**, phải hoàn tất cùng bản cơ bản cuối tuần 3 — không còn nằm gọn trong phạm vi nâng cao E7; (3) sửa các mã FR/UI tham chiếu sai hoặc đã đổi số ở bản 1.0 (ví dụ ký hiệu rút gọn "F-xx" cũ, UI-04/05/07B không còn tồn tại sau khi UI-03 hợp nhất ba trợ lý); (4) liên kết pain point trỏ đúng sang [Brief mục 3](brief_edu04.md) vì PRD v2.0 không còn mục "#pain-points" riêng.
 
 ## 1. Cách sử dụng backlog
 
@@ -68,60 +70,61 @@ Kiểm thử, hạ tầng và chuẩn bị nhãn bắt đầu sớm; sơ đồ k
 | ID | Hạng mục | Phạm vi | Ưu tiên | SP | Owner | Phụ thuộc | Truy vết |
 |---|---|---|---|---|---|---|---|
 | BL-01 | Chốt scope, quy tắc và các quyết định mở | Must | A | 3 | TV1 | — | PRD 4/5/17 |
-| BL-02 | Kiểm kê nguồn, quyền sử dụng và nhãn môn | Must | A | 5 | TV1 | BL-01 | FR-06/09, BR-15 |
-| BL-03 | Tạo dev/holdout, rubric và bộ safety | Must | A | 8 | TV1 | BL-01, BL-02 | FR-14, PRD 13 |
+| BL-02 | Kiểm kê nguồn, quyền sử dụng và nhãn môn | Must | A | 5 | TV1 | BL-01 | FR-06, BR-06 |
+| BL-03 | Tạo dev/holdout (100 mẫu, 5 nhóm ×20), rubric và bộ safety | Must | A | 8 | TV1 | BL-01, BL-02 | PRD 13.1–13.3 |
 
 ### 4.2. E2 — Nền tảng
 
 | ID | Hạng mục | Phạm vi | Ưu tiên | SP | Owner | Phụ thuộc | Truy vết |
 |---|---|---|---|---|---|---|---|
 | BL-04 | Thiết kế schema, migration và hợp đồng API | Must | A | 5 | TV2 | BL-01 | PRD 9/11 |
-| BL-05 | Đăng nhập, đăng xuất và quản lý phiên | Must | A | 5 | TV2 | BL-04 | FR-01, F-01 |
-| BL-06 | ACL theo môn/tài liệu và quản lý phân công | Must | A | 8 | TV2 | BL-04, BL-05 | BR-01/02/03/12, F-12 |
-| BL-07 | Khung giao diện, chọn môn và navigation | Must | A | 5 | TV4 | BL-05, BL-06 | UI-01/02, F-01 |
-| BL-08 | Audit nghiệp vụ và revision chống ghi đè | Must | A | 5 | TV2 | BL-04, BL-06 | BR-09/13, UAT-14 |
+| BL-05 | Đăng nhập, đăng xuất và quản lý phiên | Must | A | 5 | TV2 | BL-04 | FR-01.1/01.2 |
+| BL-06 | ACL theo môn/tài liệu và quản lý phân công | Must | A | 8 | TV2 | BL-04, BL-05 | FR-01.4, BR-01/02/03/11 |
+| BL-07 | Khung giao diện, chọn môn và navigation | Must | A | 5 | TV4 | BL-05, BL-06 | UI-01/UI-02, FR-01.1/01.3 |
+| BL-08 | Audit nghiệp vụ và revision chống ghi đè | Must | A | 5 | TV2 | BL-04, BL-06 | BR-07/11, UAT-14 |
 
 ### 4.3. E3 — Vòng đời tài liệu
 
 | ID | Hạng mục | Phạm vi | Ưu tiên | SP | Owner | Phụ thuộc | Truy vết |
 |---|---|---|---|---|---|---|---|
-| BL-09 | Upload, metadata, file storage riêng tư | Must | A | 8 | TV2 | BL-02, BL-06, BL-08 | FR-06, F-08 |
-| BL-10 | Parse PDF/PPTX, chunk và job xử lý nền | Must | A | 8 | TV3 | BL-09 | FR-07, F-08 |
-| BL-11 | Preview, sửa bản nháp và gửi duyệt | Must | A | 5 | TV4 | BL-07, BL-10 | FR-07/08, UI-07B |
-| BL-12 | Duyệt độc lập và từ chối có lý do | Must | A | 8 | TV2 | BL-08, BL-11 | FR-08, F-09 |
-| BL-13 | Index và phát hành có kiểm soát | Must | A | 8 | TV3 | BL-10, BL-12 | BR-01/09, UAT-10 |
-| BL-14 | Phiên bản, thu hồi và cơ chế vô hiệu hóa | Must | A | 8 | TV2 | BL-08, BL-13 | FR-08/15, F-10 |
+| BL-09 | Upload, metadata, file storage riêng tư | Must | A | 8 | TV2 | BL-02, BL-06, BL-08 | FR-06 |
+| BL-10 | Parse PDF/PPTX, chunk và job xử lý nền | Must | A | 8 | TV3 | BL-09 | FR-07 (Must: PDF text/PPTX) |
+| BL-11 | Preview, sửa bản nháp và gửi duyệt | Must | A | 5 | TV4 | BL-07, BL-10 | FR-07/FR-08, UI-07 |
+| BL-12 | Duyệt độc lập và từ chối có lý do | Must | A | 8 | TV2 | BL-08, BL-11 | FR-08, UI-08 |
+| BL-13 | Index và phát hành có kiểm soát | Must | A | 8 | TV3 | BL-10, BL-12 | BR-01/07, UAT-10 |
+| BL-14 | Phiên bản, thu hồi và cơ chế vô hiệu hóa | Must | A | 8 | TV2 | BL-08, BL-13 | FR-08 |
 
 ### 4.4. E4 — Hub và retrieval
 
 | ID | Hạng mục | Phạm vi | Ưu tiên | SP | Owner | Phụ thuộc | Truy vết |
 |---|---|---|---|---|---|---|---|
 | BL-15 | Vector retrieval đúng quyền và phạm vi | Must | A | 8 | TV3 | BL-06, BL-13, BL-14 | FR-04, BR-03 |
-| BL-16 | Hub: tìm kiếm, lọc, phân trang | Must | A | 5 | TV4 | BL-07, BL-15 | FR-04, F-04 |
-| BL-17 | Xem nguồn đúng phiên bản và quyền tải | Must | A | 5 | TV4 | BL-06, BL-13, BL-14 | FR-04/10, F-05 |
+| BL-16 | Hub: tìm kiếm, lọc, phân trang | Must | A | 5 | TV4 | BL-07, BL-15 | FR-04.1/04.2/04.3, UI-03 (Hub) |
+| BL-17 | Xem nguồn đúng phiên bản và quyền tải | Must | A | 5 | TV4 | BL-06, BL-13, BL-14 | FR-04.4/04.5, FR-10.6, UI-06 |
 | BL-18 | Hợp đồng citation và evidence gate | Must | A | 8 | TV3 | BL-15, BL-17 | FR-10, BR-04/05 |
 
 ### 4.5. E5 — Hai trợ lý
 
 | ID | Hạng mục | Phạm vi | Ưu tiên | SP | Owner | Phụ thuộc | Truy vết |
 |---|---|---|---|---|---|---|---|
-| BL-19 | Hội thoại cá nhân và ngữ cảnh theo môn | Must | A | 8 | TV2 | BL-06, BL-07, BL-14 | FR-05, F-06 |
-| BL-20 | Guardrails liêm chính và prompt injection | Must | A | 8 | TV3 | BL-02, BL-06, BL-19 | FR-09, F-07 |
-| BL-21 | Academic hỏi đáp có nguồn đầu cuối | Must | A | 8 | TV3 | BL-18, BL-19, BL-20 | FR-02, F-02 |
-| BL-22 | Learning giải thích và tự kiểm tra | Must | B | 5 | TV3 | BL-18, BL-19, BL-20 | FR-03, F-03 |
-| BL-23 | Learning lập/điều chỉnh lộ trình ôn | Must | B | 5 | TV4 | BL-22 | FR-03, F-03 |
-| BL-24 | Phản hồi chất lượng và chia sẻ có lựa chọn | Must | B | 3 | TV4 | BL-19, BL-21 | FR-05, F-06 |
+| BL-19 | Hội thoại cá nhân và ngữ cảnh theo môn | Must | A | 8 | TV2 | BL-06, BL-07, BL-14 | FR-05.1/05.2/05.3 |
+| BL-20 | Guardrails liêm chính và prompt injection | Must | A | 8 | TV3 | BL-02, BL-06, BL-19 | FR-02.3, BR-06/09, PRD 10.4 |
+| BL-21 | Academic hỏi đáp có nguồn đầu cuối | Must | A | 8 | TV3 | BL-18, BL-19, BL-20 | FR-02, UI-03 |
+| BL-22 | Learning giải thích và tự kiểm tra | Must | B | 5 | TV3 | BL-18, BL-19, BL-20 | FR-03.1/03.2/03.3/03.4, UI-03 |
+| BL-23 | Learning lập/điều chỉnh lộ trình ôn | Must | B | 5 | TV4 | BL-22 | FR-03.5–03.13, UI-03 |
+| BL-24 | Phản hồi chất lượng và chia sẻ có lựa chọn | Must | B | 3 | TV4 | BL-19, BL-21 | FR-05.5/05.6 |
 
 ### 4.6. E6 — Kiểm chứng và phát hành
 
 | ID | Hạng mục | Phạm vi | Ưu tiên | SP | Owner | Phụ thuộc | Truy vết |
 |---|---|---|---|---|---|---|---|
-| BL-25 | Log, token/chi phí, timeout và hạn mức | Must | A | 8 | TV2 | BL-05, BL-08, BL-21 | FR-15, NFR-01/02/05 |
-| BL-26 | Retention, xóa dữ liệu và riêng tư | Must | B | 5 | TV2 | BL-08, BL-19, BL-24 | PRD 12.4, FR-05 |
-| BL-27 | Chạy eval accuracy và phân tích lỗi | Must | A | 8 | TV1 | BL-03, BL-21, BL-22, BL-23, BL-25 | FR-14, UAT-17 |
+| BL-25 | Log, token/chi phí, timeout và hạn mức | Must | A | 8 | TV2 | BL-05, BL-08, BL-21 | NFR-01/02/05/09 |
+| BL-26 | Retention, xóa dữ liệu và riêng tư | Must | B | 5 | TV2 | BL-08, BL-19, BL-24 | FR-05.7 (PRD mục retention chưa được đánh số lại ở v2.0 — cần bổ sung khi refinement) |
+| BL-27 | Chạy eval accuracy (100 mẫu, 5 nhóm ×20) và phân tích lỗi | Must | A | 8 | TV1 | BL-03, BL-21, BL-22, BL-23, BL-25 | PRD 13.1–13.4/13.7, UAT-17 |
 | BL-28 | Security, safety và integration regression | Must | A | 8 | TV1 | BL-14, BL-17, BL-20, BL-24, BL-25, BL-26 | UAT-02/07/11/13/15/19 |
 | BL-29 | Docker, môi trường demo và khôi phục | Must | A | 8 | TV4 | BL-04, BL-13, BL-21, BL-25, BL-26 | PRD 16, NFR phục hồi |
-| BL-30 | UAT, hiệu năng và tài liệu bàn giao cơ bản | Must | B | 5 | TV1 | BL-16, BL-23, BL-24, BL-27, BL-28, BL-29 | PRD 14/16 |
+| BL-35 | Dashboard Giảng viên (UI-09) — **Must, không còn thuộc nâng cao** | Must | A | 8 | TV4 | BL-12, BL-19, BL-24 | FR-12, UI-09 |
+| BL-30 | UAT, hiệu năng và tài liệu bàn giao cơ bản | Must | B | 5 | TV1 | BL-16, BL-23, BL-24, BL-27, BL-28, BL-29, BL-35 | PRD 14/16 |
 
 ### 4.7. E7 — Nâng cao
 
@@ -130,13 +133,14 @@ Kiểm thử, hạ tầng và chuẩn bị nhãn bắt đầu sớm; sơ đồ k
 | BL-31 | Router LangGraph cho ba trợ lý | Should | C | 8 | TV3 | BL-30 | FR-11, F-11 |
 | BL-32 | Hybrid BM25 + vector + reranker | Should | C | 8 | TV3 | BL-30 | FR-12, UAT-18 |
 | BL-33 | OCR và kiểm tra chất lượng scan | Should | C | 8 | TV3 | BL-30 | FR-07, UAT-12 |
-| BL-34 | Hub tổng hợp nhiều tài liệu | Should | C | 5 | TV3 | BL-31, BL-32 | FR-04/11 |
-| BL-35 | Dashboard GV và xử lý phản hồi | Should | C | 8 | TV4 | BL-30 | FR-13, UI-09 |
-| BL-36 | RAGAS và mở rộng bộ kiểm chứng | Should | C | 8 | TV1 | BL-31, BL-32, BL-33, BL-34 | FR-14, PRD 13.5 |
-| BL-37 | Cache có ACL và revision nguồn/quyền | Should | C | 8 | TV2 | BL-30, BL-32 | FR-15, BR-12 |
-| BL-38 | Phát hiện và xử lý semantic dedup | Should | C | 5 | TV3 | BL-30, BL-33 | FR-15 |
-| BL-39 | Dashboard vận hành và ngân sách | Should | C | 5 | TV2 | BL-30, BL-37 | FR-15, F-12 |
-| BL-40 | Benchmark và nghiệm thu nâng cao | Should | C | 5 | TV1 | BL-34, BL-35, BL-36, BL-37, BL-38, BL-39 | UAT-18, PRD 14.3 |
+| BL-34 | Hub tổng hợp nhiều tài liệu | Should | C | 5 | TV3 | BL-31, BL-32 | FR-04.6, FR-11 |
+| BL-36 | RAGAS và mở rộng bộ kiểm chứng vượt 100 mẫu bắt buộc | Should | C | 8 | TV1 | BL-31, BL-32, BL-33, BL-34 | FR-14, PRD 13.5 |
+| BL-37 | Cache có ACL và revision nguồn/quyền | Should | C | 8 | TV2 | BL-30, BL-32 | FR-15, BR-10 |
+| BL-38 | Phát hiện và xử lý semantic dedup | Should | C | 5 | TV3 | BL-30, BL-33 | FR-16 |
+| BL-39 | Dashboard vận hành và ngân sách | Should | C | 5 | TV2 | BL-30, BL-37 | FR-01.4, NFR-01, PRD 11.2 (`GET /metrics`) |
+| BL-40 | Benchmark và nghiệm thu nâng cao | Should | C | 5 | TV1 | BL-34, BL-36, BL-37, BL-38, BL-39 | UAT-18, PRD 14.3 |
+
+**BL-35 (Dashboard Giảng viên) đã chuyển sang bảng E6 — mục 4.6** vì PRD v2.0 mục 7.1.10 xếp Dashboard GV vào Must, "hoàn tất cùng bản cơ bản cuối tuần 3"; không còn là hạng mục nâng cao độc lập. Nội dung task/AC chi tiết của BL-35 vẫn giữ nguyên ở mục 11 bên dưới (chỉ đổi vị trí bảng tổng hợp và mức Must/Should).
 
 BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; phụ thuộc nêu trong bảng áp dụng khi nghiệm thu tích hợp. Trước khi kéo story 8 SP vào sprint, tách các đầu việc đủ nhỏ để một thành viên có thể hoàn thành và review; không tách rời kiểm soát an toàn khỏi tính năng khi phát hành.
 
@@ -148,7 +152,7 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Task:** walkthrough Brief/PRD/flow; chọn mức cơ bản/nâng cao; chốt môn pilot, người duyệt, ngân sách, retention, giới hạn file và tiêu chí; lập decision log và danh sách câu hỏi chưa trả lời.
 
-**Xác thực pain point:** dùng [PP-01…PP-10](PRD_edu04.md#pain-points), phỏng vấn/quan sát ngắn ngày 1–2 và ghi sổ bằng chứng. Phân biệt sự cố thực tế, lời người dùng báo cáo và rủi ro dự phòng; không gán số liệu giả. TV1 tổng hợp trong BL-01, không tạo giai đoạn khảo sát mới làm lùi mốc tuần 3.
+**Xác thực pain point:** dùng [PP-01…PP-10](brief_edu04.md) (Brief mục 3), phỏng vấn/quan sát ngắn ngày 1–2 và ghi sổ bằng chứng. Phân biệt sự cố thực tế, lời người dùng báo cáo và rủi ro dự phòng; không gán số liệu giả. TV1 tổng hợp trong BL-01, không tạo giai đoạn khảo sát mới làm lùi mốc tuần 3.
 
 **AC:**
 
@@ -176,12 +180,13 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Story:** Là người nghiệm thu, tôi muốn có bộ kiểm chứng độc lập để đo chất lượng thay vì đánh giá qua vài câu demo.
 
-**Task:** tạo dev riêng; chuẩn bị ≥30 câu holdout theo phân bố PRD; gán đáp án, ý bắt buộc, nguồn/version/locator và quyền; chuẩn bị ≥40 kịch bản safety đề xuất; review nhãn cùng GV; khóa version/checksum và quyền truy cập holdout.
+**Task:** tạo dev riêng (20–30 câu, PRD 13.2); chuẩn bị đủ **100 câu holdout chia đều 5 nhóm ×20 mẫu** (tra cứu/định nghĩa, giải thích khái niệm, so sánh/tổng hợp, vận dụng kiến thức, câu nối tiếp) và phân bổ theo môn theo ma trận PRD 13.2; gán đáp án, ý bắt buộc, nguồn/version/locator và quyền theo schema PRD 13.3; chuẩn bị ≥40 kịch bản safety đề xuất theo PRD 13.6; review nhãn cùng GV; khóa version/checksum và quyền truy cập holdout.
 
 **AC:**
 
-- Câu có nguồn được tách khỏi ca thiếu nguồn/từ chối; rubric chấm đủ bốn tiêu chí của PRD.
-- Dev và holdout không trùng/gần trùng; holdout không được dùng tinh chỉnh prompt/retrieval trước vòng đánh giá.
+- Câu có nguồn được tách khỏi ca thiếu nguồn/từ chối; rubric chấm đủ bốn tiêu chí của PRD 13.4 (đúng kiến thức, đủ câu trả lời, grounding, citation).
+- Đủ 100 mẫu có nhãn/nguồn hợp lệ, đúng 20 mẫu/nhóm; chưa đủ thì chưa đạt điều kiện chạy nghiệm thu (PRD 13.2) — không dùng bộ nhỏ hơn thay thế.
+- Dev và holdout không trùng/gần trùng; holdout không được dùng tinh chỉnh prompt/retrieval trước vòng đánh giá (BR-12).
 - Nhãn có tác giả/người review; ca nhiều lượt lưu đủ ngữ cảnh và hành vi mong đợi.
 
 **Bằng chứng:** dataset version, rubric, nguồn đối chiếu và danh sách reviewer.
@@ -250,7 +255,7 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Story:** Là GV tải tài liệu, tôi muốn so sánh bản gốc với text đã trích xuất để sửa sai trước khi gửi duyệt.
 
-**Task:** UI-07B; tiến độ theo stage; preview gốc/text; cảnh báo chất lượng; sửa metadata/file; checklist sẵn sàng; submit transition.
+**Task:** UI-07 (khối trạng thái job/preview); tiến độ theo stage; preview gốc/text; cảnh báo chất lượng; sửa metadata/file; checklist sẵn sàng; submit transition.
 
 **AC:** xem preview cần quyền riêng, SV không truy cập được; trang/slide lỗi nhận biết được; không hiển thị phần trăm giả; dữ liệu thiếu không gửi duyệt; thành công chuyển PendingApproval chứ không Published.
 
@@ -292,7 +297,7 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Story:** Là SV/GV, tôi muốn tìm và lọc tài liệu để không phải mở từng file.
 
-**Task:** UI-05; search API; lọc chủ đề/loại/phiên bản hiện hành; snippets/count/pagination; empty/error/loading; nút hỏi về tài liệu.
+**Task:** UI-03 (chế độ Hub trong hội thoại chung); search API; lọc chủ đề/loại/phiên bản hiện hành; snippets/count/pagination; empty/error/loading; nút hỏi về tài liệu.
 
 **AC:** count/snippet đúng ACL; chỉ thấy Published; không kết quả nêu phạm vi hiện tại; hỏi về file mở phiên mới giới hạn đúng file/môn; phân trang không lộ bản chưa được phép.
 
@@ -342,7 +347,7 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Story:** Là SV chưa hiểu bài, tôi muốn được giải thích ngắn gọn/từng bước và tự kiểm tra để hiểu nội dung.
 
-**Task:** UI-04 chế độ giải thích; prompt mức độ; ví dụ minh họa có căn cứ; câu tự kiểm tra không tính điểm; hỏi tiếp/giải thích lại.
+**Task:** UI-03 (chế độ Learning trong hội thoại chung); prompt mức độ; ví dụ minh họa có căn cứ; câu tự kiểm tra không tính điểm; hỏi tiếp/giải thích lại.
 
 **AC:** diễn giải không đổi nghĩa kiến thức; ví dụ AI tạo ghi rõ và kiểm tra đúng; nguyên lý có nguồn; đổi mức độ không mất guardrail; thiếu nguồn nói rõ, không bịa ví dụ như trích nguyên văn.
 
@@ -384,9 +389,9 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Story:** Là người nghiệm thu, tôi muốn kết quả có thể kiểm tra lại để biết hệ thống đạt KPI hay chưa.
 
-**Task:** eval runner snapshot/config; chạy đủ bộ; lưu output/citation/lỗi/latency/cost; chấm rubric; review độc lập theo PRD; báo theo môn/loại câu; phân tích nguyên nhân không đạt.
+**Task:** eval runner snapshot/config; chạy đủ 100 mẫu; lưu output/citation/lỗi/latency/cost; chấm rubric; review độc lập ≥20% mẫu + toàn bộ ca tranh chấp theo PRD 13.4; báo accuracy tổng, theo 5 nhóm (20 mẫu/nhóm) và theo môn (16–17 mẫu/môn); phân tích nguyên nhân không đạt (data/retrieval/generation/citation/routing).
 
-**AC:** báo số đạt/tổng với mẫu số khóa; 30 câu cần ≥24 đạt cả bốn tiêu chí; timeout/từ chối sai/citation sai là không đạt; không trộn safety vào accuracy; chưa đạt tạo bug/task sửa và chạy lại theo quy tắc chống rò holdout; mock LLM không dùng làm bằng chứng.
+**AC:** báo số đạt/tổng với mẫu số khóa (100 mẫu, không đổi mẫu số sau khi biết điểm); **cần ≥80/100 đạt cả bốn tiêu chí rubric**, không làm tròn kết quả dưới 80%; timeout/từ chối sai/citation sai là không đạt; không trộn safety vào accuracy; chưa đạt tạo bug/task sửa và chạy lại theo quy tắc chống rò holdout (BR-12, PRD 13.7 bước 7 — cần holdout mới cho ước lượng độc lập); mock LLM không dùng làm bằng chứng.
 
 **Lưu ý:** mục tiêu story là cung cấp bằng chứng và đạt ngưỡng trước phát hành, không “hoàn thành” bằng cách đổi rubric sau khi xem điểm.
 
@@ -410,11 +415,11 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Story:** Là GV/người nhận bàn giao, tôi muốn sử dụng sản phẩm theo các luồng thực tế và biết rõ chất lượng, cách chạy, giới hạn còn lại.
 
-**Task:** walkthrough UI-01…UI-08 cần thiết; UAT người đại diện; đo tải/latency trên corpus pilot; tổng hợp accuracy/safety; hướng dẫn SV/GV/vận hành; demo script/video nếu yêu cầu; biên bản lỗi/phạm vi.
+**Task:** walkthrough UI-01…UI-03, UI-06…UI-09 cần thiết (theo mã màn hình hiện tại ở Wireframe v2.0 — UI-03 đã hợp nhất Academic/Learning/Hub, UI-09 là Dashboard GV Must); UAT người đại diện; đo tải/latency trên corpus pilot; tổng hợp accuracy/safety; hướng dẫn SV/GV/vận hành; demo script/video nếu yêu cầu; biên bản lỗi/phạm vi.
 
-**Đo giá trị sử dụng:** ghi kết quả tác vụ tìm đúng đoạn/phiên bản, mở nguồn kiểm chứng và giải thích lại khái niệm theo [kế hoạch pain point](PRD_edu04.md#pain-points). Báo baseline, số mẫu và giới hạn nếu có dữ liệu; chưa đo thì ghi rõ, không dùng mức hài lòng thay cho accuracy hoặc tự thêm ngưỡng cải thiện chưa được chốt.
+**Đo giá trị sử dụng:** ghi kết quả tác vụ tìm đúng đoạn/phiên bản, mở nguồn kiểm chứng và giải thích lại khái niệm theo pain point ở [Brief mục 3](brief_edu04.md). Báo baseline, số mẫu và giới hạn nếu có dữ liệu; chưa đo thì ghi rõ, không dùng mức hài lòng thay cho accuracy hoặc tự thêm ngưỡng cải thiện chưa được chốt.
 
-**AC:** toàn bộ BL-01…BL-29 và Must liên quan hoàn tất; accuracy ≥80%; safety đạt; không P0/P1; báo p50/p95/cache state/corpus/tải thật và đối chiếu ngưỡng đã chốt; có URL/demo, version phát hành, hướng dẫn và người xác nhận. Nếu chưa đạt ngưỡng bắt buộc, giữ cổng mở và bổ sung công việc khắc phục.
+**AC:** toàn bộ BL-01…BL-29, BL-35 (Dashboard GV) và Must liên quan hoàn tất; **≥80/100 mẫu holdout đạt**; safety đạt; không P0/P1; báo p50/p95/cache state/corpus/tải thật và đối chiếu ngưỡng đã chốt; có URL/demo, version phát hành, hướng dẫn và người xác nhận. Nếu chưa đạt ngưỡng bắt buộc, giữ cổng mở và bổ sung công việc khắc phục.
 
 ## 11. Backlog chi tiết — E7
 
@@ -450,21 +455,23 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **AC:** mọi nguồn đúng quyền và Published; mỗi ý có căn cứ; không trộn nguồn môn khác ngầm định; thiếu bằng chứng nêu rõ; nguồn bị thu hồi trong lúc xử lý phải được loại/chặn trước phản hồi.
 
-### BL-35 — Dashboard GV
+### BL-35 — Dashboard GV (Must — theo PRD v2.0 mục 7.1.10, không còn là hạng mục nâng cao)
 
 **Story:** Là GV phụ trách môn, tôi muốn theo dõi tài liệu và phản hồi để ưu tiên cải thiện kho.
 
-**Task:** UI-07/08/09 đầy đủ; bộ lọc/trạng thái/phiên bản; hàng đợi; phản hồi mở/đang xử lý/đã xử lý; metric môn; empty/error/accessibility.
+**Task:** UI-07/UI-08 (tái dùng trực tiếp, không tạo logic riêng — FR-12.3) + UI-09 (tab Tài liệu/Hàng đợi duyệt/Lịch sử/Phản hồi/Thống kê/Nhu cầu bổ sung nguồn theo PRD 7.1.10.1); bộ lọc/trạng thái/phiên bản; quy trình phản hồi Open→InProgress→Resolved; metric môn gắn dataset/config/time window; empty/error/accessibility.
 
-**AC:** chỉ môn phụ trách; thống kê không cấp quyền đọc hội thoại SV; nội dung feedback theo lựa chọn chia sẻ; không tự phát hành tài liệu khi xử lý phản hồi; metric chưa đo hiển thị chưa có dữ liệu.
+**AC:** chỉ môn phụ trách (quyền tra cứu toàn môn của GV không mở quyền quản lý/metric môn khác — AC-12.1); thống kê không cấp quyền đọc hội thoại SV bằng answer ID (AC-12.2); resolved feedback không tự cập nhật nguồn/Published (AC-12.3); metric chưa đo hiển thị "chưa có dữ liệu", khác với "dữ liệu chưa đủ mẫu" (AC-12.4); mọi quyết định trên tài liệu vẫn qua đúng luồng FR-08 (AC-12.5).
+
+**Ghi chú tiến độ:** vì là Must, BL-35 cần lên kế hoạch bắt đầu từ Sprint 2 (song song BL-12) và hoàn tất trước Sprint 3 để nằm trong cổng cơ bản BL-30 — xem mục 12.
 
 ### BL-36 — RAGAS và mở rộng eval
 
 **Story:** Là nhóm AI/QA, tôi muốn đo từng khía cạnh retrieval/generation để xác định nguyên nhân chất lượng và so sánh cấu hình.
 
-**Task:** version metric/judge/model; chạy faithfulness/answer relevancy/context precision; bổ sung retrieval/citation/router scores; mở rộng holdout mục tiêu ≥100 câu nếu đủ nguồn lực; review nhãn; báo lỗi đánh giá.
+**Task:** version metric/judge/model; chạy faithfulness/answer relevancy/context precision; bổ sung retrieval/citation/router scores; mở rộng bộ mẫu **vượt 100 câu bắt buộc** (đã là baseline theo PRD 13.2, không phải mục tiêu nâng cao) nếu đủ nguồn lực; review nhãn; báo lỗi đánh giá.
 
-**AC:** RAGAS tách accuracy do người chấm; ngưỡng đề xuất được xác nhận trước chạy nghiệm thu; giữ kết quả lỗi, không bỏ ca âm thầm; bộ mở rộng tách dev và nhãn kiểm tra; nếu chưa đủ 100 câu ghi rõ số thực tế và giới hạn, không tuyên bố đạt mức mẫu chưa có.
+**AC:** RAGAS tách accuracy do người chấm; ngưỡng đề xuất (faithfulness ≥0,85; answer relevancy ≥0,80; context precision ≥0,75 — PRD 13.5) được xác nhận trước chạy nghiệm thu, không phải yêu cầu gốc; giữ kết quả lỗi, không bỏ ca âm thầm; bộ mở rộng tách dev và nhãn kiểm tra; báo rõ số mẫu thực tế và giới hạn.
 
 ### BL-37 — Cache an toàn
 
@@ -502,15 +509,15 @@ BL-25/28/29 có thể chuẩn bị skeleton, test và cấu hình từ sớm; ph
 
 **Ràng buộc nhóm đã xác nhận: tổng thời gian 6 tuần; bản cơ bản phải hoàn tất và được kiểm chứng cuối tuần 3.** Tổ chức 6 sprint, mỗi sprint 1 tuần. Tuần 1–2 xây và tích hợp, tuần 3 ưu tiên kiểm chứng/sửa lỗi; tuần 4–5 nâng cao có điều kiện; tuần 6 ổn định và bàn giao. Ngày bắt đầu thực tế: [TỰ ĐIỀN].
 
-Backlog đang có 194 SP Must và 68 SP Should theo ước lượng sơ bộ. Không chia các điểm này cho số người/tuần để suy ra chắc chắn làm kịp. Ngày 1–2 phải kiểm tra phần có thể tái sử dụng trong repo, tách task, ước lượng lại và xác nhận nguồn lực. Giữ nguyên ID, AC và điểm hiện tại làm baseline đến khi nhóm refinement, không tự giảm điểm vì lịch ngắn hơn.
+Backlog đang có **202 SP Must và 60 SP Should** theo ước lượng sơ bộ (đã chuyển 8 SP của BL-35 — Dashboard GV — từ Should sang Must theo PRD v2.0). Không chia các điểm này cho số người/tuần để suy ra chắc chắn làm kịp. Ngày 1–2 phải kiểm tra phần có thể tái sử dụng trong repo, tách task, ước lượng lại và xác nhận nguồn lực. Giữ nguyên ID, AC và điểm hiện tại làm baseline đến khi nhóm refinement, không tự giảm điểm vì lịch ngắn hơn.
 
 | Sprint | Mục tiêu | Backlog dự kiến | Điều kiện review |
 |---|---|---|---|
 | S1 — Tuần 1 | Nguồn mẫu chạy hết vòng đời trên demo | Chốt BL-01/02/04…08; triển khai lát cắt BL-09…13; bắt đầu BL-03/25/28/29 | Auth/ACL hoạt động; một file đi qua duyệt độc lập tới Published; app chạy trên demo |
-| S2 — Tuần 2 | Hoàn tất chức năng cơ bản đầu cuối | Hoàn tất BL-03/09…24; tích hợp BL-25/26/29; phát triển test BL-27/28 liên tục | Hub và hai trợ lý có nguồn, guardrails, lịch sử/feedback, thu hồi; dataset có nhãn sẵn sàng; feature freeze cuối tuần |
-| S3 — Tuần 3 | Nghiệm thu bản cơ bản | Hoàn tất phần vận hành BL-25/26/29; BL-27/28/30; sửa lỗi các Must | ≥24/30 câu đạt, safety/UAT và vận hành đạt, không P0/P1, có demo/hướng dẫn |
-| S4 — Tuần 4 | Nâng cao ưu tiên sau cổng cơ bản | BL-31/32; khởi động BL-35/36; thiết kế BL-37 nếu đủ năng lực | Router/hybrid có tích hợp và benchmark dev; không ảnh hưởng ACL/citation |
-| S5 — Tuần 5 | Hoàn tất phần nâng cao đã chọn | BL-33/34/35/36/37/38/39 theo capacity và phụ thuộc; review phạm vi BL-40 | Chốt tính năng cuối tuần; cấu hình và bộ kiểm chứng cuối sẵn sàng |
+| S2 — Tuần 2 | Hoàn tất chức năng cơ bản đầu cuối | Hoàn tất BL-03/09…24; tích hợp BL-25/26/29; bắt đầu BL-35 (Dashboard GV — Must); phát triển test BL-27/28 liên tục | Hub và hai trợ lý có nguồn, guardrails, lịch sử/feedback, thu hồi; dataset có nhãn sẵn sàng; feature freeze cuối tuần |
+| S3 — Tuần 3 | Nghiệm thu bản cơ bản | Hoàn tất phần vận hành BL-25/26/29; hoàn tất BL-35 (Dashboard GV); BL-27/28/30; sửa lỗi các Must | ≥80/100 mẫu holdout đạt, safety/UAT và vận hành đạt, không P0/P1, có demo/hướng dẫn |
+| S4 — Tuần 4 | Nâng cao ưu tiên sau cổng cơ bản | BL-31/32; khởi động BL-36; thiết kế BL-37 nếu đủ năng lực | Router/hybrid có tích hợp và benchmark dev; không ảnh hưởng ACL/citation |
+| S5 — Tuần 5 | Hoàn tất phần nâng cao đã chọn | BL-33/34/36/37/38/39 theo capacity và phụ thuộc; review phạm vi BL-40 | Chốt tính năng cuối tuần; cấu hình và bộ kiểm chứng cuối sẵn sàng |
 | S6 — Tuần 6 | Ổn định và bàn giao | BL-40 nếu đăng ký nâng cao; chạy lại các cổng BL-27/28/30 bị ảnh hưởng, sửa lỗi/tài liệu | Báo cáo cuối, regression, hiệu năng/chi phí, demo và bàn giao; không thêm tính năng mới |
 
 “Bắt đầu” hoặc “lát cắt” không đồng nghĩa story Done. Phụ thuộc ở mục 4 vẫn phải đáp ứng khi nghiệm thu; trong tuần 1 có thể triển khai tuần tự các bước nhỏ trên một file rồi mở rộng ở tuần 2. Không chờ E1 hoàn tất mọi tài liệu mới làm E2, nhưng các quyết định/quyền dữ liệu cần thiết cho công việc phải được chốt trước.
@@ -520,10 +527,10 @@ Backlog đang có 194 SP Must và 68 SP Should theo ước lượng sơ bộ. Kh
 | Tuần | TV1 — BA/QA | TV2 — Backend | TV3 — AI/RAG | TV4 — Frontend/deploy |
 |---|---|---|---|---|
 | 1 | Chốt scope ngày 1–2; kiểm kê và xác nhận nguồn; chuẩn bị nhãn/dev/holdout với GV; fixtures ACL | Schema/API, auth/ACL, storage/upload, audit; duyệt và publication state tối thiểu | Parse/chunk/index PDF/PPTX; hợp đồng citation; tích hợp một file đã duyệt | App shell/login/môn; upload/preview/duyệt tối giản; Docker/demo từ đầu |
-| 2 | Hoàn tất ≥30 nhãn holdout và safety suite; test từng luồng hằng ngày; ghi bug | Version/withdraw, hội thoại, feedback API, quota/retention; hỗ trợ nguồn/viewer | Retrieval/evidence, Academic/Learning/guardrails; chạy dev, sửa lỗi nguồn | Hub/viewer/chat/Learning plan/feedback; trạng thái lỗi; tích hợp mỗi ngày |
-| 3 | Chấm holdout cùng GV, UAT và báo cáo; quản lý cổng BL-30 | Sửa ACL/race/thu hồi; quota/log/retention; backup/restore | Sửa lỗi AI trên dev; hỗ trợ phân tích và regression, giữ quy tắc holdout | Sửa UI/integration; kiểm tra demo, hướng dẫn, responsive; chuẩn bị trình diễn |
+| 2 | Tiếp tục gán đủ 100 nhãn holdout (5 nhóm ×20) và safety suite; test từng luồng hằng ngày; ghi bug | Version/withdraw, hội thoại, feedback API, quota/retention; hỗ trợ nguồn/viewer | Retrieval/evidence, Academic/Learning/guardrails; chạy dev, sửa lỗi nguồn | Hub/viewer/chat/Learning plan/feedback; bắt đầu BL-35 Dashboard GV (UI-09, Must); trạng thái lỗi; tích hợp mỗi ngày |
+| 3 | Chấm 100 mẫu holdout cùng GV, UAT và báo cáo; quản lý cổng BL-30 | Sửa ACL/race/thu hồi; quota/log/retention; backup/restore | Sửa lỗi AI trên dev; hỗ trợ phân tích và regression, giữ quy tắc holdout | Hoàn tất BL-35 Dashboard GV; sửa UI/integration; kiểm tra demo, hướng dẫn, responsive; chuẩn bị trình diễn |
 
-**Điểm kiểm tra trong tuần 3:** đầu tuần chạy đầy đủ đánh giá và kiểm thử lần đầu; giữa tuần xử lý lỗi và kiểm tra lại; cuối tuần nghiệm thu bản cơ bản với bằng chứng. Không để đến ngày cuối mới chạy 30 câu. Nếu đã dùng lỗi holdout để tinh chỉnh, lần chạy lại được ghi là regression trên bộ đã biết; tuân thủ PRD về bộ độc lập mới khi đưa ra ước lượng độc lập, không che lịch sử kết quả.
+**Điểm kiểm tra trong tuần 3:** đầu tuần chạy đầy đủ đánh giá và kiểm thử lần đầu; giữa tuần xử lý lỗi và kiểm tra lại; cuối tuần nghiệm thu bản cơ bản với bằng chứng. Không để đến ngày cuối mới chạy 100 câu. Nếu đã dùng lỗi holdout để tinh chỉnh, lần chạy lại được ghi là regression trên bộ đã biết; tuân thủ PRD về bộ độc lập mới khi đưa ra ước lượng độc lập, không che lịch sử kết quả.
 
 **Giới hạn triển khai để bảo vệ thời hạn:** tài khoản cấp sẵn; giao diện quản lý dạng danh sách/form tối giản; một lựa chọn kho vector chính; PDF text/PPTX ở cơ bản; chọn trợ lý thủ công; chưa làm OCR, hybrid/reranker, router tự động, dashboard nâng cao hoặc cache câu trả lời trước cổng cơ bản. Các kiểm soát ACL, nguồn từng ý, HITL, guardrails, thu hồi, quota và phép đo KPI vẫn bắt buộc. Đây là cách triển khai tối giản của phạm vi hiện có, không xóa story Must.
 
@@ -545,7 +552,7 @@ Backlog đang có 194 SP Must và 68 SP Should theo ước lượng sơ bộ. Kh
 - **M1:** SV đăng nhập, chỉ thấy môn được cấp; truy cập chéo bị chặn.
 - **M2:** GV tải file, GV khác duyệt, SV tìm và mở đúng nguồn; thu hồi làm nguồn biến mất khỏi phục vụ.
 - **M3:** SV hỏi Academic/Learning có citation; ca thiếu nguồn và bài tính điểm xử lý đúng.
-- **M4:** Có báo cáo ≥24/30, safety đạt và demo Docker có thể dựng lại.
+- **M4:** Có báo cáo ≥80/100 mẫu holdout đạt, safety đạt và demo Docker có thể dựng lại.
 - **M5:** Bản nâng cao chứng minh từng hạng mục đã cam kết, chạy lại kiểm chứng trên cấu hình mới.
 
 ## 13. Definition of Ready — khi nào kéo vào sprint?
@@ -608,7 +615,7 @@ Theo PRD: P0 cho lộ dữ liệu/secret/sai quyền nghiêm trọng; P1 cho đ�
 |---|---|---|---|
 | Dữ liệu | Nguồn có quyền sử dụng, đúng nhãn và duyệt | Inventory, approval/audit | TV1 + GV |
 | Chức năng | Must hoạt động đầu cuối, UI đúng flow | UAT theo vai trò/môn | TV1 + người dùng đại diện |
-| Chất lượng AI | Accuracy ≥80%, tối thiểu ≥24/30 trên bộ khóa | Output, rubric, người chấm, config | TV1 + GV |
+| Chất lượng AI | Accuracy ≥80%, tối thiểu ≥80/100 trên bộ khóa (5 nhóm ×20 mẫu) | Output, rubric, người chấm, config | TV1 + GV |
 | An toàn | Không ca nghiêm trọng trong safety suite | Báo cáo BL-28 và regression liên quan | TV2 + TV1 |
 | Vận hành | Deploy, healthcheck, quota, hiệu năng, phục hồi | BL-25/29/30 | TV2 + TV4 |
 | Bàn giao | Hướng dẫn, version, giới hạn và lỗi còn lại | Tài liệu + biên bản | Cả nhóm |
