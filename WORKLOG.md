@@ -16,13 +16,13 @@
 
 ---
 
-## [YYYY-MM-DD]
+## 2026-09-25
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| | | | | |
+| TV4 | T1.1.1 - Chốt stack công nghệ | ✅ Done | Next.js (App Router), shadcn/ui + Tailwind CSS | 0.5h |
 
-**Tổng kết ngày:**
+**Tổng kết ngày:** Đã chốt stack công nghệ frontend và đang tiến hành khởi tạo dự án.
 
 ---
 
