@@ -58,3 +58,8 @@ out/
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+
+# Ghi chú công việc cá nhân — không push
+docs/documentions/cong_viec_TV1_edu04.md
+docs/rules/
+docs/plans/
