@@ -39,6 +39,44 @@ export default function LecturerDashboard() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const loadCoursesAndDocs = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        
+        const coursesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/dashboard/courses`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!coursesRes.ok) return;
+        const coursesData = await coursesRes.json();
+        const courseIds = coursesData.items || [];
+        
+        if (courseIds.length > 0) {
+          const courseId = courseIds[0];
+          const docsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/manage/versions?course_id=${courseId}`, {
+             headers: { Authorization: `Bearer ${token}` }
+          });
+          if (docsRes.ok) {
+            const docsData = await docsRes.json();
+            const mappedDocs: Document[] = (docsData.items || []).map((item: any) => ({
+              id: item.version_id,
+              name: item.title || item.original_filename || 'Unknown',
+              date: item.updated_at ? new Date(item.updated_at).toLocaleDateString('vi-VN') : '',
+              status: item.state === 'Published' ? 'ready' : (item.state === 'PendingApproval' ? 'pending' : (item.state === 'Processing' ? 'processing' : 'error')),
+              reviewer: item.authors?.[0] || '',
+              size: item.size_bytes ? (item.size_bytes / (1024 * 1024)).toFixed(1) + ' MB' : '0 MB',
+            }));
+            setDocuments(mappedDocs.length > 0 ? mappedDocs : MOCK_DOCUMENTS);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load dashboard data", err);
+      }
+    };
+    loadCoursesAndDocs();
+  }, []);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);

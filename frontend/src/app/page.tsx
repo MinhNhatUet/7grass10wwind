@@ -35,6 +35,7 @@ export default function UnifiedChat() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [history, setHistory] = useState<any[]>([]);
   const hasMessages = messages.length > 0;
 
   // Auto-scroll to bottom when messages change
@@ -44,33 +45,72 @@ export default function UnifiedChat() {
     }
   }, [messages, isLoading]);
 
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setHistory(data.items || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch history", err);
+      }
+    };
+    fetchHistory();
+  }, []);
 
-
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!prompt.trim() || isLoading) return;
 
     const userMessage: Message = { id: Date.now().toString(), role: "user", content: prompt };
     setMessages(prev => [...prev, userMessage]);
+    const currentPrompt = prompt;
     setPrompt("");
     setIsLoading(true);
     setActiveSource(null);
 
-    setTimeout(() => {
-      const mockSources: Source[] = [
-        { id: "s1", title: "Slide_Chuong_1_AI.pdf", page: 12, content: "Đây là đoạn text trích xuất từ trang 12 giải thích khái niệm này chi tiết." },
-        { id: "s2", title: "GiaoTrinh_KienTrucMayTinh.pdf", page: 45, content: "Tham khảo thêm cấu trúc vi xử lý tại trang 45." }
-      ];
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem("token") : "";
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message: currentPrompt }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Chat request failed");
+      }
+      
+      const data = await response.json();
+      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         agentName: "Academic Assistant",
-        content: `Tôi đã tìm thấy thông tin bạn cần. Khái niệm này liên quan đến **Deep Learning** và các mô hình mạng nơ-ron nhân tạo [1].\n\nNó hoạt động bằng cách sử dụng nhiều lớp (layers) để trích xuất đặc trưng từ dữ liệu thô. Để hiểu sâu hơn về kiến trúc hệ thống xử lý song song cho nó, bạn có thể xem thêm tài liệu kiến trúc máy tính [2].`,
-        sources: mockSources
+        content: data.response,
+        sources: []
       };
       setMessages(prev => [...prev, assistantMessage]);
+    } catch (err) {
+      console.error(err);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "Xin lỗi, đã có lỗi xảy ra khi kết nối tới máy chủ."
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -136,10 +176,10 @@ export default function UnifiedChat() {
             <div className="flex-1 overflow-y-auto overflow-x-visible px-3 py-4 w-[260px] relative">
               <div className="text-xs font-semibold text-black dark:text-black/40 dark:text-white/40 mb-3 px-2">Gần đây (Recents)</div>
               
-              {MOCK_HISTORY.map((chat) => (
+              {history.map((chat) => (
                 <div key={chat.id} className="group relative w-full flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2.5 rounded-lg cursor-pointer mb-1">
                   <div className="flex items-center gap-3 overflow-hidden flex-1">
-                     <span className="truncate text-[14px] text-black dark:text-black/80 dark:text-white/80">{chat.title}</span>
+                     <span className="truncate text-[14px] text-black dark:text-black/80 dark:text-white/80">{chat.title || "Hội thoại mới"}</span>
                   </div>
                   
                   {/* Radix Hover Card */}
@@ -196,8 +236,12 @@ export default function UnifiedChat() {
               <div className="flex items-center gap-3">
                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shrink-0" />
                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-black dark:text-white">Giảng viên X</span>
-                    <span className="text-[11px] text-black/50 dark:text-white/50">Admin</span>
+                    <span className="text-sm font-medium text-black dark:text-white">
+                      {typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('user') || '{}').display_name || 'Khách') : 'Khách'}
+                    </span>
+                    <span className="text-[11px] text-black/50 dark:text-white/50 capitalize">
+                      {typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('user') || '{}').role || 'Guest') : 'Guest'}
+                    </span>
                  </div>
               </div>
               <button 

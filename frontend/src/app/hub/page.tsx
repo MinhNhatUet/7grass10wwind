@@ -264,7 +264,52 @@ export default function KnowledgeHub() {
   });
   const handleZoom = (d: number) => setZoom(z => Math.max(0.4, Math.min(2.5, z + d)));
 
-  const filteredDocs = MOCK_DOCS.filter(d => {
+  const [docs, setDocs] = useState<DocMeta[]>(MOCK_DOCS);
+
+  useEffect(() => {
+    const loadHubDocs = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        
+        const coursesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/me/courses`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!coursesRes.ok) return;
+        const coursesData = await coursesRes.json();
+        const courseIds = (coursesData.items || []).map((c: any) => c.id);
+        
+        if (courseIds.length > 0) {
+          const courseId = courseIds[0];
+          const docsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/documents?course_id=${courseId}`, {
+             headers: { Authorization: `Bearer ${token}` }
+          });
+          if (docsRes.ok) {
+            const docsData = await docsRes.json();
+            const mappedDocs: DocMeta[] = (docsData.items || []).map((item: any) => ({
+              id: item.version_id,
+              title: item.title || 'Unknown Document',
+              subject: courseId,
+              author: item.authors?.[0] || 'Unknown',
+              pages: item.page_count || 0,
+              size: '0 MB',
+              uploadedAt: item.published_at ? new Date(item.published_at).toISOString().split('T')[0] : '',
+              status: item.state === 'Published' ? 'active' : 'pending',
+              tags: [],
+              starred: false,
+              description: item.version_label || ''
+            }));
+            setDocs(mappedDocs.length > 0 ? mappedDocs : MOCK_DOCS);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load hub docs", err);
+      }
+    };
+    loadHubDocs();
+  }, []);
+
+  const filteredDocs = docs.filter(d => {
     const q = query.toLowerCase();
     return !q || d.title.toLowerCase().includes(q) || d.subject.toLowerCase().includes(q);
   });

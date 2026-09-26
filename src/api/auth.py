@@ -10,6 +10,7 @@ from src.models.schemas import (
     CourseItem,
     CoursesResponse,
     LoginRequest,
+    RegisterRequest,
     LoginResponse,
     MeResponse,
     SessionInfo,
@@ -34,6 +35,37 @@ async def login(
     auth: AuthService = Depends(get_auth_service),
 ) -> LoginResponse:
     client_ip = request.client.host if request.client else "unknown"
+    token, session, user = auth.login(db, body.login_id, body.password, client_ip)
+    expires_in = int((session.expires_at - datetime.now(UTC)).total_seconds())
+    return LoginResponse(access_token=token, expires_in=expires_in, user=public_user(user))
+
+
+from fastapi import HTTPException
+from src.services.auth import hash_password
+from sqlalchemy import select
+
+@router.post("/auth/register", response_model=LoginResponse)
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth: AuthService = Depends(get_auth_service),
+) -> LoginResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    
+    if db.scalar(select(User).where(User.login_id == body.login_id)):
+        raise HTTPException(400, "Tài khoản đã tồn tại")
+        
+    user = User(
+        login_id=body.login_id,
+        display_name=body.display_name or body.login_id.split("@")[0],
+        role=body.role,
+        password_hash=hash_password(body.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
     token, session, user = auth.login(db, body.login_id, body.password, client_ip)
     expires_in = int((session.expires_at - datetime.now(UTC)).total_seconds())
     return LoginResponse(access_token=token, expires_in=expires_in, user=public_user(user))

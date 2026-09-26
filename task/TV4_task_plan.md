@@ -283,11 +283,11 @@
 | ID | Màn hình | Tuần | Trạng thái |
 |---|---|---|---|
 | UI-01 | Đăng nhập | 1 | ✅ |
-| UI-02 | Unified Chat (Giao diện Chat trung tâm) | 2 | ⬜ |
+| UI-02 | Unified Chat (Giao diện Chat trung tâm) | 2 | ✅ |
 | UI-03 | *(Đã gộp vào UI-02 do backend định tuyến)* | - | - |
 | UI-04 | *(Đã gộp vào UI-02 do backend định tuyến)* | - | - |
 | UI-05 | *(Đã gộp vào UI-02 do backend định tuyến)* | - | - |
-| UI-06 | Knowledge Hub (Search + View) | 2 | ⬜ |
+| UI-06 | Knowledge Hub (Search + View) | 2 | ✅ |
 | UI-07 | GV Upload & Quản lý tài liệu | 2 | ✅ |
 | UI-08 | GV Duyệt tài liệu | 3 | ⬜ |
 | UI-09 | Dashboard Giảng viên (MUST) | 3 | ⬜ |

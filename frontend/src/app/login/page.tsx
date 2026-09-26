@@ -43,13 +43,37 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Simulate API call to POST /api/auth/login or /api/auth/register
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      // TODO: Replace with actual authentication logic when TV2 provides API
+      const endpoint = isLoginView ? "/api/v1/auth/login" : "/api/v1/auth/register";
+      const payload: any = { login_id: email, password };
+      if (!isLoginView) {
+        payload.display_name = name;
+      }
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        let errMsg = isLoginView ? "Đăng nhập thất bại" : "Đăng ký thất bại";
+        if (errorData.error?.message) {
+          errMsg = errorData.error.message;
+        } else if (errorData.detail) {
+          errMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+        }
+        throw new Error(errMsg);
+      }
+
+      const data = await response.json();
+      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
       
       router.push("/");
     } catch (err) {
-      setError(isLoginView ? "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin." : "Đăng ký thất bại. Vui lòng thử lại.");
+      setError(err instanceof Error ? err.message : (isLoginView ? "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin." : "Đăng ký thất bại. Vui lòng thử lại."));
     } finally {
       setIsLoading(false);
     }
