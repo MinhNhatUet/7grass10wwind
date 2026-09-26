@@ -93,68 +93,57 @@
 
 ## 🗓️ TUẦN 2 — Hoàn tất luồng chức năng cơ bản
 
-### T2.1 · Màn hình chọn môn học & trợ lý (UI-02, UI-03)
+### T2.1 · Màn hình Unified Chat (Trang chủ - UI-02)
 
-#### T2.1.1 · Trang chủ sau đăng nhập (UI-02)
-- T2.1.1.a — Hiển thị danh sách môn học được cấp quyền (gọi API `/api/courses`)
-- T2.1.1.b — Card môn học: tên môn, mô tả ngắn, badge vai trò
-- T2.1.1.c — Trạng thái rỗng: chưa có môn → hiển thị thông báo liên hệ admin
-- T2.1.1.d — Click vào môn → vào màn hình chọn trợ lý
-
-#### T2.1.2 · Màn hình chọn trợ lý (UI-03)
-- T2.1.2.a — 3 nút/card: Academic Assistant, Learning Assistant, Knowledge Hub
-- T2.1.2.b — Mô tả ngắn mỗi trợ lý (tooltip hoặc subtitle)
-- T2.1.2.c — Ghi nhớ lựa chọn trợ lý cuối (localStorage)
-
-### T2.2 · Giao diện Academic Assistant & Learning Assistant (UI-04, UI-05)
-
-#### T2.2.1 · Chat interface (dùng chung cho 2 trợ lý)
-- T2.2.1.a — Layout: sidebar lịch sử hội thoại (trái) + vùng chat (giữa) + panel nguồn (phải)
-- T2.2.1.b — Input vùng nhập câu hỏi + nút gửi + phím tắt Ctrl+Enter
+#### T2.1.1 · Unified Chat interface (Agent điều phối tự động)
+- T2.1.1.a — Layout: sidebar lịch sử hội thoại (trái) + vùng chat (giữa) + panel nguồn (phải)
+- T2.1.1.b — Input vùng nhập câu hỏi + nút gửi + phím tắt Ctrl+Enter
+- T2.1.1.c — Streaming response: hiển thị text dần từng token (SSE hoặc chunked fetch)
+- T2.1.1.d — Giao diện hiển thị badge: "Đang trả lời bởi [Tên Trợ Lý]" do backend phân loại tự động
 - T2.2.1.c — Streaming response: hiển thị text dần từng token (SSE hoặc chunked fetch)
 - T2.2.1.d — Typing indicator khi đang chờ phản hồi
 
-#### T2.2.2 · Hiển thị câu trả lời có nguồn (citation)
-- T2.2.2.a — Render markdown trong câu trả lời (thư viện `react-markdown`)
-- T2.2.2.b — Footnote/inline citation `[1]`, `[2]` click mở panel nguồn
-- T2.2.2.c — Panel nguồn: tên file, trang/slide, đoạn trích nổi bật (highlight)
-- T2.2.2.d — Nút "Mở tài liệu gốc" → link đến Knowledge Hub đúng trang
+#### T2.1.2 · Hiển thị câu trả lời có nguồn (citation)
+- T2.1.2.a — Render markdown trong câu trả lời (thư viện `react-markdown`)
+- T2.1.2.b — Footnote/inline citation `[1]`, `[2]` click mở panel nguồn
+- T2.1.2.c — Panel nguồn: tên file, trang/slide, đoạn trích nổi bật (highlight)
+- T2.1.2.d — Nút "Mở tài liệu gốc" → link đến Knowledge Hub đúng trang
 
-#### T2.2.3 · Trường hợp đặc biệt
-- T2.2.3.a — Không đủ nguồn: hiển thị banner "Chưa đủ cơ sở..." + gợi ý từ khóa
-- T2.2.3.b — Bài tính điểm: hiển thị thông báo chuyển sang giải thích khái niệm
-- T2.2.3.c — Lỗi server/timeout: toast lỗi + nút thử lại
-- T2.2.3.d — Nút phản hồi chất lượng: 👍 👎 + form báo lỗi tuỳ chọn
+#### T2.1.3 · Trường hợp đặc biệt
+- T2.1.3.a — Không đủ nguồn: hiển thị banner "Chưa đủ cơ sở..." + gợi ý từ khóa
+- T2.1.3.b — Bài tính điểm: hiển thị thông báo chuyển sang giải thích khái niệm
+- T2.1.3.c — Lỗi server/timeout: toast lỗi + nút thử lại
+- T2.1.3.d — Nút phản hồi chất lượng: 👍 👎 + form báo lỗi tuỳ chọn
 
-#### T2.2.4 · Lịch sử hội thoại
-- T2.2.4.a — Gọi API lấy danh sách session (`GET /api/chat/sessions`)
-- T2.2.4.b — Load lại hội thoại cũ khi click vào session
-- T2.2.4.c — Nút xóa session (confirm dialog)
+#### T2.1.4 · Lịch sử hội thoại
+- T2.1.4.a — Gọi API lấy danh sách session (`GET /api/chat/sessions`)
+- T2.1.4.b — Load lại hội thoại cũ khi click vào session
+- T2.1.4.c — Nút xóa session (confirm dialog)
 
-### T2.3 · Knowledge Hub (UI-06)
+### T2.2 · Knowledge Hub (UI-06)
 
-#### T2.3.1 · Trang tìm kiếm tài liệu
-- T2.3.1.a — Search bar nổi bật + bộ lọc: môn học, loại file (PDF/PPTX), ngày
-- T2.3.1.b — Kết quả: danh sách document cards (tên, môn, loại, ngày duyệt)
-- T2.3.1.c — Highlight từ khóa trong đoạn trích kết quả
-- T2.3.1.d — Pagination hoặc infinite scroll
+#### T2.2.1 · Trang tìm kiếm tài liệu
+- T2.2.1.a — Search bar nổi bật + bộ lọc: môn học, loại file (PDF/PPTX), ngày
+- T2.2.1.b — Kết quả: danh sách document cards (tên, môn, loại, ngày duyệt)
+- T2.2.1.c — Highlight từ khóa trong đoạn trích kết quả
+- T2.2.1.d — Pagination hoặc infinite scroll
 
-#### T2.3.2 · Trang xem tài liệu
-- T2.3.2.a — Hiển thị PDF inline (`react-pdf` hoặc `<iframe>`) với đúng trang từ citation
-- T2.3.2.b — Hiển thị PPTX: convert → ảnh hoặc text (nhận từ backend)
-- T2.3.2.c — Kiểm tra quyền: nếu không có quyền → 403 page có hướng dẫn
+#### T2.2.2 · Trang xem tài liệu
+- T2.2.2.a — Hiển thị PDF inline (`react-pdf` hoặc `<iframe>`) với đúng trang từ citation
+- T2.2.2.b — Hiển thị PPTX: convert → ảnh hoặc text (nhận từ backend)
+- T2.2.2.c — Kiểm tra quyền: nếu không có quyền → 403 page có hướng dẫn
 
-### T2.4 · Khu vực giảng viên cơ bản (UI-07)
+### T2.3 · Khu vực giảng viên cơ bản (UI-07)
 
-#### T2.4.1 · Upload tài liệu
-- T2.4.1.a — Drag & drop + click to upload (accept PDF, PPTX)
-- T2.4.1.b — Progress bar upload + trạng thái xử lý (pending → processing → ready to review)
-- T2.4.1.c — Hiển thị lỗi nếu file không hợp lệ hoặc OCR không hỗ trợ
-- T2.4.1.d — Preview kết quả trích xuất trước khi gửi duyệt
+#### T2.3.1 · Upload tài liệu
+- T2.3.1.a — Drag & drop + click to upload (accept PDF, PPTX)
+- T2.3.1.b — Progress bar upload + trạng thái xử lý (pending → processing → ready to review)
+- T2.3.1.c — Hiển thị lỗi nếu file không hợp lệ hoặc OCR không hỗ trợ
+- T2.3.1.d — Preview kết quả trích xuất trước khi gửi duyệt
 
-#### T2.4.2 · Giao diện theo dõi tài liệu đã upload
-- T2.4.2.a — Danh sách file đã tải: tên, trạng thái, ngày, người duyệt (nếu có)
-- T2.4.2.b — Nút hủy/xóa tài liệu đang chờ duyệt
+#### T2.3.2 · Giao diện theo dõi tài liệu đã upload
+- T2.3.2.a — Danh sách file đã tải: tên, trạng thái, ngày, người duyệt (nếu có)
+- T2.3.2.b — Nút hủy/xóa tài liệu đang chờ duyệt
 
 ---
 
@@ -228,12 +217,8 @@
 - T4.1.2.b — Hiển thị cảnh báo khi người dùng gần đạt quota (toast/banner)
 - T4.1.2.c — Màn hình "Đã đạt giới hạn" thân thiện với hướng dẫn
 
-### T4.2 · Cải thiện UX router thủ công
-
-#### T4.2.1 · Cho phép chọn trợ lý trong chat
-- T4.2.1.a — Dropdown/toggle trong chat header để đổi trợ lý mà không mất context
-- T4.2.1.b — Chỉ hiện Academic/Learning trong chat, Hub là trang riêng
-- T4.2.1.c — Gợi ý đổi trợ lý thông minh: "Câu hỏi này phù hợp hơn với Learning Assistant"
+### T4.2 · Cải thiện UX (Đã gộp thiết kế)
+*(Phần chọn trợ lý thủ công đã được lược bỏ do Agent backend đảm nhiệm điều phối tự động)*
 
 ---
 
@@ -297,13 +282,13 @@
 
 | ID | Màn hình | Tuần | Trạng thái |
 |---|---|---|---|
-| UI-01 | Đăng nhập | 1 | ⬜ |
-| UI-02 | Chọn môn học (Home) | 2 | ⬜ |
-| UI-03 | Chọn trợ lý | 2 | ⬜ |
-| UI-04 | Academic Assistant (Chat) | 2 | ⬜ |
-| UI-05 | Learning Assistant (Chat) | 2 | ⬜ |
+| UI-01 | Đăng nhập | 1 | ✅ |
+| UI-02 | Unified Chat (Giao diện Chat trung tâm) | 2 | ⬜ |
+| UI-03 | *(Đã gộp vào UI-02 do backend định tuyến)* | - | - |
+| UI-04 | *(Đã gộp vào UI-02 do backend định tuyến)* | - | - |
+| UI-05 | *(Đã gộp vào UI-02 do backend định tuyến)* | - | - |
 | UI-06 | Knowledge Hub (Search + View) | 2 | ⬜ |
-| UI-07 | GV Upload & Quản lý tài liệu | 2 | ⬜ |
+| UI-07 | GV Upload & Quản lý tài liệu | 2 | ✅ |
 | UI-08 | GV Duyệt tài liệu | 3 | ⬜ |
 | UI-09 | Dashboard Giảng viên (MUST) | 3 | ⬜ |
 | UI-10 | Admin Dashboard vận hành | 4 | ⬜ |

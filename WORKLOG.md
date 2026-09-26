@@ -20,9 +20,12 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| TV4 | T1.1.1 - Chốt stack công nghệ | ✅ Done | Next.js (App Router), shadcn/ui + Tailwind CSS | 0.5h |
+| TV4 | T1.1 - Khởi tạo project Next.js | ✅ Done | github branch `feat/frontend-setup` | 0.5h |
+| TV4 | T1.2 - Xây dựng Design System (Colors, Typography, Primitive Components) | ✅ Done | globals.css, shadcn components | 0.5h |
+| TV4 | T1.3 - Màn hình đăng nhập (UI-01) | ✅ Done | /login page với fastshot UI | 0.5h |
+| TV4 | T1.4 - Triển khai môi trường demo (Deploy) | ✅ Done | Dockerfile, docker-compose.yml | 0.5h |
 
-**Tổng kết ngày:** Đã chốt stack công nghệ frontend và đang tiến hành khởi tạo dự án.
+**Tổng kết ngày:** Hoàn thành xuất sắc toàn bộ Mục tiêu Tuần 1: Thiết lập dự án, Design System, UI Đăng nhập, và cấu hình Docker. Sẵn sàng tích hợp backend.
 
 ---
 
