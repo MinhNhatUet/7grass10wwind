@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 import numpy as np
@@ -20,6 +23,18 @@ from src.services import acl
 
 _cache: dict[str, tuple[list[str], np.ndarray]] = {}  # version_id → (chunk_ids, ma trận đã chuẩn hóa)
 _cache_lock = threading.Lock()
+
+# D-33: khi hội thoại gắn một tài liệu, mọi truy xuất trong lượt đó (Academic/Learning/Hub) chỉ lấy từ tài liệu này
+_document_scope: ContextVar[str | None] = ContextVar("document_scope", default=None)
+
+
+@contextmanager
+def document_scope(document_id: str | None) -> Iterator[None]:
+    token = _document_scope.set(document_id)
+    try:
+        yield
+    finally:
+        _document_scope.reset(token)
 
 
 def to_blob(vec: list[float]) -> bytes:
@@ -54,10 +69,22 @@ def embed_texts(texts: list[str]) -> list[bytes]:
     return out
 
 
+class EmbeddingUnavailableError(Exception):
+    """Provider embedding lỗi/hết quota khi truy xuất — trả lỗi kỹ thuật retryable, không phải 500 (PRD 11.4)."""
+
+    def __init__(self, code: str, rate_limited: bool) -> None:
+        super().__init__(code)
+        self.rate_limited = rate_limited
+
+
 def embed_query(text: str) -> np.ndarray:
     from src.services.llm import get_embeddings
 
-    return np.frombuffer(to_blob(get_embeddings().embed_query(text)), dtype=np.float32)
+    try:
+        vec = get_embeddings().embed_query(text)
+    except Exception as e:  # noqa: BLE001 — timeout/401/429/5xx của provider
+        raise EmbeddingUnavailableError(type(e).__name__, _is_rate_limit(e)) from e
+    return np.frombuffer(to_blob(vec), dtype=np.float32)
 
 
 def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[DocumentVersion, Document]]:
@@ -74,7 +101,8 @@ def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[Doc
             DocumentVersion.state == PUBLISHED,
         )
     ).all()
-    return [(v, d) for v, d in rows if acl.role_can_see_version(user, v)]
+    scope = _document_scope.get()
+    return [(v, d) for v, d in rows if acl.role_can_see_version(user, v) and (scope is None or d.id == scope)]
 
 
 def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray]:

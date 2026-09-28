@@ -57,6 +57,19 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(engine)
     _migrate_nullable_conversation_course(engine)
+    _migrate_conversation_document(engine)
+
+
+def _migrate_conversation_document(engine: Engine) -> None:
+    """D-33: thêm conversations.document_id (nullable) cho DB tạo trước đó."""
+    with engine.begin() as conn:
+        cols = (
+            [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(conversations)")]
+            if engine.dialect.name == "sqlite"
+            else []
+        )
+        if cols and "document_id" not in cols:
+            conn.exec_driver_sql("ALTER TABLE conversations ADD COLUMN document_id VARCHAR(40)")
 
 
 def _migrate_nullable_conversation_course(engine: Engine) -> None:

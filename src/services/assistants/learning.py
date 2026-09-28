@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.config import get_settings
 from src.models.orm import StudyPlan, User
-from src.services.assistants import BASE_POLICY, AssistantResult, call_json, format_sources
+from src.services.assistants import BASE_POLICY, AssistantResult, call_json, format_sources, json_dicts, json_list
 from src.services.assistants.academic import answer as academic_answer
 from src.services.assistants.academic import evidence
 from src.services.policy import INSUFFICIENT_MESSAGE
@@ -27,14 +27,20 @@ OVERLOAD_MESSAGE = (
 
 
 def explain(
-    db: Session, user: User, course_id: str, question: str, history: list, level: str | None
+    db: Session,
+    user: User,
+    course_id: str,
+    question: str,
+    history: list,
+    level: str | None,
+    retrieval_query: str | None = None,
 ) -> AssistantResult:
     """FR-03.1: giải thích theo mức; ví dụ tự tạo phải được đánh dấu là minh họa."""
     style = (
         LEVELS.get(level or "step", "từng bước")
         + "; ví dụ minh họa tự tạo phải ghi rõ 'Ví dụ minh họa (không trích nguyên văn)'"
     )
-    result = academic_answer(db, user, course_id, question, history, style=style)
+    result = academic_answer(db, user, course_id, question, history, style=style, retrieval_query=retrieval_query)
     result.payload["kind"] = "explain"
     return result
 
@@ -51,9 +57,9 @@ def _source_refs(raw: Any, hits: list[Hit], db: Session, user: User) -> list[int
     return refs
 
 
-def quiz(db: Session, user: User, course_id: str, topic: str) -> AssistantResult:
+def quiz(db: Session, user: User, course_id: str, topic: str, retrieval_query: str | None = None) -> AssistantResult:
     """FR-03.2: câu tự kiểm tra lấy từ nguồn hợp lệ, mỗi câu có chủ đề, mục tiêu và nguồn."""
-    hits = evidence(db, user, course_id, topic)
+    hits = evidence(db, user, course_id, retrieval_query or topic)
     if not hits:
         return AssistantResult(status="insufficient_evidence", content=INSUFFICIENT_MESSAGE, payload={"kind": "quiz"})
     n = get_settings().learning_quiz_questions
@@ -65,7 +71,7 @@ def quiz(db: Session, user: User, course_id: str, topic: str) -> AssistantResult
         temperature=0.3,
     )
     questions, used_n = [], set()
-    for i, q in enumerate(data.get("questions") or [], start=1):
+    for i, q in enumerate(json_dicts(data, "questions"), start=1):
         refs = _source_refs(q.get("source"), hits, db, user)
         if not refs or not str(q.get("question") or "").strip():
             continue  # câu không có nguồn hợp lệ bị loại, không trình bày
@@ -101,13 +107,13 @@ def assess(questions: list[dict], answers: dict[str, str], sources_text: str) ->
         )
         data = call_json(
             BASE_POLICY,
-            "Đánh giá mức hiểu theo TỪNG CHỦ ĐỀ dựa trên câu trả lời của Sinh viên và NGUỒN. Không đưa đáp án hoàn chỉnh, "
+            "Đánh giá mức hiểu theo TỪNG CHỦ ĐỀ (giữ NGUYÊN tên chủ đề như trong câu hỏi) dựa trên câu trả lời của Sinh viên và NGUỒN. Không đưa đáp án hoàn chỉnh, "
             "chỉ nêu ý cần xem lại. Trả về JSON "
             '{"topics":[{"topic":"...","level":"solid|needs_reinforcement|missing_foundation|insufficient_data",'
             '"rationale":"căn cứ ngắn","review":"ý cần xem lại"}]}'
             f"\n\nNGUỒN:\n{sources_text}\n\nCÂU TRẢ LỜI:\n{payload}",
         )
-        for t in data.get("topics") or []:
+        for t in json_dicts(data, "topics"):
             level = t.get("level") if t.get("level") in UNDERSTANDING else "insufficient_data"
             result["topics"].append(
                 {
@@ -173,7 +179,7 @@ def plan(
     )
     sessions, used_n, warnings = [], set(), []
     per_day: dict[int, int] = {}
-    for s in data.get("sessions") or []:
+    for s in json_dicts(data, "sessions"):
         try:
             day, mins = int(s.get("day")), int(s.get("minutes"))
         except (TypeError, ValueError):
@@ -202,7 +208,7 @@ def plan(
         return AssistantResult(
             status="needs_clarification", content=OVERLOAD_MESSAGE, payload={"kind": "plan", "overload": over}
         ), None
-    uncovered = [str(u) for u in data.get("uncovered") or [] if str(u).strip()]
+    uncovered = [str(u) for u in json_list(data, "uncovered") if str(u).strip()]
     if uncovered:
         warnings.append("Thiếu nguồn cho: " + "; ".join(uncovered))
     if any(s["missing_source"] for s in sessions):

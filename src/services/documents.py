@@ -197,6 +197,10 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
     version.quality_warnings = ext.warnings
     version.state = NEEDS_REVIEW if ingestion.needs_review(ext) else DRAFT
     job.status, job.stage, job.progress = "succeeded", "extracted", 1.0
+    if ext.chunks and get_settings().embed_on_upload:
+        # D-34: embedding sẵn ngay khi tải lên. Chỉ mục tạm này không tham gia tìm kiếm (retrieval chỉ lấy bản
+        # Published hiện hành); duyệt xong, bước index chỉ còn phần thiếu nên phát hành gần như ngay (PRD 9.2, FR-08)
+        db.add(IngestionJob(version_id=version.id, kind="embed"))
     document = db.get(Document, version.document_id)
     audit.record(
         db, actor_id=None, action="extract", object_type="version", object_id=version.id,
@@ -205,21 +209,53 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
     )  # fmt: skip
 
 
+PRE_EMBED_STATES = (DRAFT, NEEDS_REVIEW, PENDING)
+
+
+def _embed_missing(
+    db: Session, job: IngestionJob, version: DocumentVersion, *, stop_unless: tuple[str, ...] = ()
+) -> None:
+    """Embedding các chunk chưa có vector, theo lô; tiến độ ghi vào job. Chunk đã có vector được giữ (retry không tốn lại quota).
+
+    stop_unless: job embed trước duyệt dừng khi bản đã chuyển trạng thái (vd. đã duyệt → job index làm tiếp phần còn lại).
+    """
+    from src.services.retrieval import embed_texts
+
+    chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)))
+    todo = [c for c in chunks if c.embedding is None]
+    done = len(chunks) - len(todo)
+    batch = get_settings().embedding_batch_size
+    for i in range(0, len(todo), batch):
+        if stop_unless:
+            db.refresh(version)
+            if version.state not in stop_unless:
+                return
+        part = todo[i : i + batch]
+        for c, blob in zip(part, embed_texts([c.text for c in part]), strict=True):
+            c.embedding = blob
+        job.progress = min(1.0, (done + i + len(part)) / max(len(chunks), 1))
+        db.commit()
+
+
+def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
+    """D-34: embedding trước duyệt. Lỗi (vd. hết quota) KHÔNG đổi trạng thái bản — bước index sau duyệt làm tiếp."""
+    if version.state not in PRE_EMBED_STATES:
+        job.status, job.stage = "succeeded", "skipped"
+        return
+    try:
+        _embed_missing(db, job, version, stop_unless=PRE_EMBED_STATES)
+    except Exception as e:  # noqa: BLE001 — lỗi provider: ghi lại, không chặn luồng duyệt
+        log.warning("embed job %s lỗi: %s", job.id, type(e).__name__)
+        job.status, job.error_code = "failed", f"EMBEDDING_{type(e).__name__}"[:100]
+        return
+    job.status, job.stage = "succeeded", "embedded"
+
+
 def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
     version.state = INDEXING
     db.commit()
-    chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)))
     try:
-        from src.services.retrieval import embed_texts
-
-        todo = [c for c in chunks if c.embedding is None]
-        batch = get_settings().embedding_batch_size
-        for i in range(0, len(todo), batch):
-            part = todo[i : i + batch]
-            for c, blob in zip(part, embed_texts([c.text for c in part]), strict=True):
-                c.embedding = blob
-            job.progress = min(1.0, (i + len(part)) / max(len(todo), 1))
-            db.commit()
+        _embed_missing(db, job, version)
     except Exception as e:  # noqa: BLE001 — lỗi provider: giữ approval, Failed để retry (PRD 7.1.7.1)
         log.warning("index job %s lỗi: %s", job.id, type(e).__name__)
         version.state = FAILED
@@ -259,9 +295,18 @@ def _run_job(job_id: str) -> None:
         db.commit()
         if job.kind == "extract":
             _run_extract(db, job, version)
+        elif job.kind == "embed":
+            _run_embed(db, job, version)
         else:
             _run_index(db, job, version)
         db.commit()
+        # extract vừa xếp job embed (D-34) → chạy nền tiếp
+        for pending in db.scalars(
+            select(IngestionJob).where(
+                IngestionJob.version_id == version.id, IngestionJob.kind == "embed", IngestionJob.status == "queued"
+            )
+        ):
+            start_job(pending.id)
     except Exception as e:  # noqa: BLE001 — job không được làm sập tiến trình
         db.rollback()
         log.exception("job %s lỗi", job_id)

@@ -1,0 +1,13 @@
+{
+  "ragas_version": "0.4.3",
+  "metrics": ["faithfulness", "answer_relevancy", "context_precision"],
+  "context_source": "citation_quotes",
+  "judge_temperature": 0,
+  "thresholds": {
+    "_note": "PRD 13.5: ngưỡng ĐỀ XUẤT, phải được phê duyệt trước khi chạy nghiệm thu; không phải yêu cầu gốc",
+    "faithfulness": 0.85,
+    "answer_relevancy": 0.8,
+    "context_precision": 0.75
+  },
+  "thresholds_confirmed": false
+}

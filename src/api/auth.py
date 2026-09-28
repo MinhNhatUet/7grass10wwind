@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import bearer_token, current_session, current_user
@@ -12,12 +13,14 @@ from src.models.schemas import (
     LoginRequest,
     LoginResponse,
     MeResponse,
+    RegisterRequest,
     SessionInfo,
     UserPublic,
 )
-from src.services import acl
-from src.services.auth import AuthService, get_auth_service
+from src.services import acl, audit
+from src.services.auth import AuthService, get_auth_service, hash_password
 from src.services.auth import Session as AuthSession
+from src.services.errors import AppError
 
 router = APIRouter()
 
@@ -35,6 +38,33 @@ async def login(
 ) -> LoginResponse:
     client_ip = request.client.host if request.client else "unknown"
     token, session, user = auth.login(db, body.login_id, body.password, client_ip)
+    expires_in = int((session.expires_at - datetime.now(UTC)).total_seconds())
+    return LoginResponse(access_token=token, expires_in=expires_in, user=public_user(user))
+
+
+@router.post("/auth/register", response_model=LoginResponse, status_code=201)
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth: AuthService = Depends(get_auth_service),
+) -> LoginResponse:
+    """Tự đăng ký (D-35). Vai trò luôn là student, không có môn nào — Quản trị cấp môn/vai trò sau (BR-02, PRD 5.1)."""
+    login_id = body.login_id.strip()
+    if db.scalar(select(User).where(func.lower(User.login_id) == login_id.casefold())):
+        raise AppError("LOGIN_ID_TAKEN", 409)
+    user = User(
+        login_id=login_id,
+        display_name=(body.display_name or "").strip() or login_id.split("@")[0],
+        role="student",
+        password_hash=hash_password(body.password),
+    )
+    db.add(user)
+    db.flush()
+    audit.record(db, actor_id=user.id, action="self_register", object_type="user", object_id=user.id)
+    db.commit()
+    client_ip = request.client.host if request.client else "unknown"
+    token, session, user = auth.login(db, login_id, body.password, client_ip)
     expires_in = int((session.expires_at - datetime.now(UTC)).total_seconds())
     return LoginResponse(access_token=token, expires_in=expires_in, user=public_user(user))
 

@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     embedding_max_retries: int = Field(default=6, ge=0)  # chỉ cho lỗi 429 (rate limit)
     embedding_backoff_seconds: float = Field(default=10, ge=0)  # chờ 10, 20, 40… giây (tối đa 120)
     embedding_pause_seconds: float = Field(default=3, ge=0)  # nghỉ giữa các lô
+    # D-34: embedding ngay sau trích xuất (chỉ mục tạm, KHÔNG tham gia tìm kiếm tới khi Published — PRD 9.2)
+    embed_on_upload: bool = True
     retrieval_top_k: int = Field(default=6, gt=0)  # PRD 10.2: 5–8 đoạn sau rerank
     retrieval_min_score: float = Field(default=0.55, ge=-1, le=1)  # evidence gate, hiệu chỉnh trên dev
     chat_max_input_chars: int = Field(default=5000, gt=0)
