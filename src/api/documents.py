@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key
@@ -200,7 +200,21 @@ def manage_versions(
     )
     if state:
         stmt = stmt.where(DocumentVersion.state == state)
-    return {"items": [version_view(v, d, full=True) for v, d in db.execute(stmt).all()]}
+    rows = db.execute(stmt).all()
+    # D-34: tiến độ embedding (kể cả embedding sẵn trước duyệt) để GV/người duyệt thấy tài liệu đã sẵn sàng cho LLM chưa
+    counts = dict(
+        (vid, (total, done))
+        for vid, total, done in db.execute(
+            select(Chunk.version_id, func.count(Chunk.id), func.count(Chunk.embedding))
+            .where(Chunk.version_id.in_([v.id for v, _ in rows]))
+            .group_by(Chunk.version_id)
+        )
+    )
+    items = []
+    for v, d in rows:
+        total, done = counts.get(v.id, (0, 0))
+        items.append(version_view(v, d, full=True) | {"chunk_count": total, "embedded_count": done})
+    return {"items": items}
 
 
 @router.get("/jobs/{job_id}")

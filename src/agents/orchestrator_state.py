@@ -16,7 +16,9 @@ Mode = Literal["auto", "academic", "learning", "hub"]
 class RouteDecision(TypedDict, total=False):
     course_id: str | None  # môn router chọn — luôn thuộc danh sách môn backend cho phép (BR-02)
     assistant: Literal["academic", "learning", "hub", "clarify"]
-    learning_action: Literal["explain", "quiz", "plan"] | None
+    learning_action: str | None  # explain|analogy|quiz|diagnose|flashcards|cloze|triage|plan
+    analogy_context: str | None
+    search_terms: str | None
     level: str | None
     goal: str | None
     topic: str | None

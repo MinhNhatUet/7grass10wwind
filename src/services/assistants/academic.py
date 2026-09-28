@@ -15,6 +15,7 @@ from src.services.assistants import (
     call_json,
     format_history,
     format_sources,
+    json_list,
     supporting_quotes,
     validate_citations,
 )
@@ -40,9 +41,15 @@ def evidence(db: Session, user: User, course_id: str, query: str) -> list[Hit]:
 
 
 def answer(
-    db: Session, user: User, course_id: str, question: str, history: list[tuple[str, str]], style: str | None = None
+    db: Session,
+    user: User,
+    course_id: str,
+    question: str,
+    history: list[tuple[str, str]],
+    style: str | None = None,
+    retrieval_query: str | None = None,
 ) -> AssistantResult:
-    hits = evidence(db, user, course_id, question)
+    hits = evidence(db, user, course_id, retrieval_query or question)
     if not hits:
         return AssistantResult(status="insufficient_evidence", content=INSUFFICIENT_MESSAGE)
     style_line = f"\nMức giải thích yêu cầu: {style}." if style else ""
@@ -65,7 +72,7 @@ def answer(
         return AssistantResult(
             status="insufficient_evidence", content=SOURCE_WITHDRAWN_MESSAGE if dropped else INSUFFICIENT_MESSAGE
         )
-    missing = [str(m) for m in data.get("missing") or [] if str(m).strip()]
+    missing = [str(m) for m in json_list(data, "missing") if str(m).strip()]
     if dropped and status == "answered":
         status = "partial"
     if missing:

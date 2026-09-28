@@ -25,6 +25,14 @@ BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc
 7. Trả lời bằng tiếng Việt, giữ thuật ngữ gốc khi giúp hiểu. Không nêu điểm similarity như xác suất đúng."""
 
 CITATION_RE = re.compile(r"\[(\d{1,2})\]")
+# Không khớp chỉ số mảng dính liền tên biến ("A[1, 2]", "a[0]" — rất hay gặp trong sách CTDL & GT)
+MULTI_CITATION_RE = re.compile(r"(?<![\w\])])\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\]")
+ANY_CITATION_RE = re.compile(r"\s*(?<![\w\])])\[\d{1,2}(?:\s*,\s*\d{1,2})*\]")
+
+
+def strip_citations(text: str) -> str:
+    """Bỏ nhãn [n] khỏi nội dung thẻ/mục có trường nguồn riêng (flashcard, cấp cứu)."""
+    return ANY_CITATION_RE.sub("", text).strip()
 
 
 class LlmError(Exception):
@@ -112,6 +120,17 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
         raise LlmError("INVALID_JSON") from e
 
 
+def json_list(data: dict[str, Any], key: str) -> list[Any]:
+    """Trường mảng trong JSON model trả về; sai kiểu (chuỗi, số, object…) → [] thay vì lặp từng ký tự."""
+    value = data.get(key)
+    return value if isinstance(value, list) else []
+
+
+def json_dicts(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Mảng object trong JSON model trả về; bỏ phần tử không phải object (vd {"questions":["bad"]})."""
+    return [x for x in json_list(data, key) if isinstance(x, dict)]
+
+
 def validate_citations(db: Session, user: User, text: str, hits: list[Hit]) -> tuple[str, list[tuple[int, Hit]], bool]:
     """FR-10.2: số [n] phải thuộc context thực tế; nguồn phải còn phục vụ được ngay lúc trả (AC-10.4).
 
@@ -133,5 +152,7 @@ def validate_citations(db: Session, user: User, text: str, hits: list[Hit]) -> t
             used[n] = hit
         return m.group(0)
 
+    # "[1, 3]" / "[1,3]" → "[1][3]" để MỌI số đều qua kiểm tra (không để nhãn gộp lọt khỏi validator)
+    text = MULTI_CITATION_RE.sub(lambda m: "".join(f"[{n.strip()}]" for n in m.group(1).split(",")), text)
     cleaned = CITATION_RE.sub(repl, text)
     return cleaned.strip(), sorted(used.items()), dropped_revoked

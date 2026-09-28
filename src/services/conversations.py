@@ -12,17 +12,17 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.agents import orchestrator
 from src.config import get_settings
-from src.models.orm import Chunk, Citation, Conversation, Course, Message, StudyPlan, UsageEvent, User, new_id
+from src.models.orm import Chunk, Citation, Conversation, Course, Document, Message, StudyPlan, UsageEvent, User, new_id
 from src.services import acl
-from src.services.assistants import AssistantResult, LlmError, learning
+from src.services.assistants import AssistantResult, LlmError, learning, study_tools
 from src.services.errors import AppError, bad_request, forbidden, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
-from src.services.retrieval import still_servable
+from src.services.retrieval import EmbeddingUnavailableError, document_scope, servable_versions, still_servable
 
 ASSISTANTS = ("academic", "learning", "hub")
 MODES = ("auto", *ASSISTANTS)  # "auto" = router điều phối (FR-11); còn lại = chuyển thủ công (FR-11.5)
@@ -32,18 +32,41 @@ QUOTE_CHARS = 400
 # ---------------------------------------------------------------- hội thoại
 
 
-def create(db: Session, user: User, course_id: str | None, assistant: str, title: str | None) -> Conversation:
-    """course_id None (mặc định, D-28): router chọn môn theo từng câu hỏi. Có course_id: cố định một môn."""
+def create(
+    db: Session, user: User, course_id: str | None, assistant: str, title: str | None, document_id: str | None = None
+) -> Conversation:
+    """course_id None (mặc định, D-28): router chọn môn theo từng câu hỏi. Có course_id: cố định một môn.
+
+    document_id (D-33): hỏi trong một tài liệu — môn lấy từ tài liệu (không tin client), tài liệu phải đang được phục vụ
+    cho user; không có quyền/không tồn tại → 404 như nhau (BR-10)."""
     if assistant not in MODES:
         raise bad_request("INVALID_ASSISTANT")
+    if document_id is not None:
+        document = scoped_document(db, user, document_id)
+        if document is None:
+            raise not_found()
+        course_id = document.course_id
+        title = title or f"Hỏi về: {document.title}"
     if course_id is not None and not acl.can_read_course(db, user, course_id):
         raise forbidden("COURSE_NOT_ALLOWED")  # BR-02: không tin course do client gửi
     conv = Conversation(
-        owner_id=user.id, course_id=course_id, assistant_mode=assistant, title=(title or "Hội thoại mới")[:300]
+        owner_id=user.id,
+        course_id=course_id,
+        document_id=document_id,
+        assistant_mode=assistant,
+        title=(title or "Hội thoại mới")[:300],
     )
     db.add(conv)
     db.commit()
     return conv
+
+
+def scoped_document(db: Session, user: User, document_id: str) -> Document | None:
+    """Tài liệu còn được phục vụ cho user (Published hiện hành, đúng môn/ACL, không khóa) — kiểm tra lại mỗi lượt."""
+    document = db.get(Document, document_id)
+    if document is None:
+        return None
+    return next((d for _, d in servable_versions(db, user, document.course_id) if d.id == document_id), None)
 
 
 def get_owned(db: Session, user: User, conversation_id: str) -> Conversation:
@@ -78,6 +101,18 @@ def delete(db: Session, user: User, conversation_id: str) -> None:
     conv = get_owned(db, user, conversation_id)
     conv.deleted_at = datetime.now(UTC)
     db.commit()
+
+
+def delete_all(db: Session, user: User) -> int:
+    """FR-05.7 cho toàn bộ lịch sử: chỉ hội thoại của CHÍNH user từ token (BR-02), xóa mềm như `delete`."""
+    rows = db.scalars(
+        select(Conversation).where(Conversation.owner_id == user.id, Conversation.deleted_at.is_(None))
+    ).all()
+    stamp = datetime.now(UTC)
+    for conv in rows:
+        conv.deleted_at = stamp
+    db.commit()
+    return len(rows)
 
 
 # ---------------------------------------------------------------- hiển thị message
@@ -130,6 +165,15 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
     }
 
 
+def replay(db: Session, user: User, conv: Conversation, stored: dict[str, Any]) -> dict[str, Any]:
+    """Idempotency replay (PRD 11.4) KHÔNG trả nguyên response đã lưu: đọc lại message và serialize theo quyền hiện
+    tại, để nguồn đã thu hồi/khóa/mất membership bị che như khi xem lịch sử (BR-03, BR-10, FR-05.4)."""
+    msg = db.get(Message, stored.get("message_id")) if isinstance(stored, dict) else None
+    if msg is None or msg.conversation_id != conv.id:
+        raise not_found()
+    return serialize(db, user, msg, conv)
+
+
 def _iso(dt: datetime) -> str:
     return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).isoformat(timespec="seconds")
 
@@ -142,34 +186,59 @@ def _can_download(db: Session, user: User, version_id: str) -> bool:
 
 
 def list_messages(
-    db: Session, user: User, conversation_id: str, limit: int, cursor: int
+    db: Session, user: User, conversation_id: str, limit: int, cursor: int, latest: bool = False
 ) -> tuple[list[dict], int | None]:
+    """Luôn trả theo thứ tự thời gian tăng dần. latest=True: trang tính từ tin MỚI NHẤT (cursor = số tin mới đã bỏ
+    qua; next_cursor dùng để tải tin cũ hơn) — hội thoại dài vẫn mở đúng phần vừa trả lời."""
     conv = get_owned(db, user, conversation_id)
+    order = (Message.created_at.desc(), Message.id.desc()) if latest else (Message.created_at, Message.id)
     rows = list(
         db.scalars(
-            select(Message)
-            .where(Message.conversation_id == conv.id)
-            .order_by(Message.created_at, Message.id)
-            .offset(cursor)
-            .limit(limit + 1)
+            select(Message).where(Message.conversation_id == conv.id).order_by(*order).offset(cursor).limit(limit + 1)
         )
     )
-    return [serialize(db, user, m, conv) for m in rows[:limit]], (cursor + limit if len(rows) > limit else None)
+    page = rows[:limit]
+    if latest:
+        page.reverse()
+    return [serialize(db, user, m, conv) for m in page], (cursor + limit if len(rows) > limit else None)
 
 
 # ---------------------------------------------------------------- gửi câu hỏi
 
 
-def _history(db: Session, conv: Conversation, before_id: str) -> list[tuple[str, str]]:
-    msgs = db.scalars(
-        select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at, Message.id)
+HISTORY_TURNS = 6  # format_history chỉ dùng 6 tin gần nhất
+
+
+def _before(before: Message) -> Any:
+    """Điều kiện "tin đứng trước `before`" theo đúng thứ tự hiển thị (created_at, id)."""
+    return or_(
+        Message.created_at < before.created_at,
+        and_(Message.created_at == before.created_at, Message.id < before.id),
     )
-    out = []
-    for m in msgs:
-        if m.id == before_id:
-            break
-        out.append((m.role, m.content))
-    return out
+
+
+def _history(db: Session, user: User, conv: Conversation, before: Message) -> list[tuple[str, str]]:
+    """Ngữ cảnh đưa vào LLM, kiểm tra lại quyền như khi hiển thị (BR-03, BR-10): câu trả lời có nguồn nay không
+    còn phục vụ được cho user thì thay bằng thông báo thu hồi — nội dung bị che trên UI không được lọt vào prompt."""
+    rows = db.scalars(
+        select(Message)
+        .where(Message.conversation_id == conv.id, _before(before))
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(HISTORY_TURNS)
+    ).all()
+    return [(m.role, _history_text(db, user, m)) for m in reversed(rows)]
+
+
+def _history_text(db: Session, user: User, m: Message) -> str:
+    if m.role != "assistant":
+        return m.content
+    if any(not still_servable(db, user, c.version_id) for c in m.citations):
+        return SOURCE_WITHDRAWN_MESSAGE
+    results = (m.payload or {}).get("results") or []
+    if (m.payload or {}).get("kind") == "hub" and results:
+        if not any(still_servable(db, user, r["version_id"]) for r in results):
+            return SOURCE_WITHDRAWN_MESSAGE
+    return m.content
 
 
 def _check_quota(db: Session, user: User) -> None:
@@ -219,9 +288,15 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     # Router chỉ được chọn trong các môn user đang được đọc (BR-02); hội thoại cố định môn thì chỉ môn đó
     readable = acl.readable_course_ids(db, user)
     candidates = [conv.course_id] if conv.course_id else readable
+    plan_id = (body.get("learning") or {}).get("plan_id")
+    if plan_id:  # D-37: bài ôn tập của một buổi trong lộ trình — không để router đoán môn
+        candidates = [get_plan(db, user, plan_id).course_id]
     if not candidates or any(c not in readable for c in candidates):
         raise forbidden("COURSE_NOT_ALLOWED")
     courses = [(cid, course_name(db, cid)) for cid in candidates]
+    # Hội thoại gắn tài liệu: tài liệu đã thu hồi/mất quyền → dừng, không âm thầm hỏi sang tài liệu khác (BR-03)
+    if conv.document_id and scoped_document(db, user, conv.document_id) is None:
+        raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
     content = str(body.get("content") or "").strip()
     if not content:
         raise bad_request("EMPTY_MESSAGE")
@@ -264,20 +339,26 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     started = time.perf_counter()
     status, chosen, routed_course = "error", mode, None
     try:
-        result, trace = orchestrator.run(
-            db=db,
-            user=user,
-            courses=courses,
-            previous_course_id=_previous_course(db, conv, user_msg.id),
-            request_id=request_id,
-            question=content,
-            history=_history(db, conv, user_msg.id),
-            mode=mode,
-            options=body.get("learning") or {},
-        )
+        with document_scope(conv.document_id):
+            result, trace = orchestrator.run(
+                db=db,
+                user=user,
+                courses=courses,
+                previous_course_id=_previous_course(db, conv, user_msg),
+                request_id=request_id,
+                question=content,
+                history=_history(db, user, conv, user_msg),
+                mode=mode,
+                options=body.get("learning") or {},
+            )
         chosen = trace["assistant"] if trace["assistant"] in ASSISTANTS else "router"
         routed_course = trace.get("course_id")
         result.payload["route"] = trace  # trace điều phối (AC-11.5), hiển thị "Router: đã chọn …" (FR-11.5)
+        if conv.document_id and result.status == "insufficient_evidence":
+            result.content += (
+                '\n\nCâu hỏi đang giới hạn trong tài liệu đã chọn. Bấm "Hỏi toàn bộ môn" để tìm trong mọi tài liệu '
+                "bạn được phép đọc."
+            )
         msg = _persist_answer(db, conv, request_id, chosen, result)
         if result.payload.get("plan_data") is not None:
             _attach_plan(db, user, conv, msg, result, routed_course)
@@ -287,6 +368,10 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     except LlmError as e:
         db.rollback()
         raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
+    except EmbeddingUnavailableError as e:
+        # Không tìm được nguồn vì dịch vụ embedding lỗi/hết quota: KHÔNG trả lời không nguồn, báo lỗi kỹ thuật (PRD 11.4)
+        db.rollback()
+        raise AppError("EMBEDDING_QUOTA" if e.rate_limited else "EMBEDDING_UNAVAILABLE", 503, retryable=True) from e
     finally:
         db.add(
             UsageEvent(
@@ -391,7 +476,7 @@ def save_quiz_answers(
     db: Session, user: User, message_id: str, answers: dict[str, str], submit: bool
 ) -> dict[str, Any]:
     msg = db.get(Message, message_id)
-    if msg is None or (msg.payload or {}).get("kind") != "quiz":
+    if msg is None or (msg.payload or {}).get("kind") not in ("quiz", "diagnose"):
         raise not_found()
     conv = get_owned(db, user, msg.conversation_id)
     payload = dict(msg.payload)
@@ -407,6 +492,9 @@ def save_quiz_answers(
             payload["assessment"] = learning.assess(
                 payload.get("questions", []), payload["answers"], "\n\n".join(chunks)
             )
+            if payload.get("kind") == "diagnose":  # chỉ ra trang cần đọc lại cho phần hổng, lấy từ citation thật
+                pages = {c.ordinal: c.locator_value for c in msg.citations if still_servable(db, user, c.version_id)}
+                payload["assessment"] = study_tools.review_pages(payload["questions"], payload["assessment"], pages)
         except LlmError as e:
             db.rollback()
             raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
@@ -420,18 +508,17 @@ def message_course(msg: Message, conv: Conversation) -> str | None:
     return ((msg.payload or {}).get("route") or {}).get("course_id") or conv.course_id
 
 
-def _previous_course(db: Session, conv: Conversation, before_id: str) -> str | None:
-    """Môn của câu trả lời gần nhất — router dùng làm gợi ý cho câu nối tiếp."""
-    last = None
+def _previous_course(db: Session, conv: Conversation, before: Message) -> str | None:
+    """Môn của câu trả lời gần nhất có môn — router dùng làm gợi ý cho câu nối tiếp."""
     for m in db.scalars(
         select(Message)
-        .where(Message.conversation_id == conv.id, Message.role == "assistant")
-        .order_by(Message.created_at, Message.id)
+        .where(Message.conversation_id == conv.id, Message.role == "assistant", _before(before))
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(20)
     ):
-        if m.id == before_id:
-            break
-        last = message_course(m, conv) or last
-    return last
+        if course := message_course(m, conv):
+            return course
+    return None
 
 
 def course_name(db: Session, course_id: str) -> str:
