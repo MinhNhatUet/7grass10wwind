@@ -378,6 +378,7 @@ export default function KnowledgeHub() {
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded bg-[#7f8a8c] flex items-center justify-center"><BookOpen size={11} className="text-white"/></div>
                   <span className="text-[11px] font-semibold text-black/70 dark:text-white/70">Knowledge Hub</span>
+                  <Link href="/hub/review" className="text-xs text-blue-600 hover:underline">Quản lý / biên tập</Link>
                 </div>
                 <button onClick={() => setIsSidebarOpen(false)} className="w-5 h-5 flex items-center justify-center rounded text-black/40 dark:text-white/40 hover:bg-black/6 dark:hover:bg-white/6 transition-colors"><X size={13}/></button>
               </div>

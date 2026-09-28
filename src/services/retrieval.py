@@ -29,7 +29,18 @@ def to_blob(vec: list[float]) -> bytes:
 
 
 def _is_rate_limit(e: Exception) -> bool:
-    return type(e).__name__ == "RateLimitError" or getattr(e, "status_code", None) == 429
+    """Recognize 429 even when the Gemini integration wraps the SDK error."""
+    seen: set[int] = set()
+    current: BaseException | None = e
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ == "RateLimitError":
+            return True
+        # google.genai ClientError exposes code; OpenAI exposes status_code.
+        if any(getattr(current, attr, None) in (429, "429") for attr in ("code", "status_code")):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def embed_texts(texts: list[str]) -> list[bytes]:

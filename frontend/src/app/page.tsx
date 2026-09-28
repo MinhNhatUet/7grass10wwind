@@ -10,7 +10,7 @@ import { useTheme } from "next-themes";
 
 // MOCK DATA TYPES
 type Role = 'user' | 'assistant';
-type Source = { id: string; title: string; page: number; content: string };
+type Source = { id: string; title: string; page: number; content: string; url?: string };
 type Message = {
   id: string;
   role: Role;
@@ -33,10 +33,21 @@ export default function UnifiedChat() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [history, setHistory] = useState<any[]>([]);
   const hasMessages = messages.length > 0;
+  const [user, setUser] = useState<{ display_name?: string; role?: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('user');
+        if (stored) setUser(JSON.parse(stored));
+      } catch (e) {}
+    }
+  }, []);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -45,22 +56,66 @@ export default function UnifiedChat() {
     }
   }, [messages, isLoading]);
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        if (!token) return;
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setHistory(data.items || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch history", err);
+  const fetchHistory = async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem("token") : "";
+      if (!token) return;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return;
       }
-    };
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.items || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch history", err);
+    }
+  };
+
+  const loadConversation = async (convId: string) => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem("token") : "";
+      if (!token) return;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/${convId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return;
+      }
+      if (res.ok) {
+        const data = await res.json();
+        const loadedMessages: Message[] = data.items.map((m: any) => ({
+          id: m.message_id || m.id,
+          role: m.role,
+          content: m.content,
+          agentName: m.role === 'assistant' ? 'Academic Assistant' : undefined,
+          sources: m.citations?.map((c: any) => ({
+            id: c.id,
+            title: c.document_title || `Tài liệu ${c.document_id}`,
+            page: c.locator?.value ?? c.locator_value ?? 1,
+            content: c.quote || "",
+            url: c.url || `http://localhost:8000/api/v1/documents/${c.document_id}/versions/${c.version_id}/download`
+          })) || []
+        }));
+        setMessages(loadedMessages);
+        setActiveConversationId(convId);
+        setActiveSource(null);
+      }
+    } catch (err) {
+      console.error("Failed to load conversation", err);
+    }
+  };
+
+  useEffect(() => {
     fetchHistory();
   }, []);
 
@@ -77,15 +132,47 @@ export default function UnifiedChat() {
 
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem("token") : "";
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/chat`, {
+      
+      let convId = activeConversationId;
+      if (!convId) {
+        const convRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ assistant: "academic" })
+        });
+        if (convRes.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          window.location.href = "/login";
+          return;
+        }
+        if (convRes.ok) {
+          const convData = await convRes.json();
+          convId = convData.conversation_id || convData.id;
+          setActiveConversationId(convId);
+          fetchHistory();
+        }
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/${convId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: currentPrompt }),
+        body: JSON.stringify({ content: currentPrompt, assistant: "academic" }),
       });
       
+      if (response.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("Chat request failed");
       }
@@ -93,13 +180,20 @@ export default function UnifiedChat() {
       const data = await response.json();
       
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: data.id || (Date.now() + 1).toString(),
         role: "assistant",
         agentName: "Academic Assistant",
-        content: data.response,
-        sources: []
+        content: data.content,
+        sources: data.citations?.map((c: any) => ({
+          id: c.id,
+          title: c.document_title || `Tài liệu ${c.document_id}`,
+          page: c.locator?.value ?? c.locator_value ?? 1,
+          content: c.quote || "",
+          url: c.url || `http://localhost:8000/api/v1/documents/${c.document_id}/versions/${c.version_id}/download`
+        })) || []
       };
       setMessages(prev => [...prev, assistantMessage]);
+      fetchHistory(); // Cập nhật lịch sử
     } catch (err) {
       console.error(err);
       const errorMessage: Message = {
@@ -144,14 +238,14 @@ export default function UnifiedChat() {
               <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-black dark:text-black/50 dark:text-white/50 hover:text-black dark:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 transition-colors">
                 <Menu size={20} />
               </button>
-              <Link href="/login" className="p-2 text-black dark:text-black/50 dark:text-white/50 hover:text-black dark:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 transition-colors">
+              <Link href={user ? "/profile" : "/login"} aria-label={user ? "Hồ sơ cá nhân" : "Đăng nhập"} title={user ? "Hồ sơ cá nhân" : "Đăng nhập"} className="p-2 text-black dark:text-black/50 dark:text-white/50 hover:text-black dark:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 transition-colors">
                 <User size={20} />
               </Link>
             </div>
 
             {/* New Chat Button */}
             <div className="px-3 pb-3 w-[260px] shrink-0">
-              <button onClick={() => { setMessages([]); setActiveSource(null); }} className="w-full flex items-center justify-between bg-white/5 dark:bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 dark:bg-black/10 dark:bg-white/10 border border-black/5 dark:border-white/5 text-black dark:text-black/90 dark:text-white/90 px-3 py-2.5 rounded-lg transition-colors cursor-pointer text-[14px] font-medium">
+              <button onClick={() => { setMessages([]); setActiveSource(null); setActiveConversationId(null); }} className="w-full flex items-center justify-between bg-white/5 dark:bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 dark:bg-black/10 dark:bg-white/10 border border-black/5 dark:border-white/5 text-black dark:text-black/90 dark:text-white/90 px-3 py-2.5 rounded-lg transition-colors cursor-pointer text-[14px] font-medium">
                 <span className="flex items-center gap-2">
                   <div className="w-[20px] h-[20px] rounded-full bg-gradient-to-br from-[#c69aff] to-[#8c55db] flex items-center justify-center shadow-md">
                     <Zap size={12} className="text-black dark:text-white" />
@@ -177,7 +271,7 @@ export default function UnifiedChat() {
               <div className="text-xs font-semibold text-black dark:text-black/40 dark:text-white/40 mb-3 px-2">Gần đây (Recents)</div>
               
               {history.map((chat) => (
-                <div key={chat.id} className="group relative w-full flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2.5 rounded-lg cursor-pointer mb-1">
+                <div key={chat.id} onClick={() => loadConversation(chat.id)} className={`group relative w-full flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2.5 rounded-lg cursor-pointer mb-1 ${activeConversationId === chat.id ? 'bg-black/5 dark:bg-white/10' : ''}`}>
                   <div className="flex items-center gap-3 overflow-hidden flex-1">
                      <span className="truncate text-[14px] text-black dark:text-black/80 dark:text-white/80">{chat.title || "Hội thoại mới"}</span>
                   </div>
@@ -233,17 +327,17 @@ export default function UnifiedChat() {
 
             {/* Theme Toggle & User */}
             <div className="p-3 border-t border-black/10 dark:border-white/10 mt-auto flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
+              <a href="/profile" aria-label="Mở hồ sơ cá nhân" className="flex items-center gap-3 rounded-lg hover:opacity-80">
                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shrink-0" />
                  <div className="flex flex-col">
                     <span className="text-sm font-medium text-black dark:text-white">
-                      {typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('user') || '{}').display_name || 'Khách') : 'Khách'}
+                      {user ? (user.display_name || 'Khách') : 'Khách'}
                     </span>
                     <span className="text-[11px] text-black/50 dark:text-white/50 capitalize">
-                      {typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('user') || '{}').role || 'Guest') : 'Guest'}
+                      {user ? (user.role || 'Guest') : 'Guest'}
                     </span>
                  </div>
-              </div>
+              </a>
               <button 
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                 className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg border-0 cursor-pointer bg-transparent transition-colors"
@@ -314,7 +408,7 @@ export default function UnifiedChat() {
                         </div>
                       )}
                       
-                      <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-black/5 dark:bg-[#2f2f2f] text-black dark:text-white rounded-[20px] px-5 py-3' : 'text-black/90 dark:text-white/90 pt-1'}`}>
+                      <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-black/5 dark:bg-[#2f2f2f] text-black dark:text-white rounded-[20px] px-5 py-3' : 'bg-blue-50/80 dark:bg-[#1a2b4c]/80 text-blue-900 dark:text-blue-100 rounded-[20px] px-5 py-4'}`}>
                         {msg.agentName && (
                           <div className="text-[12px] font-semibold text-[#c69aff] mb-2 uppercase tracking-wide">
                             {msg.agentName}
@@ -324,20 +418,47 @@ export default function UnifiedChat() {
                         {msg.role === 'user' ? (
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</div>
                         ) : (
-                          <div className="prose prose dark:prose-invert max-w-none text-[15px] leading-relaxed prose-p:mb-4 prose-a:text-[#ffc09a] prose-a:no-underline hover:prose-a:underline">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                            
-                            {msg.sources && msg.sources.length > 0 && (
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                {msg.sources.map((src, idx) => (
-                                  <button key={src.id} onClick={() => setActiveSource(src)} className="bg-white/5 dark:bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:border-black/30 dark:border-white/30 text-black dark:text-black/80 dark:text-white/80 rounded-lg px-3 py-1.5 text-[13px] flex items-center gap-1.5 cursor-pointer transition-colors">
-                                    <span className="text-[#ffc09a] font-mono font-semibold">[{idx + 1}]</span>
-                                    <span className="truncate max-w-[150px]">{src.title}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                          <div className="prose prose dark:prose-invert max-w-none text-[15px] leading-relaxed prose-p:mb-4 prose-a:text-blue-600 dark:prose-a:text-[#60a5fa] prose-a:no-underline hover:prose-a:underline">
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                a: ({node, ...props}) => {
+                                  return (
+                                    <a 
+                                      {...props} 
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const matchedSource = msg.sources?.find(s => s.url === props.href);
+                                        if (matchedSource) {
+                                          setActiveSource(matchedSource);
+                                        } else if (props.href) {
+                                          window.open(props.href, '_blank');
+                                        }
+                                      }}
+                                      className="cursor-pointer"
+                                    />
+                                  );
+                                }
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
                           </div>
+                        )}
+                        {msg.role === 'assistant' && !!msg.sources?.length && (
+                          <section aria-label="Nguồn tham khảo" className="mt-4 border-t border-blue-200 dark:border-blue-800 pt-3">
+                            <h3 className="text-sm font-semibold mb-2">Nguồn tham khảo</h3>
+                            <ul className="space-y-2">
+                              {msg.sources.map((source) => (
+                                <li key={source.id}>
+                                  <button type="button" onClick={() => setActiveSource(source)} className="w-full text-left rounded-lg p-3 bg-white/60 dark:bg-black/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 cursor-pointer">
+                                    <span className="block text-sm font-medium">[{source.id}] {source.title} — Trang {source.page}</span>
+                                    {source.content && <span className="block text-xs mt-1 opacity-80 whitespace-pre-wrap">“{source.content}”</span>}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </section>
                         )}
                       </div>
                     </motion.div>
@@ -448,22 +569,22 @@ export default function UnifiedChat() {
               </header>
               <div className="flex-1 p-4 overflow-y-auto">
                 <div className="bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-2 text-orange-500 dark:text-[#ffc09a] mb-2">
+                  <div className="flex items-center gap-2 text-blue-600 dark:text-[#60a5fa] mb-2">
                     <FileText size={16} />
                     <span className="text-[13px] font-medium break-all">{activeSource.title}</span>
                   </div>
                   <div className="text-[12px] text-black/50 dark:text-white/50 mb-4">Trang {activeSource.page}</div>
                   
                   <div className="relative">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-400/40 dark:bg-[#ffc09a]/30 rounded-full"></div>
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500/40 dark:bg-[#60a5fa]/30 rounded-full"></div>
                     <p className="text-[14px] text-black/80 dark:text-white/80 leading-relaxed pl-4 m-0 italic">
                       "{activeSource.content}"
                     </p>
                   </div>
 
-                  <button className="w-full mt-6 flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-black/90 dark:text-white/90 py-2 rounded-lg text-[13px] font-medium transition-colors cursor-pointer">
+                  <a href={activeSource.url || "#"} target="_blank" rel="noreferrer" className="w-full mt-6 flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-black/90 dark:text-white/90 py-2 rounded-lg text-[13px] font-medium transition-colors cursor-pointer no-underline">
                     Mở tài liệu gốc <ChevronRight size={14} />
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>

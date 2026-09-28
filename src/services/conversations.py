@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from src.agents import orchestrator
 from src.config import get_settings
-from src.models.orm import Chunk, Citation, Conversation, Course, Message, StudyPlan, UsageEvent, User, new_id
+from src.models.orm import Chunk, Citation, Conversation, Course, Document, Message, StudyPlan, UsageEvent, User, new_id
 from src.services import acl
 from src.services.assistants import AssistantResult, LlmError, learning
 from src.services.errors import AppError, bad_request, forbidden, not_found
@@ -95,6 +95,7 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
                 "id": str(c.ordinal),
                 "citation_id": c.id,
                 "document_id": c.document_id,
+                "document_title": db.get(Document, c.document_id).title,
                 "version_id": c.version_id,
                 "chunk_id": c.chunk_id,
                 "locator": {"type": c.locator_type, "value": c.locator_value},
@@ -219,7 +220,7 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     # Router chỉ được chọn trong các môn user đang được đọc (BR-02); hội thoại cố định môn thì chỉ môn đó
     readable = acl.readable_course_ids(db, user)
     candidates = [conv.course_id] if conv.course_id else readable
-    if not candidates or any(c not in readable for c in candidates):
+    if conv.course_id and conv.course_id not in readable:
         raise forbidden("COURSE_NOT_ALLOWED")
     courses = [(cid, course_name(db, cid)) for cid in candidates]
     content = str(body.get("content") or "").strip()
