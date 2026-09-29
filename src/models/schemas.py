@@ -7,9 +7,18 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
 
 
+class ChatSource(BaseModel):
+    id: str
+    title: str
+    page: int
+    content: str
+    url: str | None = None
+
+
 class ChatResponse(BaseModel):
     response: str = Field(..., description="Phản hồi từ agent")
     analysis: str = Field(default="", description="Phân tích nội bộ")
+    sources: list[ChatSource] = Field(default_factory=list, description="Danh sách tài liệu tham khảo")
 
 
 # --- Auth (UC-09, PRD 9.1 / 11.2) ---
@@ -23,11 +32,10 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    """Tự đăng ký (nhánh TV4, D-35): KHÔNG có trường role — server luôn tạo Sinh viên chưa được cấp môn (BR-02)."""
-
-    login_id: str = Field(..., min_length=3, max_length=200)
-    password: str = Field(..., min_length=8, max_length=200)
-    display_name: str | None = Field(None, max_length=200)
+    login_id: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+    display_name: str | None = None
+    role: Role = "student"
 
 
 class UserPublic(BaseModel):

@@ -1,25 +1,31 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import "./theme.css";
+
+const inter = Inter({
+  variable: "--font-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 export const metadata: Metadata = {
-  title: "EDU-04 — Kho tri thức hỗ trợ học thuật",
-  description: "Trợ lý học thuật và học tập có nguồn cho Trung tâm X",
+  title: "EDU-04 Knowledge Hub",
+  description: "Kho tri thức hỗ trợ học thuật X",
 };
+import { ThemeProvider } from "@/components/theme-provider";
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-        />
-      </head>
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} ${geistMono.variable} h-full antialiased`}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <div className="min-h-full flex flex-col">{children}</div>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

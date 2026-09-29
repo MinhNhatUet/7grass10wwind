@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key
 from src.db import get_db
-from src.models.orm import Conversation, Document, User
+from src.models.orm import Conversation, User
 from src.services import conversations as svc
 from src.services.errors import AppError
 from src.services.plan_calendar import plan_ics
@@ -19,14 +19,13 @@ from src.services.plan_calendar import plan_ics
 router = APIRouter()
 
 
-def conv_view(c: Conversation, db: Session) -> dict[str, Any]:
+def conv_view(c: Conversation) -> dict[str, Any]:
     return {
         "id": c.id,
         "course_id": c.course_id,
+        "document_id": c.document_id,
         "assistant_mode": c.assistant_mode,
         "title": c.title,
-        "document_id": c.document_id,
-        "document_title": (d.title if c.document_id and (d := db.get(Document, c.document_id)) else None),
         "created_at": svc._iso(c.created_at),
         "updated_at": svc._iso(c.updated_at),
     }
@@ -36,7 +35,7 @@ class CreateConversation(BaseModel):
     course_id: str | None = None  # None = router chọn môn theo từng câu hỏi (D-28)
     assistant: str = Field("auto", pattern="^(auto|academic|learning|hub)$")
     title: str | None = None
-    document_id: str | None = None  # D-33: hỏi trong một tài liệu (server tự lấy môn)
+    document_id: str | None = None
 
 
 @router.post("/conversations", status_code=201)
@@ -44,7 +43,7 @@ def create(
     body: CreateConversation, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     conv = svc.create(db, user, body.course_id, body.assistant, body.title, body.document_id)
-    return {"conversation_id": conv.id, **conv_view(conv, db)}
+    return {"conversation_id": conv.id, **conv_view(conv)}
 
 
 @router.get("/conversations")
@@ -55,14 +54,14 @@ def list_conversations(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     rows, nxt = svc.list_owned(db, user, limit, cursor)
-    return {"items": [conv_view(c, db) for c in rows], "next_cursor": nxt}
+    return {"items": [conv_view(c) for c in rows], "next_cursor": nxt}
 
 
 @router.get("/conversations/{conversation_id}")
 def get_conversation(
     conversation_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
-    return conv_view(svc.get_owned(db, user, conversation_id), db)
+    return conv_view(svc.get_owned(db, user, conversation_id))
 
 
 class Rename(BaseModel):
@@ -73,7 +72,7 @@ class Rename(BaseModel):
 def rename(
     conversation_id: str, body: Rename, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
-    return conv_view(svc.rename(db, user, conversation_id, body.title), db)
+    return conv_view(svc.rename(db, user, conversation_id, body.title))
 
 
 @router.delete("/conversations")
@@ -92,11 +91,10 @@ def messages(
     conversation_id: str,
     limit: int = Query(30, ge=1, le=100),
     cursor: int = Query(0, ge=0),
-    latest: bool = Query(False),  # True: trang mới nhất trước, next_cursor để tải tin cũ hơn
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    items, nxt = svc.list_messages(db, user, conversation_id, limit, cursor, latest)
+    items, nxt = svc.list_messages(db, user, conversation_id, limit, cursor)
     return {"items": items, "next_cursor": nxt}
 
 
@@ -127,10 +125,10 @@ def send(
 ) -> dict[str, Any]:
     """Business result (answered/partial/...) trả HTTP 200; chỉ lỗi kỹ thuật mới là 4xx/5xx (PRD 11.4)."""
     payload = body.model_dump()
-    conv = svc.get_owned(db, user, conversation_id)  # hội thoại đã xóa/không phải của user → 404, kể cả khi replay
+    conv = svc.get_owned(db, user, conversation_id)
     idem = Idempotency(db, user, f"message:{conversation_id}", key, payload)
     if (replayed := idem.replay()) is not None:
-        return svc.replay(db, user, conv, replayed)  # serialize lại theo quyền hiện tại, không trả bản lưu cũ
+        return svc.replay(db, user, conv, replayed)
     resp = svc.send(db, user, conversation_id, payload, key)
     idem.store(resp)
     db.commit()
@@ -147,16 +145,6 @@ def quiz_answers(
     message_id: str, body: QuizAnswers, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     return svc.save_quiz_answers(db, user, message_id, body.answers, body.submit)
-
-
-@router.get("/learning/plans/{plan_id}")
-def get_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
-    return svc.plan_view(db, user, svc.get_plan(db, user, plan_id))
-
-
-@router.post("/learning/plans/{plan_id}/confirm")
-def confirm_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
-    return svc.plan_view(db, user, svc.confirm_plan(db, user, plan_id))
 
 
 @router.get("/learning/plans/{plan_id}/calendar.ics")
@@ -176,6 +164,16 @@ def plan_calendar(
         media_type="text/calendar; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="lo-trinh-{plan.id}.ics"', "Cache-Control": "no-store"},
     )
+
+
+@router.get("/learning/plans/{plan_id}")
+def get_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+    return svc.plan_view(db, user, svc.get_plan(db, user, plan_id))
+
+
+@router.post("/learning/plans/{plan_id}/confirm")
+def confirm_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+    return svc.plan_view(db, user, svc.confirm_plan(db, user, plan_id))
 
 
 class SessionStatus(BaseModel):

@@ -96,7 +96,7 @@ def list_documents(
 def download(
     document_id: str, version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> FileResponse:
-    """Quyền tải kiểm tra riêng mỗi lần (FR-04.5, AC-01.3); không có link công khai."""
+    """Original download requires current source access AND download permission."""
     version, document = documents.get_version(db, version_id)
     if document.id != document_id or not acl.can_download_version(db, user, version, document):
         raise not_found()
@@ -105,7 +105,41 @@ def download(
         if version.file_type == "pdf"
         else "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-    return FileResponse(storage.path_of(version.storage_key), media_type=media, filename=version.original_filename)
+    path = storage.path_of(version.storage_key)
+    if not path.exists() and path.with_suffix(".pdf").exists():
+        path = path.with_suffix(".pdf")
+
+    return FileResponse(path, media_type=media, filename=version.original_filename, content_disposition_type="inline")
+
+
+def processing_views(db: Session, version_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Batch counts and latest job; only called after management authorization."""
+    if not version_ids:
+        return {}
+    result = {vid: {"chunk_count": 0, "embedded_count": 0, "job": None} for vid in version_ids}
+    for vid, total, done in db.execute(
+        select(Chunk.version_id, func.count(Chunk.id), func.count(Chunk.embedding))
+        .where(Chunk.version_id.in_(version_ids))
+        .group_by(Chunk.version_id)
+    ):
+        result[vid].update(chunk_count=total, embedded_count=done)
+    jobs = db.scalars(
+        select(IngestionJob)
+        .where(IngestionJob.version_id.in_(version_ids))
+        .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc())
+    )
+    for job in jobs:
+        if result[job.version_id]["job"] is None:
+            result[job.version_id]["job"] = {
+                "id": job.id,
+                "kind": job.kind,
+                "stage": job.stage,
+                "status": job.status,
+                "progress": job.progress,
+                "error_code": job.error_code,
+                "attempts": job.attempts,
+            }
+    return result
 
 
 # ---------------------------------------------------------------- upload + quản lý (Giảng viên)
@@ -201,20 +235,8 @@ def manage_versions(
     if state:
         stmt = stmt.where(DocumentVersion.state == state)
     rows = db.execute(stmt).all()
-    # D-34: tiến độ embedding (kể cả embedding sẵn trước duyệt) để GV/người duyệt thấy tài liệu đã sẵn sàng cho LLM chưa
-    counts = dict(
-        (vid, (total, done))
-        for vid, total, done in db.execute(
-            select(Chunk.version_id, func.count(Chunk.id), func.count(Chunk.embedding))
-            .where(Chunk.version_id.in_([v.id for v, _ in rows]))
-            .group_by(Chunk.version_id)
-        )
-    )
-    items = []
-    for v, d in rows:
-        total, done = counts.get(v.id, (0, 0))
-        items.append(version_view(v, d, full=True) | {"chunk_count": total, "embedded_count": done})
-    return {"items": items}
+    progress = processing_views(db, [v.id for v, _ in rows])
+    return {"items": [version_view(v, d, full=True) | progress[v.id] for v, d in rows]}
 
 
 @router.get("/jobs/{job_id}")
@@ -262,7 +284,7 @@ def preview(
         p["text"] += ("\n" if p["text"] else "") + c.text
     approvals = db.scalars(select(Approval).where(Approval.version_id == version.id).order_by(Approval.created_at))
     return {
-        "version": version_view(version, document, full=True),
+        "version": version_view(version, document, full=True) | processing_views(db, [version.id])[version.id],
         "pages": [pages[k] for k in sorted(pages)],
         "page_from": page_from,
         "page_to": page_to,

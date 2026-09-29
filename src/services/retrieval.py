@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -23,18 +22,23 @@ from src.services import acl
 
 _cache: dict[str, tuple[list[str], np.ndarray]] = {}  # version_id → (chunk_ids, ma trận đã chuẩn hóa)
 _cache_lock = threading.Lock()
-
-# D-33: khi hội thoại gắn một tài liệu, mọi truy xuất trong lượt đó (Academic/Learning/Hub) chỉ lấy từ tài liệu này
 _document_scope: ContextVar[str | None] = ContextVar("document_scope", default=None)
 
 
 @contextmanager
-def document_scope(document_id: str | None) -> Iterator[None]:
+def document_scope(document_id: str | None):
+    """Request-local scope shared by Academic, Learning and Hub retrieval."""
     token = _document_scope.set(document_id)
     try:
         yield
     finally:
         _document_scope.reset(token)
+
+
+class EmbeddingUnavailableError(Exception):
+    def __init__(self, rate_limited: bool):
+        self.rate_limited = rate_limited
+        super().__init__("Embedding provider unavailable")
 
 
 def to_blob(vec: list[float]) -> bytes:
@@ -44,7 +48,18 @@ def to_blob(vec: list[float]) -> bytes:
 
 
 def _is_rate_limit(e: Exception) -> bool:
-    return type(e).__name__ == "RateLimitError" or getattr(e, "status_code", None) == 429
+    """Recognize 429 even when the Gemini integration wraps the SDK error."""
+    seen: set[int] = set()
+    current: BaseException | None = e
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ == "RateLimitError":
+            return True
+        # google.genai ClientError exposes code; OpenAI exposes status_code.
+        if any(getattr(current, attr, None) in (429, "429") for attr in ("code", "status_code")):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def embed_texts(texts: list[str]) -> list[bytes]:
@@ -69,22 +84,13 @@ def embed_texts(texts: list[str]) -> list[bytes]:
     return out
 
 
-class EmbeddingUnavailableError(Exception):
-    """Provider embedding lỗi/hết quota khi truy xuất — trả lỗi kỹ thuật retryable, không phải 500 (PRD 11.4)."""
-
-    def __init__(self, code: str, rate_limited: bool) -> None:
-        super().__init__(code)
-        self.rate_limited = rate_limited
-
-
 def embed_query(text: str) -> np.ndarray:
     from src.services.llm import get_embeddings
 
     try:
-        vec = get_embeddings().embed_query(text)
-    except Exception as e:  # noqa: BLE001 — timeout/401/429/5xx của provider
-        raise EmbeddingUnavailableError(type(e).__name__, _is_rate_limit(e)) from e
-    return np.frombuffer(to_blob(vec), dtype=np.float32)
+        return np.frombuffer(to_blob(get_embeddings().embed_query(text)), dtype=np.float32)
+    except Exception as e:
+        raise EmbeddingUnavailableError(_is_rate_limit(e)) from e
 
 
 def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[DocumentVersion, Document]]:

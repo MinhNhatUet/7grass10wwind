@@ -13,21 +13,79 @@ Chạy từ gốc repo:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select  # noqa: E402
 
-from eval.common import ConfigError, load_config, load_manifest, resolve, setup_console  # noqa: E402
 from src.db import get_sessionmaker, init_db  # noqa: E402
 from src.models.orm import FAILED, PUBLISHED, DocumentVersion, IngestionJob, Membership, User  # noqa: E402
 from src.services import acl, audit, documents  # noqa: E402
 from src.services.errors import AppError  # noqa: E402
 
 DOC_TYPE = "textbook"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@dataclass
+class Source:
+    source_id: str
+    course_id: str
+    title: str | None
+    authors: str | None
+    url: str | None
+    license: str | None
+    storage_ref: str | None
+    sha256: str | None
+    version: str | None
+    fetch_error: str | None
+    encrypted: bool
+
+
+def setup_console() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+def resolve(path: str) -> Path:
+    p = Path(path)
+    return p if p.is_absolute() else REPO_ROOT / p
+
+
+def load_manifest(path: str | Path = "data/raw/books/manifest.books.json"):
+    data = json.loads(resolve(str(path)).read_text(encoding="utf-8"))
+    sources = []
+    for item in data.get("sources", []):
+        sources.append(
+            Source(
+                source_id=str(item.get("source_id") or ""),
+                course_id=str(item.get("course_id") or ""),
+                title=item.get("title"),
+                authors=item.get("authors"),
+                url=item.get("url"),
+                license=item.get("license"),
+                storage_ref=item.get("storage_ref"),
+                sha256=item.get("sha256"),
+                version=item.get("version"),
+                fetch_error=item.get("fetch_error"),
+                encrypted=bool(item.get("encrypted")),
+            )
+        )
+
+    class Manifest:
+        pass
+
+    manifest = Manifest()
+    manifest.sources = sources
+    return manifest
 
 
 def wait_job(db, job_id: str, timeout_s: int) -> IngestionJob:  # noqa: ANN001
@@ -67,9 +125,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Cần --confirm-dev-usage: sách trong manifest chưa được xác nhận quyền sử dụng chính thức (Q-09).")
         return 2
     try:
-        manifest = load_manifest(load_config())
-    except ConfigError as e:
-        print(f"Lỗi: {e}", file=sys.stderr)
+        manifest = load_manifest()
+    except Exception as e:
+        print(f"Lỗi đọc manifest: {e}", file=sys.stderr)
         return 2
     sources = [s for s in manifest.sources if s.course_id == args.course and not s.fetch_error and not s.encrypted]
     if args.source_id:
