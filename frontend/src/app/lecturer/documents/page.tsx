@@ -7,6 +7,7 @@ import { INTEGRITY_LABEL, StateBadge, type VersionFull, VersionPreview } from "@
 import { ApiError, api, json, newRequestId } from "@/lib/api";
 import { DOC_TYPE_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { useSession } from "@/lib/useSession";
+import gsap from "gsap";
 
 // UI-07 — Quản lý tài liệu Giảng viên (FR-06, FR-07): upload → xử lý → xem trước → gửi duyệt.
 
@@ -62,6 +63,16 @@ function DocumentsInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (items.length > 0) {
+      gsap.fromTo(
+        ".doc-row",
+        { opacity: 0, x: -10 },
+        { opacity: 1, x: 0, duration: 0.4, stagger: 0.05, ease: "power2.out" }
+      );
+    }
+  }, [items.length]);
+
   // Job nền: tự làm mới khi còn bản đang xử lý (FR-07.1 — rời trang quay lại vẫn xem được)
   useEffect(() => {
     if (!items.some((i) => IN_PROGRESS.includes(i.state))) return;
@@ -83,27 +94,55 @@ function DocumentsInner() {
   const noAccess = courses !== null && managed.length === 0;
   return (
     <AppShell profile={profile} courses={courses} courseId={courseId} onSignOut={signOut}>
-      <main className="container wide">
-        <div className="row between">
-          <h2>Tài liệu {course ? `— ${course.name}` : ""}</h2>
+      <main className="mx-auto max-w-6xl p-6 lg:p-10 space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Tài liệu</h2>
+            {course && <p className="text-muted-foreground mt-1">{course.name}</p>}
+          </div>
           {managed.length > 1 && (
-            <select value={courseId ?? ""} onChange={(e) => setCourse(e.target.value)} aria-label="Môn quản lý">
+            <select 
+              value={courseId ?? ""} 
+              onChange={(e) => setCourse(e.target.value)} 
+              aria-label="Môn quản lý"
+              className="bg-secondary/50 border-0 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-primary hover:bg-secondary cursor-pointer"
+            >
               {managed.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           )}
-        </div>
-        {noAccess && <div className="banner banner-info">Bạn chưa được phân công quản lý tài liệu môn nào.</div>}
-        {msg && <div className={`banner banner-${msg.kind === "error" ? "error" : "info"}`}>{msg.text}</div>}
+        </header>
 
-        {course?.can_upload && (
-          <button type="button" onClick={() => setShowUpload({ documentId: null })}>
-            + Tải tài liệu lên
-          </button>
-        )}
+        {noAccess && <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded-xl text-sm">Bạn chưa được phân công quản lý tài liệu môn nào.</div>}
+        {msg && <div className={`px-4 py-3 rounded-xl text-sm border ${msg.kind === "error" ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-primary/10 border-primary/20 text-primary"}`}>{msg.text}</div>}
+
+        <div className="flex flex-wrap items-center justify-between gap-4 bg-secondary/20 p-4 rounded-2xl border border-border">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-muted-foreground">Trạng thái:</span>
+            <select 
+              value={filter} 
+              onChange={(e) => setFilter(e.target.value)}
+              className="bg-background border border-border rounded-lg px-3 py-1.5 text-sm outline-none cursor-pointer hover:bg-secondary focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Tất cả</option>
+              {["Processing", "Draft", "NeedsReview", "PendingApproval", "Rejected", "Indexing", "Published", "Failed", "Withdrawn", "Archived"].map(
+                (s) => <option key={s} value={s}>{s}</option>,
+              )}
+            </select>
+          </div>
+
+          {course?.can_upload && (
+            <button 
+              type="button" 
+              onClick={() => setShowUpload({ documentId: null })}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-4 py-2 rounded-xl transition-all shadow-sm hover:shadow active:scale-95 text-sm"
+            >
+              + Tải tài liệu lên
+            </button>
+          )}
+        </div>
+
         {showUpload && courseId && (
           <UploadDialog
             courseId={courseId}
@@ -119,100 +158,108 @@ function DocumentsInner() {
           />
         )}
 
-        <div className="row">
-          <label className="small">
-            Trạng thái{" "}
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="">Tất cả</option>
-              {["Processing", "Draft", "NeedsReview", "PendingApproval", "Rejected", "Indexing", "Published", "Failed", "Withdrawn", "Archived"].map(
-                (s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-        </div>
-
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Tài liệu</th>
-                <th>Bản</th>
-                <th>Trạng thái</th>
-                <th>Nhãn</th>
-                <th>Cập nhật</th>
-                <th>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-secondary/50 border-b border-border text-muted-foreground">
                 <tr>
-                  <td colSpan={6} className="muted">
-                    Chưa có tài liệu.
-                  </td>
+                  <th className="px-5 py-3 font-medium">Tài liệu</th>
+                  <th className="px-5 py-3 font-medium">Bản</th>
+                  <th className="px-5 py-3 font-medium">Trạng thái</th>
+                  <th className="px-5 py-3 font-medium">Nhãn</th>
+                  <th className="px-5 py-3 font-medium">Cập nhật</th>
+                  <th className="px-5 py-3 font-medium text-right">Thao tác</th>
                 </tr>
-              )}
-              {items.map((v) => (
-                <tr key={v.version_id} className={selected === v.version_id ? "selected" : ""}>
-                  <td>
-                    {v.title}
-                    <div className="muted small">{DOC_TYPE_LABEL[v.doc_type] ?? v.doc_type}</div>
-                  </td>
-                  <td>
-                    {v.version_label} <span className="muted small">r{v.revision}</span>
-                    {v.is_current && <div className="small">hiện hành</div>}
-                  </td>
-                  <td>
-                    <StateBadge state={v.state} />
-                    {v.quality_warnings.length > 0 && <div className="warn small">⚠ {v.quality_warnings.length} cảnh báo</div>}
-                    {!!v.chunk_count && ["Draft", "NeedsReview", "PendingApproval", "Failed"].includes(v.state) && (
-                      <div className="muted small">
-                        {v.embedded_count === v.chunk_count
-                          ? "✓ Đã embedding xong — duyệt là phát hành ngay"
-                          : `Embedding ${v.embedded_count ?? 0}/${v.chunk_count} đoạn`}
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">
+                      Chưa có tài liệu.
+                    </td>
+                  </tr>
+                )}
+                {items.map((v) => (
+                  <tr key={v.version_id} className={`doc-row transition-colors hover:bg-secondary/30 ${selected === v.version_id ? "bg-secondary/50" : ""}`}>
+                    <td className="px-5 py-3">
+                      <div className="font-medium">{v.title}</div>
+                      <div className="text-muted-foreground text-xs mt-0.5">{DOC_TYPE_LABEL[v.doc_type] ?? v.doc_type}</div>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium">{v.version_label}</span> 
+                        <span className="text-muted-foreground text-xs bg-secondary px-1.5 py-0.5 rounded">r{v.revision}</span>
                       </div>
-                    )}
-                  </td>
-                  <td className="small">{INTEGRITY_LABEL[v.integrity_label] ?? (v.integrity_label || MSG.unlabeled)}</td>
-                  <td className="small">{v.updated_at?.slice(0, 16).replace("T", " ")}</td>
-                  <td className="actions-cell">
-                    <button type="button" className="btn-secondary" onClick={() => setSelected(selected === v.version_id ? null : v.version_id)}>
-                      {selected === v.version_id ? "Đóng" : "Xem"}
-                    </button>
-                    {course?.can_upload && ["Draft", "NeedsReview", "Rejected"].includes(v.state) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const ack =
-                            v.state !== "NeedsReview" ||
-                            confirm("Bản này có trang cần xem lại. Xác nhận đã kiểm tra và chấp nhận các cảnh báo?");
-                          if (ack)
-                            void act(`/versions/${v.version_id}/submit`, { acknowledge_warnings: v.state === "NeedsReview" }, "Đã gửi duyệt.");
-                        }}
+                      {v.is_current && <div className="text-[11px] text-primary mt-1 font-medium bg-primary/10 w-fit px-1.5 rounded">hiện hành</div>}
+                    </td>
+                    <td className="px-5 py-3 space-y-1.5">
+                      <StateBadge state={v.state} />
+                      {v.quality_warnings.length > 0 && <div className="text-amber-600 dark:text-amber-400 text-[11px] font-medium bg-amber-500/10 w-fit px-1.5 py-0.5 rounded">⚠ {v.quality_warnings.length} cảnh báo</div>}
+                      {!!v.chunk_count && ["Draft", "NeedsReview", "PendingApproval", "Failed"].includes(v.state) && (
+                        <div className="text-muted-foreground text-[11px]">
+                          {v.embedded_count === v.chunk_count
+                            ? "✓ Đã embedding xong"
+                            : `Embedding ${v.embedded_count ?? 0}/${v.chunk_count} đoạn`}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-muted-foreground max-w-[150px] truncate" title={INTEGRITY_LABEL[v.integrity_label] ?? (v.integrity_label || MSG.unlabeled)}>
+                      {INTEGRITY_LABEL[v.integrity_label] ?? (v.integrity_label || MSG.unlabeled)}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-muted-foreground">{v.updated_at?.slice(0, 16).replace("T", " ")}</td>
+                    <td className="px-5 py-3 text-right space-x-2">
+                      <button 
+                        type="button" 
+                        className="bg-secondary hover:bg-secondary/80 text-foreground px-3 py-1.5 rounded-lg border border-border transition-colors text-xs font-medium cursor-pointer" 
+                        onClick={() => setSelected(selected === v.version_id ? null : v.version_id)}
                       >
-                        Gửi duyệt
+                        {selected === v.version_id ? "Đóng" : "Xem"}
                       </button>
-                    )}
-                    {v.state === "Failed" && (
-                      <button type="button" className="btn-secondary" onClick={() => void act(`/versions/${v.version_id}/retry`, {}, "Đã chạy lại.")}>
-                        Thử lại
-                      </button>
-                    )}
-                    {course?.can_upload && v.is_current && (
-                      <button type="button" className="btn-secondary" onClick={() => setShowUpload({ documentId: v.document_id, title: v.title })}>
-                        Phiên bản mới
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {course?.can_upload && ["Draft", "NeedsReview", "Rejected"].includes(v.state) && (
+                        <button
+                          type="button"
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-lg transition-colors text-xs font-medium cursor-pointer border-0 shadow-sm"
+                          onClick={() => {
+                            const ack =
+                              v.state !== "NeedsReview" ||
+                              confirm("Bản này có trang cần xem lại. Xác nhận đã kiểm tra và chấp nhận các cảnh báo?");
+                            if (ack)
+                              void act(`/versions/${v.version_id}/submit`, { acknowledge_warnings: v.state === "NeedsReview" }, "Đã gửi duyệt.");
+                          }}
+                        >
+                          Gửi duyệt
+                        </button>
+                      )}
+                      {v.state === "Failed" && (
+                        <button 
+                          type="button" 
+                          className="bg-secondary hover:bg-secondary/80 text-foreground px-3 py-1.5 rounded-lg border border-border transition-colors text-xs font-medium cursor-pointer" 
+                          onClick={() => void act(`/versions/${v.version_id}/retry`, {}, "Đã chạy lại.")}
+                        >
+                          Thử lại
+                        </button>
+                      )}
+                      {course?.can_upload && v.is_current && (
+                        <button 
+                          type="button" 
+                          className="bg-secondary hover:bg-secondary/80 text-foreground px-3 py-1.5 rounded-lg border border-border transition-colors text-xs font-medium cursor-pointer" 
+                          onClick={() => setShowUpload({ documentId: v.document_id, title: v.title })}
+                        >
+                          Bản mới
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        {selected && <VersionPreview versionId={selected} />}
+        {selected && (
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm mt-8 space-y-5 doc-preview">
+            <VersionPreview versionId={selected} />
+          </div>
+        )}
       </main>
     </AppShell>
   );

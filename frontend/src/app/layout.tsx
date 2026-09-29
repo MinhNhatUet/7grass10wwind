@@ -17,7 +17,6 @@ export const metadata: Metadata = {
   description: "Kho tri thức hỗ trợ học thuật X",
 };
 import { ThemeProvider } from "@/components/theme-provider";
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>

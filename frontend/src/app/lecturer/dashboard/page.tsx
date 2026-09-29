@@ -6,6 +6,7 @@ import { useManagedCourse } from "@/components/useManagedCourse";
 import { ApiError, api, json } from "@/lib/api";
 import { FEEDBACK_LABEL, MSG, STATE_LABEL, errorMessage } from "@/lib/messages";
 import { useSession } from "@/lib/useSession";
+import gsap from "gsap";
 
 // UI-09 — Dashboard Giảng viên (FR-12): chỉ môn phụ trách; không mở hội thoại riêng; số chưa đo ghi "chưa có dữ liệu".
 
@@ -68,6 +69,16 @@ function DashboardInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (tab === "overview" && overview) {
+      gsap.fromTo(
+        ".tile",
+        { opacity: 0, scale: 0.95, y: 15 },
+        { opacity: 1, scale: 1, y: 0, duration: 0.5, stagger: 0.05, ease: "back.out(1.5)" }
+      );
+    }
+  }, [tab, overview]);
+
   async function updateFeedback(id: string, status: string) {
     const note = status === "Resolved" ? prompt("Ghi chú xử lý (tùy chọn)") : null;
     try {
@@ -82,40 +93,62 @@ function DashboardInner() {
   const u = overview?.usage;
   return (
     <AppShell profile={profile} courses={courses} courseId={courseId} onSignOut={signOut}>
-      <main className="container wide">
-        <div className="row between">
-          <h2>Dashboard {course ? `— ${course.name}` : ""}</h2>
+      <main className="mx-auto max-w-6xl p-6 lg:p-10 space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+            {course && <p className="text-muted-foreground mt-1">{course.name}</p>}
+          </div>
           {managed.length > 1 && (
-            <select value={courseId ?? ""} onChange={(e) => setCourse(e.target.value)} aria-label="Môn phụ trách">
+            <select 
+              value={courseId ?? ""} 
+              onChange={(e) => setCourse(e.target.value)} 
+              aria-label="Môn phụ trách"
+              className="bg-secondary/50 border-0 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-primary hover:bg-secondary cursor-pointer"
+            >
               {managed.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           )}
-        </div>
-        {courses !== null && managed.length === 0 && <div className="banner banner-info">Bạn chưa phụ trách môn nào.</div>}
-        {err && <div className="banner banner-error">{err}</div>}
-        <div className="chips">
+        </header>
+
+        {courses !== null && managed.length === 0 && (
+          <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded-xl text-sm">Bạn chưa phụ trách môn nào.</div>
+        )}
+        {err && (
+          <div className="bg-destructive/10 border-destructive/20 text-destructive px-4 py-3 rounded-xl text-sm border">{err}</div>
+        )}
+
+        <div className="flex items-center gap-2 bg-secondary/30 p-1.5 rounded-xl border border-border w-fit">
           {(Object.keys(TABS) as (keyof typeof TABS)[]).map((t) => (
-            <button key={t} type="button" className={`chip${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
+            <button 
+              key={t} 
+              type="button" 
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"}`}
+              onClick={() => setTab(t)}
+            >
               {TABS[t]}
             </button>
           ))}
         </div>
 
         {tab === "overview" && overview && (
-          <>
-            <label className="small">
-              Khoảng thời gian{" "}
-              <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+          <div className="space-y-6 mt-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold">Thống kê chung</h3>
+              <select 
+                value={days} 
+                onChange={(e) => setDays(Number(e.target.value))}
+                className="bg-secondary/50 border-0 rounded-lg px-3 py-1.5 text-sm outline-none cursor-pointer hover:bg-secondary"
+              >
                 <option value={7}>7 ngày</option>
                 <option value={30}>30 ngày</option>
                 <option value={90}>90 ngày</option>
               </select>
-            </label>
-            <div className="tiles">
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Tile label="Câu hỏi" value={u?.total_queries} />
               <Tile label="Trả lời có nguồn" value={u?.by_status.answered ?? 0} />
               <Tile label="Thiếu căn cứ" value={overview.source_gaps.insufficient_evidence} />
@@ -125,111 +158,137 @@ function DashboardInner() {
               <Tile label="Chờ duyệt" value={overview.review_queue} />
               <Tile label="Accuracy eval" value={null} note="chưa có dữ liệu" />
             </div>
-            <h3>Tài liệu theo trạng thái</h3>
-            <ul className="inline-list">
-              {Object.entries(overview.documents_by_state).map(([s, n]) => (
-                <li key={s}>
-                  {STATE_LABEL[s] ?? s}: <strong>{n}</strong>
-                </li>
-              ))}
-              {Object.keys(overview.documents_by_state).length === 0 && <li className="muted">Chưa có tài liệu.</li>}
-            </ul>
-            <h3>Phản hồi</h3>
-            <ul className="inline-list">
-              {["Open", "InProgress", "Resolved"].map((s) => (
-                <li key={s}>
-                  {s}: <strong>{overview.feedback_by_status[s] ?? 0}</strong>
-                </li>
-              ))}
-            </ul>
-            <p className="muted small">{overview.source_gaps.note}</p>
-          </>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                <h4 className="font-semibold mb-4 text-sm uppercase tracking-wide text-muted-foreground">Tài liệu theo trạng thái</h4>
+                <ul className="space-y-3 list-none p-0 m-0">
+                  {Object.entries(overview.documents_by_state).map(([s, n]) => (
+                    <li key={s} className="flex justify-between items-center text-sm">
+                      <span>{STATE_LABEL[s] ?? s}</span>
+                      <strong className="bg-secondary px-2 py-1 rounded-md">{n}</strong>
+                    </li>
+                  ))}
+                  {Object.keys(overview.documents_by_state).length === 0 && <li className="text-muted-foreground text-sm">Chưa có tài liệu.</li>}
+                </ul>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                <h4 className="font-semibold mb-4 text-sm uppercase tracking-wide text-muted-foreground">Phản hồi từ người dùng</h4>
+                <ul className="space-y-3 list-none p-0 m-0">
+                  {["Open", "InProgress", "Resolved"].map((s) => (
+                    <li key={s} className="flex justify-between items-center text-sm">
+                      <span>{s}</span>
+                      <strong className="bg-secondary px-2 py-1 rounded-md">{overview.feedback_by_status[s] ?? 0}</strong>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-border/50">{overview.source_gaps.note}</p>
+              </div>
+            </div>
+          </div>
         )}
 
         {tab === "feedback" && (
-          <>
-            <label className="small">
-              Trạng thái{" "}
-              <select value={fbFilter} onChange={(e) => setFbFilter(e.target.value)}>
+          <div className="space-y-4 mt-6">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">Trạng thái:</span>
+              <select 
+                value={fbFilter} 
+                onChange={(e) => setFbFilter(e.target.value)}
+                className="bg-secondary/50 border border-border rounded-lg px-3 py-1.5 text-sm outline-none cursor-pointer hover:bg-secondary"
+              >
                 <option value="">Tất cả</option>
                 <option value="Open">Open</option>
                 <option value="InProgress">InProgress</option>
                 <option value="Resolved">Resolved</option>
               </select>
-            </label>
-            {feedback.length === 0 && <p className="muted">Chưa có phản hồi.</p>}
-            {feedback.map((f) => (
-              <div key={f.id} className="card feedback-item">
-                <div className="row between">
-                  <strong>{FEEDBACK_LABEL[f.type] ?? f.type}</strong>
-                  <span className="status-badge">{f.status}</span>
-                </div>
-                {f.note && <p>{f.note}</p>}
-                {f.shared ? (
-                  <details>
-                    <summary>Nội dung được chia sẻ</summary>
-                    <p>
-                      <strong>Câu hỏi:</strong> {f.shared.question}
-                    </p>
-                    <p>
-                      <strong>Trả lời:</strong> {f.shared.answer}
-                    </p>
-                  </details>
-                ) : (
-                  <p className="muted small">Người dùng không chia sẻ nội dung hội thoại.</p>
-                )}
-                {f.resolution_note && <p className="small">Xử lý: {f.resolution_note}</p>}
-                <div className="row">
-                  <span className="muted small">{f.created_at.slice(0, 16).replace("T", " ")}</span>
-                  {f.status !== "InProgress" && (
-                    <button type="button" className="btn-secondary" onClick={() => void updateFeedback(f.id, "InProgress")}>
-                      {f.status === "Resolved" ? "Mở lại" : "Nhận xử lý"}
-                    </button>
+            </div>
+            
+            {feedback.length === 0 && <p className="text-muted-foreground text-center py-8">Chưa có phản hồi.</p>}
+            <div className="grid gap-4">
+              {feedback.map((f) => (
+                <div key={f.id} className="bg-card border border-border rounded-xl p-5 shadow-sm space-y-4">
+                  <div className="flex justify-between items-center">
+                    <strong className="text-sm">{FEEDBACK_LABEL[f.type as keyof typeof FEEDBACK_LABEL] ?? f.type}</strong>
+                    <span className="bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full text-xs font-medium border border-border">
+                      {f.status}
+                    </span>
+                  </div>
+                  {f.note && <p className="text-sm text-foreground">{f.note}</p>}
+                  {f.shared ? (
+                    <details className="text-sm bg-secondary/30 rounded-lg p-3">
+                      <summary className="font-medium cursor-pointer mb-2">Nội dung được chia sẻ</summary>
+                      <div className="space-y-2 text-muted-foreground">
+                        <p><strong>Câu hỏi:</strong> {f.shared.question}</p>
+                        <p><strong>Trả lời:</strong> {f.shared.answer}</p>
+                      </div>
+                    </details>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Người dùng không chia sẻ nội dung hội thoại.</p>
                   )}
-                  {f.status !== "Resolved" && (
-                    <button type="button" onClick={() => void updateFeedback(f.id, "Resolved")}>
-                      Đã xử lý
-                    </button>
-                  )}
+                  {f.resolution_note && <p className="text-sm text-primary bg-primary/5 p-2 rounded-lg">Xử lý: {f.resolution_note}</p>}
+                  
+                  <div className="flex items-center gap-3 pt-2 border-t border-border/50">
+                    <span className="text-xs text-muted-foreground flex-1">{f.created_at.slice(0, 16).replace("T", " ")}</span>
+                    {f.status !== "InProgress" && (
+                      <button 
+                        type="button" 
+                        className="text-xs font-medium bg-secondary hover:bg-secondary/80 px-3 py-1.5 rounded-lg transition-colors cursor-pointer border border-border" 
+                        onClick={() => void updateFeedback(f.id, "InProgress")}
+                      >
+                        {f.status === "Resolved" ? "Mở lại" : "Nhận xử lý"}
+                      </button>
+                    )}
+                    {f.status !== "Resolved" && (
+                      <button 
+                        type="button" 
+                        className="text-xs font-medium bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-lg transition-colors cursor-pointer" 
+                        onClick={() => void updateFeedback(f.id, "Resolved")}
+                      >
+                        Đã xử lý
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </>
+              ))}
+            </div>
+          </div>
         )}
 
         {tab === "history" && (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Thời gian</th>
-                  <th>Người thực hiện</th>
-                  <th>Hành động</th>
-                  <th>Đối tượng</th>
-                  <th>Lý do</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((h, i) => (
-                  <tr key={i}>
-                    <td className="small">{h.created_at?.slice(0, 16).replace("T", " ")}</td>
-                    <td>{h.actor}</td>
-                    <td>{h.action}</td>
-                    <td className="small">
-                      {h.object_type} {h.object_id}
-                    </td>
-                    <td className="small">{h.reason}</td>
-                  </tr>
-                ))}
-                {history.length === 0 && (
+          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm mt-6">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-secondary/50 border-b border-border text-muted-foreground">
                   <tr>
-                    <td colSpan={5} className="muted">
-                      Chưa có lịch sử.
-                    </td>
+                    <th className="px-5 py-3 font-medium">Thời gian</th>
+                    <th className="px-5 py-3 font-medium">Người thực hiện</th>
+                    <th className="px-5 py-3 font-medium">Hành động</th>
+                    <th className="px-5 py-3 font-medium">Đối tượng</th>
+                    <th className="px-5 py-3 font-medium">Lý do</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {history.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-8 text-center text-muted-foreground">Chưa có lịch sử.</td>
+                    </tr>
+                  )}
+                  {history.map((h, i) => (
+                    <tr key={i} className="transition-colors hover:bg-secondary/30">
+                      <td className="px-5 py-3 text-muted-foreground text-xs">{h.created_at?.slice(0, 16).replace("T", " ")}</td>
+                      <td className="px-5 py-3 font-medium">{h.actor}</td>
+                      <td className="px-5 py-3 text-xs">{h.action}</td>
+                      <td className="px-5 py-3">
+                        <span className="bg-secondary px-2 py-0.5 rounded-md text-xs border border-border font-mono">{h.object_type}</span>
+                        <span className="text-muted-foreground text-xs ml-2">{h.object_id.slice(0, 8)}…</span>
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground text-xs truncate max-w-[200px]" title={h.reason || ""}>{h.reason || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </main>
@@ -239,10 +298,10 @@ function DashboardInner() {
 
 function Tile({ label, value, note }: { label: string; value: number | string | null | undefined; note?: string }) {
   return (
-    <div className="tile">
-      <div className="tile-value">{value ?? "—"}</div>
-      <div className="tile-label">{label}</div>
-      {(value === null || value === undefined) && <div className="muted small">{note ?? "chưa có dữ liệu"}</div>}
+    <div className="tile bg-card border border-border rounded-2xl p-5 shadow-sm transition-all hover:shadow-md hover:border-primary/20">
+      <div className="text-3xl font-bold text-foreground mb-1">{value ?? "—"}</div>
+      <div className="text-sm text-muted-foreground font-medium">{label}</div>
+      {(value === null || value === undefined) && <div className="text-xs text-muted-foreground/60 mt-2">{note ?? "chưa có dữ liệu"}</div>}
     </div>
   );
 }

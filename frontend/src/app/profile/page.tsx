@@ -28,6 +28,7 @@ import {
   Building2,
   Laptop,
 } from "lucide-react";
+import gsap from "gsap";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -227,7 +228,6 @@ export default function ProfilePage() {
     }
   }, []);
 
-  // Close user dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -237,6 +237,15 @@ export default function ProfilePage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // GSAP Animation on tab switch
+  useEffect(() => {
+    gsap.fromTo(
+      ".profile-fade-up",
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.5, stagger: 0.05, ease: "power2.out" }
+    );
+  }, [activeTab]);
 
   // Save changes handler
   const savePersonal = () => {
@@ -291,7 +300,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#e8f1f0] text-slate-800 dark:bg-[#0c141c] dark:text-slate-100 font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)] text-foreground dark:bg-[var(--background)]  font-sans">
       {/* Mobile Sidebar Backdrop */}
       {sidebarOpen && (
         <div
@@ -302,7 +311,7 @@ export default function ProfilePage() {
 
       {/* LEFT SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col bg-white dark:bg-[#121c27] border-r border-slate-200/80 dark:border-slate-800/80 transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col bg-card dark:bg-[#121c27] border-r border-border/80 dark:border-slate-800/80 transition-transform duration-200 lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
         }`}
       >
@@ -325,17 +334,17 @@ export default function ProfilePage() {
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-600 lg:hidden"
+            className="p-1 rounded-md text-slate-400 hover:text-muted-foreground lg:hidden"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 space-y-1 px-3 py-4 text-[14px] font-medium text-slate-500 dark:text-slate-400">
+        <nav className="flex-1 space-y-1 px-3 py-4 text-[14px] font-medium text-muted-foreground ">
           <Link
             href="/"
-            className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <LayoutDashboard size={19} className="text-slate-400" />
             <span>Dashboard</span>
@@ -347,7 +356,7 @@ export default function ProfilePage() {
               e.preventDefault();
               setActiveTab("Timesheet & Attendance");
             }}
-            className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <Clock size={19} className="text-slate-400" />
             <span>Timesheet</span>
@@ -368,7 +377,7 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+          <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors">
             <div className="flex items-center gap-3.5">
               <UserCheck size={19} className="text-slate-400" />
               <span>Hiring</span>
@@ -380,7 +389,7 @@ export default function ProfilePage() {
           {["lecturer", "reviewer", "admin"].includes(userRole) && (
             <Link
               href={userRole === "reviewer" ? "/hub/review" : "/hub/manage"}
-              className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors bg-blue-50/50 dark:bg-blue-900/20"
+              className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors bg-blue-50/50 dark:bg-blue-900/20"
             >
               <div className="flex items-center gap-3.5">
                 <BookOpen size={19} className="text-blue-500 dark:text-blue-400" />
@@ -391,7 +400,7 @@ export default function ProfilePage() {
 
           <a
             href="#documents"
-            className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <div className="flex items-center gap-3.5">
               <FileText size={19} className="text-slate-400" />
@@ -402,7 +411,7 @@ export default function ProfilePage() {
 
           <Link
             href="/learning"
-            className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <div className="flex items-center gap-3.5">
               <BookOpen size={19} className="text-slate-400" />
@@ -416,7 +425,7 @@ export default function ProfilePage() {
               e.preventDefault();
               setActiveTab("Payroll & Benefits");
             }}
-            className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <div className="flex items-center gap-3.5">
               <CreditCard size={19} className="text-slate-400" />
@@ -425,7 +434,7 @@ export default function ProfilePage() {
             <ChevronDown size={16} className="text-slate-400" />
           </a>
 
-          <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+          <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors">
             <div className="flex items-center gap-3.5">
               <BarChart2 size={19} className="text-slate-400" />
               <span>Reports</span>
@@ -434,12 +443,12 @@ export default function ProfilePage() {
           </button>
 
           <div className="pt-6 pb-2">
-            <div className="h-px w-full bg-slate-100 dark:bg-slate-800" />
+            <div className="h-px w-full bg-secondary " />
           </div>
 
           <button
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <Settings size={19} className="text-slate-400" />
             <span>Setting</span>
@@ -447,7 +456,7 @@ export default function ProfilePage() {
 
           <Link
             href="/"
-            className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <HelpCircle size={19} className="text-slate-400" />
             <span>Helping center</span>
@@ -458,28 +467,28 @@ export default function ProfilePage() {
       {/* RIGHT MAIN VIEW */}
       <div className="flex flex-1 flex-col overflow-y-auto">
         {/* TOP NAVBAR */}
-        <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#121c27] px-6 sm:px-10">
+        <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between border-b border-border/80 dark:border-slate-800/80 bg-card dark:bg-[#121c27] px-6 sm:px-10">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden"
+              className="rounded-lg p-2 text-muted-foreground hover:bg-secondary dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden"
             >
               <Menu size={22} />
             </button>
             <div>
               <p className="text-[11px] font-normal text-slate-400">Your organization</p>
               <div className="flex items-center gap-2 mt-0.5">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white dark:bg-secondary dark:text-slate-900">
                   S
                 </div>
-                <span className="text-[14px] font-bold text-slate-900 dark:text-slate-100">SJ Label</span>
+                <span className="text-[14px] font-bold text-slate-900 ">SJ Label</span>
               </div>
             </div>
           </div>
 
           {/* Right Header: Notification & User Profile dropdown */}
           <div className="flex items-center gap-5 sm:gap-7">
-            <button className="relative text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+            <button className="relative text-slate-400 hover:text-muted-foreground dark:hover:text-slate-300">
               <Bell size={20} />
               <span className="absolute -top-1 -right-0.5 h-2 w-2 rounded-full bg-[#f97316] ring-2 ring-white dark:ring-[#121c27]" />
             </button>
@@ -489,7 +498,7 @@ export default function ProfilePage() {
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                 className="flex items-center gap-3 cursor-pointer group"
               >
-                <div className="h-9 w-9 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 bg-amber-50">
+                <div className="h-9 w-9 rounded-full overflow-hidden border border-border  bg-amber-50">
                   <img
                     src="/profile-avatar.png"
                     alt={headerInfo.name}
@@ -499,22 +508,22 @@ export default function ProfilePage() {
                     }}
                   />
                 </div>
-                <span className="text-[14px] font-semibold text-slate-800 dark:text-slate-200 hidden sm:inline-block group-hover:text-[#00a896] transition-colors">
+                <span className="text-[14px] font-semibold text-foreground dark:text-slate-200 hidden sm:inline-block group-hover:text-[#00a896] transition-colors">
                   {headerInfo.name}
                 </span>
-                <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 transition-colors" />
+                <ChevronDown size={14} className="text-slate-400 group-hover:text-muted-foreground transition-colors" />
               </button>
 
               {/* Dropdown Menu */}
               {userDropdownOpen && (
-                <div className="absolute right-0 mt-3 w-56 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-2 shadow-xl z-50 text-sm">
+                <div className="absolute right-0 mt-3 w-56 rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-2 shadow-xl z-50 text-sm">
                   <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 mb-1">
-                    <p className="font-semibold text-slate-800 dark:text-slate-100">{headerInfo.name}</p>
+                    <p className="font-semibold text-foreground ">{headerInfo.name}</p>
                     <p className="text-xs text-slate-400 break-all">{headerInfo.email}</p>
                   </div>
                   <Link
                     href="/"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800"
                     onClick={() => setUserDropdownOpen(false)}
                   >
                     <ArrowLeft size={16} /> Quay lại Chat / Trợ lý
@@ -524,7 +533,7 @@ export default function ProfilePage() {
                       setTheme(theme === "dark" ? "light" : "dark");
                       setUserDropdownOpen(false);
                     }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    className="flex w-full items-center gap-2.5 px-3 py-2 rounded-xl text-muted-foreground dark:text-slate-300 hover:bg-secondary/50 dark:hover:bg-slate-800"
                   >
                     {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
                     {theme === "dark" ? "Chế độ Sáng" : "Chế độ Tối"}
@@ -544,18 +553,18 @@ export default function ProfilePage() {
         {/* INNER CONTENT CONTAINER */}
         <main className="p-6 sm:p-10 space-y-6 max-w-7xl w-full mx-auto">
           {/* Breadcrumb Navigation */}
-          <div className="flex items-center gap-2 text-[13px] text-slate-500 dark:text-slate-400 font-medium">
-            <Link href="/" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+          <div className="flex items-center gap-2 text-[13px] text-muted-foreground  font-medium">
+            <Link href="/" className="hover:text-foreground dark:hover:text-slate-200 transition-colors">
               Staffs
             </Link>
             <span>/</span>
-            <span className="hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer">Staff list</span>
+            <span className="hover:text-foreground dark:hover:text-slate-200 cursor-pointer">Staff list</span>
             <span>/</span>
             <span className="text-[#009b88] dark:text-teal-400 font-medium">Staff detail</span>
           </div>
 
           {/* Sub-navigation Tabs */}
-          <div className="bg-[#dae8e5] dark:bg-slate-800/80 p-1.5 rounded-2xl flex flex-wrap items-center gap-1">
+          <div className="bg-secondary/30 p-1.5 rounded-2xl flex flex-wrap items-center gap-1">
             {TABS.map((tab) => {
               const isActive = activeTab === tab;
               return (
@@ -564,8 +573,8 @@ export default function ProfilePage() {
                   onClick={() => setActiveTab(tab)}
                   className={`px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 ${
                     isActive
-                      ? "bg-white dark:bg-slate-900 text-[#009688] dark:text-teal-400 shadow-xs"
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                      ? "bg-card text-primary shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {tab}
@@ -576,15 +585,15 @@ export default function ProfilePage() {
 
           {/* TAB 1: STAFF PROFILE (MAIN VIEW MATCHING SCREENSHOT) */}
           {activeTab === "Staff profile" && (
-            <div className="space-y-6">
+            <div className="space-y-6 profile-fade-up">
               {/* Profile Summary Card */}
-              <section className="relative rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm">
+              <section className="relative rounded-2xl border border-border bg-card p-6 sm:p-8 shadow-sm">
                 <button
                   onClick={() => {
                     setEditHeaderForm(headerInfo);
                     setEditingModal("header");
                   }}
-                  className="absolute top-6 right-6 p-1.5 rounded-lg text-slate-400 hover:text-[#009b88] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  className="absolute top-6 right-6 p-1.5 rounded-lg text-slate-400 hover:text-[#009b88] hover:bg-secondary/50 dark:hover:bg-slate-800 transition-colors"
                   title="Chỉnh sửa thông tin cơ bản"
                 >
                   <Pencil size={17} />
@@ -605,51 +614,51 @@ export default function ProfilePage() {
                         {headerInfo.name}
                       </h2>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[14px]">
-                        <span className="font-semibold text-[#009688] dark:text-teal-400">{headerInfo.title}</span>
-                        <span className="text-slate-300 dark:text-slate-700">|</span>
-                        <span className="text-slate-400 font-normal">{headerInfo.department}</span>
+                        <span className="font-semibold text-primary">{headerInfo.title}</span>
+                        <span className="text-muted-foreground/50">|</span>
+                        <span className="text-muted-foreground font-normal">{headerInfo.department}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Vertical separator on large screens */}
-                  <div className="hidden xl:block h-16 w-px bg-slate-200 dark:bg-slate-800" />
+                  <div className="hidden xl:block h-16 w-px bg-slate-200 " />
 
                   {/* Right: Metadata Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-3.5 text-[13px]">
                     <div className="flex items-center gap-4">
                       <span className="w-28 text-slate-400 font-normal">Staff ID:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{headerInfo.staffId}</span>
+                      <span className="font-bold text-foreground ">{headerInfo.staffId}</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="w-28 text-slate-400 font-normal">Phone number:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{headerInfo.phone}</span>
+                      <span className="font-bold text-foreground ">{headerInfo.phone}</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="w-28 text-slate-400 font-normal">Staff Account:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{headerInfo.staffAccount}</span>
+                      <span className="font-bold text-foreground ">{headerInfo.staffAccount}</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="w-28 text-slate-400 font-normal">Email:</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{headerInfo.email}</span>
+                      <span className="font-bold text-foreground ">{headerInfo.email}</span>
                     </div>
                   </div>
                 </div>
               </section>
 
               {/* Two-Column Grid Below Summary */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start profile-fade-up">
                 {/* LEFT COLUMN: Personal information Card */}
-                <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-sm">
+                <section className="rounded-2xl border border-border bg-card p-6 sm:p-7 shadow-sm">
                   {/* Card Title & Edit Icon */}
                   <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-                    <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-100">Personal information</h3>
+                    <h3 className="text-[15px] font-bold text-foreground ">Personal information</h3>
                     <button
                       onClick={() => {
                         setEditPersonalForm(personalInfo);
                         setEditingModal("personal");
                       }}
-                      className="p-1 rounded-md text-slate-400 hover:text-[#009b88] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                      className="p-1 rounded-md text-slate-400 hover:text-[#009b88] hover:bg-secondary/50 dark:hover:bg-slate-800 transition-colors"
                       title="Chỉnh sửa thông tin cá nhân"
                     >
                       <Pencil size={17} />
@@ -660,50 +669,50 @@ export default function ProfilePage() {
                   <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-y-5 gap-x-6 text-[13px]">
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Gender</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.gender}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.gender}</span>
                     </div>
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Date of birth</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.dob}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.dob}</span>
                     </div>
 
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Indentify code</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.identifyCode}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.identifyCode}</span>
                     </div>
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Hometown</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.hometown}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.hometown}</span>
                     </div>
 
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Nationality</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.nationality}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.nationality}</span>
                     </div>
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Religion</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.religion}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.religion}</span>
                     </div>
 
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Language</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.language}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.language}</span>
                     </div>
                     <div>
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Marial status</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{personalInfo.maritalStatus}</span>
+                      <span className="font-bold text-foreground ">{personalInfo.maritalStatus}</span>
                     </div>
 
                     <div className="sm:col-span-2">
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Permanent address</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
+                      <span className="font-bold text-foreground  leading-relaxed">
                         {personalInfo.permanentAddress}
                       </span>
                     </div>
 
                     <div className="sm:col-span-2">
                       <span className="block text-[12px] text-slate-400 font-normal mb-1">Current address</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
+                      <span className="font-bold text-foreground  leading-relaxed">
                         {personalInfo.currentAddress}
                       </span>
                     </div>
@@ -713,15 +722,15 @@ export default function ProfilePage() {
                 {/* RIGHT COLUMN: Education Information & Account Information */}
                 <div className="space-y-6">
                   {/* Card: Education information */}
-                  <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-sm">
+                  <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-7 shadow-sm">
                     <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-                      <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-100">Education information</h3>
+                      <h3 className="text-[15px] font-bold text-foreground ">Education information</h3>
                       <button
                         onClick={() => {
                           setEditEducationForm(educationList);
                           setEditingModal("education");
                         }}
-                        className="p-1 rounded-md text-slate-400 hover:text-[#009b88] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        className="p-1 rounded-md text-slate-400 hover:text-[#009b88] hover:bg-secondary/50 dark:hover:bg-slate-800 transition-colors"
                         title="Chỉnh sửa học vấn"
                       >
                         <Pencil size={17} />
@@ -732,8 +741,8 @@ export default function ProfilePage() {
                       {educationList.map((edu, idx) => (
                         <div key={idx}>
                           <div className="flex items-baseline justify-between gap-4">
-                            <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{edu.degree}</span>
-                            <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100 shrink-0">
+                            <span className="text-[13px] font-bold text-foreground ">{edu.degree}</span>
+                            <span className="text-[13px] font-bold text-foreground  shrink-0">
                               {edu.period}
                             </span>
                           </div>
@@ -744,15 +753,15 @@ export default function ProfilePage() {
                   </section>
 
                   {/* Card: Account information */}
-                  <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-sm">
+                  <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-7 shadow-sm">
                     <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-                      <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-100">Account information</h3>
+                      <h3 className="text-[15px] font-bold text-foreground ">Account information</h3>
                       <button
                         onClick={() => {
                           setEditAccountForm(accountInfo);
                           setEditingModal("account");
                         }}
-                        className="p-1 rounded-md text-slate-400 hover:text-[#009b88] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        className="p-1 rounded-md text-slate-400 hover:text-[#009b88] hover:bg-secondary/50 dark:hover:bg-slate-800 transition-colors"
                         title="Chỉnh sửa tài khoản ngân hàng"
                       >
                         <Pencil size={17} />
@@ -762,24 +771,24 @@ export default function ProfilePage() {
                     <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-y-5 gap-x-6 text-[13px]">
                       <div>
                         <span className="block text-[12px] text-slate-400 font-normal mb-1">Bank account</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-100">{accountInfo.bankAccount}</span>
+                        <span className="font-bold text-foreground ">{accountInfo.bankAccount}</span>
                       </div>
                       <div>
                         <span className="block text-[12px] text-slate-400 font-normal mb-1">Account name</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-100">{accountInfo.accountName}</span>
+                        <span className="font-bold text-foreground ">{accountInfo.accountName}</span>
                       </div>
                       <div>
                         <span className="block text-[12px] text-slate-400 font-normal mb-1">Bank</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-100">{accountInfo.bank}</span>
+                        <span className="font-bold text-foreground ">{accountInfo.bank}</span>
                       </div>
 
                       <div>
                         <span className="block text-[12px] text-slate-400 font-normal mb-1">Tax code</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-100">{accountInfo.taxCode}</span>
+                        <span className="font-bold text-foreground ">{accountInfo.taxCode}</span>
                       </div>
                       <div>
                         <span className="block text-[12px] text-slate-400 font-normal mb-1">Insurance code</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-100">{accountInfo.insuranceCode}</span>
+                        <span className="font-bold text-foreground ">{accountInfo.insuranceCode}</span>
                       </div>
                     </div>
                   </section>
@@ -791,43 +800,43 @@ export default function ProfilePage() {
           {/* TAB 2: WORK INFORMATION (CONNECTED COURSES & PERMISSIONS) */}
           {activeTab === "Work information" && (
             <div className="space-y-6">
-              <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm">
-                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">Thông tin công tác & Học liệu</h3>
-                <p className="text-sm text-slate-500 mb-6">Danh sách học phần, quyền truy cập tài liệu và phân quyền hệ thống.</p>
+              <section className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-8 shadow-sm">
+                <h3 className="text-lg font-bold text-foreground  mb-2">Thông tin công tác & Học liệu</h3>
+                <p className="text-sm text-muted-foreground mb-6">Danh sách học phần, quyền truy cập tài liệu và phân quyền hệ thống.</p>
 
                 <div className="grid gap-6 md:grid-cols-2">
-                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-5 bg-slate-50/50 dark:bg-slate-800/40">
-                    <h4 className="text-sm font-semibold flex items-center gap-2 mb-3 text-slate-800 dark:text-slate-200">
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-5 bg-secondary/50/50 /40">
+                    <h4 className="text-sm font-semibold flex items-center gap-2 mb-3 text-foreground dark:text-slate-200">
                       <Building2 size={16} className="text-[#009b88]" /> Phòng ban & Trực thuộc
                     </h4>
                     <dl className="space-y-3 text-xs">
                       <div className="flex justify-between">
                         <dt className="text-slate-400">Đơn vị:</dt>
-                        <dd className="font-semibold text-slate-800 dark:text-slate-200">{headerInfo.department}</dd>
+                        <dd className="font-semibold text-foreground dark:text-slate-200">{headerInfo.department}</dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-slate-400">Chức vụ:</dt>
-                        <dd className="font-semibold text-slate-800 dark:text-slate-200">{headerInfo.title}</dd>
+                        <dd className="font-semibold text-foreground dark:text-slate-200">{headerInfo.title}</dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-slate-400">Quản trị tổ chức:</dt>
-                        <dd className="font-semibold text-slate-800 dark:text-slate-200">SJ Label</dd>
+                        <dd className="font-semibold text-foreground dark:text-slate-200">SJ Label</dd>
                       </div>
                     </dl>
                   </div>
 
-                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-5 bg-slate-50/50 dark:bg-slate-800/40">
-                    <h4 className="text-sm font-semibold flex items-center gap-2 mb-3 text-slate-800 dark:text-slate-200">
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-5 bg-secondary/50/50 /40">
+                    <h4 className="text-sm font-semibold flex items-center gap-2 mb-3 text-foreground dark:text-slate-200">
                       <ShieldCheck size={16} className="text-emerald-500" /> Phiên làm việc & Bảo mật
                     </h4>
                     <dl className="space-y-3 text-xs">
                       <div className="flex justify-between">
                         <dt className="text-slate-400">Tài khoản:</dt>
-                        <dd className="font-semibold text-slate-800 dark:text-slate-200">{headerInfo.staffAccount}</dd>
+                        <dd className="font-semibold text-foreground dark:text-slate-200">{headerInfo.staffAccount}</dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-slate-400">Hết hạn phiên:</dt>
-                        <dd className="font-semibold text-slate-800 dark:text-slate-200">
+                        <dd className="font-semibold text-foreground dark:text-slate-200">
                           {sessionExpiry ? new Date(sessionExpiry).toLocaleString("vi-VN") : "Phiên tiêu chuẩn (30 ngày)"}
                         </dd>
                       </div>
@@ -840,14 +849,14 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-8">
-                  <h4 className="text-sm font-semibold flex items-center gap-2 mb-4 text-slate-800 dark:text-slate-200">
+                  <h4 className="text-sm font-semibold flex items-center gap-2 mb-4 text-foreground dark:text-slate-200">
                     <BookOpen size={16} className="text-[#009b88]" /> Môn học & Học phần được phân công ({courses.length})
                   </h4>
                   {courses.length > 0 ? (
                     <div className="grid gap-3 sm:grid-cols-2">
                       {courses.map((c) => (
-                        <div key={c.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs">
-                          <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">{c.name}</p>
+                        <div key={c.id} className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-card  shadow-2xs">
+                          <p className="font-semibold text-sm text-foreground dark:text-slate-200">{c.name}</p>
                           <p className="text-xs text-slate-400 mt-1">{c.code || c.id}{c.term ? ` · Kỳ ${c.term}` : ""}</p>
                           <div className="mt-3 flex gap-2 text-[11px] text-[#009b88] dark:text-teal-400">
                             <span className="bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded">Đọc tài liệu</span>
@@ -858,7 +867,7 @@ export default function ProfilePage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-400">
+                    <div className="rounded-xl border border-dashed border-border dark:border-slate-800 p-8 text-center text-sm text-slate-400">
                       Chưa có môn học liên kết hoặc đang trong chế độ hồ sơ nhân sự chuẩn.
                     </div>
                   )}
@@ -869,12 +878,12 @@ export default function ProfilePage() {
 
           {/* TAB 3: TIMESHEET & ATTENDANCE */}
           {activeTab === "Timesheet & Attendance" && (
-            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Bảng chấm công & Điểm danh</h3>
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-8 shadow-sm space-y-4">
+              <h3 className="text-base font-bold text-foreground ">Bảng chấm công & Điểm danh</h3>
               <p className="text-xs text-slate-400">Dữ liệu chấm công tháng 03/2025.</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase">
+                  <thead className="bg-secondary/50 /50 text-muted-foreground uppercase">
                     <tr>
                       <th className="p-3">Ngày</th>
                       <th className="p-3">Giờ vào</th>
@@ -886,22 +895,22 @@ export default function ProfilePage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                     <tr>
                       <td className="p-3">Hôm nay (28/03)</td>
-                      <td className="p-3 text-slate-800 dark:text-slate-200">08:28</td>
-                      <td className="p-3 text-slate-800 dark:text-slate-200">17:35</td>
+                      <td className="p-3 text-foreground dark:text-slate-200">08:28</td>
+                      <td className="p-3 text-foreground dark:text-slate-200">17:35</td>
                       <td className="p-3">8.5h</td>
                       <td className="p-3 text-emerald-600">Đúng giờ</td>
                     </tr>
                     <tr>
                       <td className="p-3">27/03/2025</td>
-                      <td className="p-3 text-slate-800 dark:text-slate-200">08:30</td>
-                      <td className="p-3 text-slate-800 dark:text-slate-200">18:00</td>
+                      <td className="p-3 text-foreground dark:text-slate-200">08:30</td>
+                      <td className="p-3 text-foreground dark:text-slate-200">18:00</td>
                       <td className="p-3">8.5h</td>
                       <td className="p-3 text-emerald-600">Đúng giờ</td>
                     </tr>
                     <tr>
                       <td className="p-3">26/03/2025</td>
-                      <td className="p-3 text-slate-800 dark:text-slate-200">08:25</td>
-                      <td className="p-3 text-slate-800 dark:text-slate-200">17:45</td>
+                      <td className="p-3 text-foreground dark:text-slate-200">08:25</td>
+                      <td className="p-3 text-foreground dark:text-slate-200">17:45</td>
                       <td className="p-3">8.2h</td>
                       <td className="p-3 text-emerald-600">Đúng giờ</td>
                     </tr>
@@ -913,14 +922,14 @@ export default function ProfilePage() {
 
           {/* TAB 4: CONTRACTS & DOCUMENTS */}
           {activeTab === "Contracts & Documents" && (
-            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Hợp đồng & Tài liệu pháp lý</h3>
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-8 shadow-sm space-y-4">
+              <h3 className="text-base font-bold text-foreground ">Hợp đồng & Tài liệu pháp lý</h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <FileText className="text-[#009b88]" size={20} />
                     <div>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Hợp đồng lao động chính thức</p>
+                      <p className="text-sm font-semibold text-foreground dark:text-slate-200">Hợp đồng lao động chính thức</p>
                       <p className="text-xs text-slate-400">Hiệu lực từ 01/01/2024 · Đã ký kết số</p>
                     </div>
                   </div>
@@ -930,7 +939,7 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-3">
                     <FileText className="text-[#009b88]" size={20} />
                     <div>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Thoả thuận bảo mật thông tin (NDA)</p>
+                      <p className="text-sm font-semibold text-foreground dark:text-slate-200">Thoả thuận bảo mật thông tin (NDA)</p>
                       <p className="text-xs text-slate-400">Ký ngày 15/12/2023</p>
                     </div>
                   </div>
@@ -942,18 +951,18 @@ export default function ProfilePage() {
 
           {/* TAB 5: PAYROLL & BENEFITS */}
           {activeTab === "Payroll & Benefits" && (
-            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Lương & Chế độ đãi ngộ</h3>
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-8 shadow-sm space-y-4">
+              <h3 className="text-base font-bold text-foreground ">Lương & Chế độ đãi ngộ</h3>
               <div className="grid sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-secondary/50/50 /40">
                   <p className="text-xs text-slate-400">Bậc lương hiện tại</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">Level 4 - Senior</p>
+                  <p className="text-lg font-bold text-foreground  mt-1">Level 4 - Senior</p>
                 </div>
-                <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-secondary/50/50 /40">
                   <p className="text-xs text-slate-400">Bảo hiểm xã hội & Y tế</p>
                   <p className="text-lg font-bold text-emerald-600 mt-1">Đầy đủ 100%</p>
                 </div>
-                <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-secondary/50/50 /40">
                   <p className="text-xs text-slate-400">Ngày phép còn lại</p>
                   <p className="text-lg font-bold text-teal-600 mt-1">11.5 ngày</p>
                 </div>
@@ -963,14 +972,14 @@ export default function ProfilePage() {
 
           {/* TAB 6: COMPANY ASSETS */}
           {activeTab === "Company assets" && (
-            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Tài sản & Thiết bị bàn giao</h3>
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-card  p-6 sm:p-8 shadow-sm space-y-4">
+              <h3 className="text-base font-bold text-foreground ">Tài sản & Thiết bị bàn giao</h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <Laptop className="text-[#009b88]" size={20} />
                     <div>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Apple MacBook Pro 16" M3 Pro</p>
+                      <p className="text-sm font-semibold text-foreground dark:text-slate-200">Apple MacBook Pro 16" M3 Pro</p>
                       <p className="text-xs text-slate-400">Số serial: C02GM932MD6R · Bàn giao ngày 10/01/2024</p>
                     </div>
                   </div>
@@ -989,103 +998,103 @@ export default function ProfilePage() {
       {/* 1. Edit Personal Information Modal */}
       {editingModal === "personal" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-2xl rounded-2xl bg-card  p-6 shadow-2xl border border-border dark:border-slate-800">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Chỉnh sửa Personal information</h3>
-              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-base font-bold text-foreground ">Chỉnh sửa Personal information</h3>
+              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-muted-foreground">
                 <X size={18} />
               </button>
             </div>
 
             <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Gender</label>
+                <label className="block text-muted-foreground font-medium mb-1">Gender</label>
                 <input
                   type="text"
                   value={editPersonalForm.gender}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, gender: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Date of birth</label>
+                <label className="block text-muted-foreground font-medium mb-1">Date of birth</label>
                 <input
                   type="text"
                   value={editPersonalForm.dob}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, dob: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Indentify code</label>
+                <label className="block text-muted-foreground font-medium mb-1">Indentify code</label>
                 <input
                   type="text"
                   value={editPersonalForm.identifyCode}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, identifyCode: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Hometown</label>
+                <label className="block text-muted-foreground font-medium mb-1">Hometown</label>
                 <input
                   type="text"
                   value={editPersonalForm.hometown}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, hometown: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Nationality</label>
+                <label className="block text-muted-foreground font-medium mb-1">Nationality</label>
                 <input
                   type="text"
                   value={editPersonalForm.nationality}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, nationality: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Religion</label>
+                <label className="block text-muted-foreground font-medium mb-1">Religion</label>
                 <input
                   type="text"
                   value={editPersonalForm.religion}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, religion: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Language</label>
+                <label className="block text-muted-foreground font-medium mb-1">Language</label>
                 <input
                   type="text"
                   value={editPersonalForm.language}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, language: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Marial status</label>
+                <label className="block text-muted-foreground font-medium mb-1">Marial status</label>
                 <input
                   type="text"
                   value={editPersonalForm.maritalStatus}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, maritalStatus: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-slate-500 font-medium mb-1">Permanent address</label>
+                <label className="block text-muted-foreground font-medium mb-1">Permanent address</label>
                 <input
                   type="text"
                   value={editPersonalForm.permanentAddress}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, permanentAddress: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-slate-500 font-medium mb-1">Current address</label>
+                <label className="block text-muted-foreground font-medium mb-1">Current address</label>
                 <input
                   type="text"
                   value={editPersonalForm.currentAddress}
                   onChange={(e) => setEditPersonalForm({ ...editPersonalForm, currentAddress: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
             </div>
@@ -1093,7 +1102,7 @@ export default function ProfilePage() {
             <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setEditingModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-secondary dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Huỷ bỏ
               </button>
@@ -1111,19 +1120,19 @@ export default function ProfilePage() {
       {/* 2. Edit Education Modal */}
       {editingModal === "education" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-xl rounded-2xl bg-card  p-6 shadow-2xl border border-border dark:border-slate-800">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Chỉnh sửa Education information</h3>
-              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-base font-bold text-foreground ">Chỉnh sửa Education information</h3>
+              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-muted-foreground">
                 <X size={18} />
               </button>
             </div>
 
             <div className="mt-5 space-y-4">
               {editEducationForm.map((edu, idx) => (
-                <div key={idx} className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                <div key={idx} className="p-4 rounded-xl border border-border  space-y-2 text-xs">
                   <div className="flex justify-between items-center">
-                    <span className="font-semibold text-slate-600 dark:text-slate-300">Bằng cấp / Chứng chỉ #{idx + 1}</span>
+                    <span className="font-semibold text-muted-foreground dark:text-slate-300">Bằng cấp / Chứng chỉ #{idx + 1}</span>
                   </div>
                   <input
                     type="text"
@@ -1134,7 +1143,7 @@ export default function ProfilePage() {
                       updated[idx].degree = e.target.value;
                       setEditEducationForm(updated);
                     }}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <input
@@ -1146,7 +1155,7 @@ export default function ProfilePage() {
                         updated[idx].school = e.target.value;
                         setEditEducationForm(updated);
                       }}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                      className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-xs text-foreground dark:text-slate-200 focus:outline-teal-500"
                     />
                     <input
                       type="text"
@@ -1157,7 +1166,7 @@ export default function ProfilePage() {
                         updated[idx].period = e.target.value;
                         setEditEducationForm(updated);
                       }}
-                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                      className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-xs text-foreground dark:text-slate-200 focus:outline-teal-500"
                     />
                   </div>
                 </div>
@@ -1167,7 +1176,7 @@ export default function ProfilePage() {
             <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setEditingModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-secondary dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Huỷ bỏ
               </button>
@@ -1185,59 +1194,59 @@ export default function ProfilePage() {
       {/* 3. Edit Account Information Modal */}
       {editingModal === "account" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-lg rounded-2xl bg-card  p-6 shadow-2xl border border-border dark:border-slate-800">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Chỉnh sửa Account information</h3>
-              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-base font-bold text-foreground ">Chỉnh sửa Account information</h3>
+              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-muted-foreground">
                 <X size={18} />
               </button>
             </div>
 
             <div className="mt-5 space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Bank account</label>
+                <label className="block text-muted-foreground font-medium mb-1">Bank account</label>
                 <input
                   type="text"
                   value={editAccountForm.bankAccount}
                   onChange={(e) => setEditAccountForm({ ...editAccountForm, bankAccount: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Account name</label>
+                <label className="block text-muted-foreground font-medium mb-1">Account name</label>
                 <input
                   type="text"
                   value={editAccountForm.accountName}
                   onChange={(e) => setEditAccountForm({ ...editAccountForm, accountName: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Bank</label>
+                <label className="block text-muted-foreground font-medium mb-1">Bank</label>
                 <input
                   type="text"
                   value={editAccountForm.bank}
                   onChange={(e) => setEditAccountForm({ ...editAccountForm, bank: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Tax code</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Tax code</label>
                   <input
                     type="text"
                     value={editAccountForm.taxCode}
                     onChange={(e) => setEditAccountForm({ ...editAccountForm, taxCode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Insurance code</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Insurance code</label>
                   <input
                     type="text"
                     value={editAccountForm.insuranceCode}
                     onChange={(e) => setEditAccountForm({ ...editAccountForm, insuranceCode: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
               </div>
@@ -1246,7 +1255,7 @@ export default function ProfilePage() {
             <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setEditingModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-secondary dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Huỷ bỏ
               </button>
@@ -1264,81 +1273,81 @@ export default function ProfilePage() {
       {/* 4. Edit Header Card Information Modal */}
       {editingModal === "header" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-lg rounded-2xl bg-card  p-6 shadow-2xl border border-border dark:border-slate-800">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Chỉnh sửa hồ sơ cơ bản</h3>
-              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-base font-bold text-foreground ">Chỉnh sửa hồ sơ cơ bản</h3>
+              <button onClick={() => setEditingModal(null)} className="text-slate-400 hover:text-muted-foreground">
                 <X size={18} />
               </button>
             </div>
 
             <div className="mt-5 space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-500 font-medium mb-1">Họ và tên</label>
+                <label className="block text-muted-foreground font-medium mb-1">Họ và tên</label>
                 <input
                   type="text"
                   value={editHeaderForm.name}
                   onChange={(e) => setEditHeaderForm({ ...editHeaderForm, name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                  className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Chức danh</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Chức danh</label>
                   <input
                     type="text"
                     value={editHeaderForm.title}
                     onChange={(e) => setEditHeaderForm({ ...editHeaderForm, title: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Phòng ban</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Phòng ban</label>
                   <input
                     type="text"
                     value={editHeaderForm.department}
                     onChange={(e) => setEditHeaderForm({ ...editHeaderForm, department: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Staff ID</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Staff ID</label>
                   <input
                     type="text"
                     value={editHeaderForm.staffId}
                     onChange={(e) => setEditHeaderForm({ ...editHeaderForm, staffId: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Staff Account</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Staff Account</label>
                   <input
                     type="text"
                     value={editHeaderForm.staffAccount}
                     onChange={(e) => setEditHeaderForm({ ...editHeaderForm, staffAccount: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Phone number</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Phone number</label>
                   <input
                     type="text"
                     value={editHeaderForm.phone}
                     onChange={(e) => setEditHeaderForm({ ...editHeaderForm, phone: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-500 font-medium mb-1">Email</label>
+                  <label className="block text-muted-foreground font-medium mb-1">Email</label>
                   <input
                     type="text"
                     value={editHeaderForm.email}
                     onChange={(e) => setEditHeaderForm({ ...editHeaderForm, email: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-teal-500"
+                    className="w-full rounded-xl border border-border  bg-transparent px-3 py-2 text-sm text-foreground dark:text-slate-200 focus:outline-teal-500"
                   />
                 </div>
               </div>
@@ -1347,7 +1356,7 @@ export default function ProfilePage() {
             <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setEditingModal(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-muted-foreground hover:bg-secondary dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Huỷ bỏ
               </button>
