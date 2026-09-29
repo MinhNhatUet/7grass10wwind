@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { ApiError, api, json } from "@/lib/api";
 import { MSG, ROLE_LABEL, errorMessage } from "@/lib/messages";
 import { useSession } from "@/lib/useSession";
+import gsap from "gsap";
 
 // UI-10 — Quản trị (FR-01.4): tài khoản, môn/quyền, khóa khẩn cấp, audit. Mọi thay đổi bắt buộc có lý do (BR-11).
 // Quản trị không đọc hội thoại hay nội dung tài liệu (AC-01.6).
@@ -92,6 +93,14 @@ export default function AdminPage() {
     if (profile?.user.role === "admin") void load();
   }, [profile, load]);
 
+  useEffect(() => {
+    gsap.fromTo(
+      ".admin-tab, .admin-panel",
+      { opacity: 0, y: 10 },
+      { opacity: 1, y: 0, duration: 0.4, stagger: 0.05, ease: "power2.out" }
+    );
+  }, [tab]);
+
   if (profile && profile.user.role !== "admin") {
     return (
       <AppShell profile={profile} courses={myCourses} onSignOut={signOut}>
@@ -132,18 +141,34 @@ export default function AdminPage() {
 
   return (
     <AppShell profile={profile} courses={myCourses} onSignOut={signOut}>
-      <main className="container wide">
-        <h2>Quản trị</h2>
-        {msg && <div className={`banner banner-${msg.kind === "error" ? "error" : "info"}`}>{msg.text}</div>}
-        <div className="chips">
+      <main className="mx-auto max-w-6xl p-6 lg:p-10 space-y-6">
+        <h2 className="text-3xl font-bold tracking-tight">Quản trị Hệ thống</h2>
+        
+        {msg && (
+          <div className={`px-4 py-3 rounded-xl text-sm border ${msg.kind === "error" ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-primary/10 border-primary/20 text-primary"}`}>
+            {msg.text}
+          </div>
+        )}
+        
+        <div className="flex flex-wrap gap-2 mb-6 border-b border-border pb-4">
           {(Object.keys(TABS) as (keyof typeof TABS)[]).map((t) => (
-            <button key={t} type="button" className={`chip${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
+            <button 
+              key={t} 
+              type="button" 
+              className={`admin-tab px-4 py-2 text-sm font-medium rounded-full transition-colors cursor-pointer ${
+                tab === t 
+                  ? "bg-primary text-primary-foreground shadow-md" 
+                  : "bg-secondary text-foreground hover:bg-secondary/80 border border-border"
+              }`} 
+              onClick={() => setTab(t)}
+            >
               {TABS[t]}
             </button>
           ))}
         </div>
 
-        {tab === "ops" && <OpsPanel onError={fail} />}
+        <div className="admin-panel">
+          {tab === "ops" && <OpsPanel onError={fail} />}
 
         {tab === "users" && (
           <>
@@ -282,6 +307,7 @@ export default function AdminPage() {
             </table>
           </div>
         )}
+        </div>
       </main>
     </AppShell>
   );
