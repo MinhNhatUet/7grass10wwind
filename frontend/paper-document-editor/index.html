@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paper — Document Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="window">
+  <header class="windowbar">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <div class="window-title">Overflow App</div>
+  </header>
+
+  <div class="editor">
+    <aside class="leftbar">
+      <div class="left-title"><span class="tiny-mark"></span> Overflow App</div>
+      <div class="tree">
+        <div class="tree-row root"><span>⌄</span><b>Pages</b></div>
+        <div class="tree-row child"><span>⌄</span><span class="doc-icon">□</span><b>Page 1</b></div>
+        <div class="tree-row child"><span>⌄</span><span class="doc-icon">□</span><b>Junk</b></div>
+        <div class="tree-row root selected"><span>⌄</span><b>PlaylistPage</b></div>
+        <div class="tree-row layer depth1"><span>⌄</span><span class="layer-icon">◇</span><b>Navbar</b></div>
+        <div class="tree-row layer depth2"><span>⌄</span><span class="layer-icon">▣</span><span>Logo</span></div>
+        <div class="tree-row layer depth2"><span>⌄</span><span class="layer-icon">T</span><span>Search</span></div>
+        <div class="tree-row layer depth1"><span>⌄</span><span class="layer-icon">◇</span><span>Content</span></div>
+        <div class="tree-row layer depth2"><span class="layer-icon">T</span><span>Playlist title</span></div>
+        <div class="tree-row layer depth2"><span class="layer-icon">▭</span><span>Video card</span></div>
+      </div>
+      <div class="left-footer">
+        <button title="Add page">+</button>
+        <button title="Layers">≡</button>
+        <button title="Assets">◫</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <div class="toolbar">
+        <div class="tool-group">
+          <button class="tool active" data-tool="select" title="Select">↖</button>
+          <button class="tool" data-tool="hand" title="Hand">✋</button>
+          <button class="tool" data-tool="frame" title="Frame">□</button>
+          <button class="tool" data-tool="rect" title="Rectangle">▭</button>
+          <button class="tool" data-tool="text" title="Text">T</button>
+          <button class="tool" data-tool="comment" title="Comment">●</button>
+        </div>
+        <div class="toolbar-center">
+          <button id="zoomOut">−</button>
+          <span id="zoomLabel">100%</span>
+          <button id="zoomIn">+</button>
+        </div>
+        <div class="toolbar-right">
+          <button id="codeToggle" class="code-toggle">Claude Code</button>
+          <button>☁</button>
+          <button>?</button>
+          <div class="user">A</div>
+        </div>
+      </div>
+
+      <div class="canvas-area" id="canvasArea">
+        <div class="canvas" id="canvas">
+          <div class="app-screen" id="appScreen">
+            <div class="app-nav">
+              <button class="hamburger">☰</button>
+              <strong>overflow</strong>
+              <div class="app-search">⌕ <span>Search...</span></div>
+              <div class="app-nav-actions">◔　♧　A</div>
+            </div>
+            <div class="screen-body">
+              <aside class="mini-side">
+                <span class="side-line wide"></span>
+                <span class="side-line"></span>
+                <span class="side-line"></span>
+                <span class="side-line"></span>
+                <span class="side-line short"></span>
+              </aside>
+              <section class="screen-content">
+                <div class="crumb">Home / Playlist</div>
+                <h1 class="editable selected" data-id="heading" contenteditable="true">My Playlist</h1>
+                <p class="editable subtitle" data-id="subtitle" contenteditable="true">Your saved videos and favorite moments.</p>
+                <div class="video-grid">
+                  <article class="video-card editable" data-id="card1" contenteditable="true"><span class="play">▶</span><b>Design systems in 2026</b><small>12:42</small></article>
+                  <article class="video-card editable" data-id="card2" contenteditable="true"><span class="play">▶</span><b>Build better interfaces</b><small>08:15</small></article>
+                  <article class="video-card editable" data-id="card3" contenteditable="true"><span class="play">▶</span><b>Product thinking</b><small>16:21</small></article>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <div class="code-panel" id="codePanel">
+          <div class="code-head"><span>Claude Code</span><button id="codeClose">×</button></div>
+          <div class="code-body">
+            <div class="code-line prompt-line"><span class="green">›</span> get the playlist screen from my codebase</div>
+            <div class="code-line"><span class="blue">●</span> paper — get_selection (MCP)</div>
+            <div class="code-line muted">Selected: PlaylistPage (Frame, 1440×900)</div>
+            <div class="code-line spacer"></div>
+            <div class="code-line"><span class="blue">●</span> Inspecting selected layer...</div>
+            <div class="code-line muted">Navbar · Content · Video cards</div>
+          </div>
+          <div class="code-input"><span>›</span><input placeholder="Ask Claude Code..." id="codeInput"><button id="codeSend">↑</button></div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="rightbar">
+      <div class="right-tabs"><button class="tab active">Design</button><button class="tab">Prototype</button></div>
+      <div class="doc-head"><span>Document</span><span>100%</span></div>
+      <button class="copy-link">Copy link　⌘L</button>
+
+      <section class="inspector">
+        <div class="section-head"><b>Layout</b><span>⛶</span></div>
+        <div class="field-grid">
+          <label>X<input id="xInput" type="number" value="348"></label>
+          <label>Y<input id="yInput" type="number" value="64"></label>
+          <label>X<input id="rotInput" type="number" value="0"></label>
+        </div>
+        <div class="field-grid">
+          <label>W<input id="wInput" type="number" value="870"></label>
+          <label>H<input id="hInput" type="number" value="500"></label>
+          <label>↗<input value="0" readonly></label>
+        </div>
+        <button class="wide-control">Add flex ⌘A</button>
+        <button class="wide-control">Clip content　⌥C</button>
+      </section>
+
+      <section class="inspector">
+        <div class="section-head"><b>Radius</b><span>□</span></div>
+        <div class="radius-row"><input id="radiusInput" type="range" min="0" max="40" value="0"><output id="radiusOut">0</output></div>
+      </section>
+
+      <section class="inspector">
+        <div class="section-head"><b>Blending</b><span>◉</span></div>
+        <div class="blend-row"><span>▧ 100%</span><select><option>Normal</option><option>Multiply</option><option>Screen</option></select></div>
+      </section>
+
+      <section class="inspector">
+        <div class="section-head"><b>Fill</b><span>＋</span></div>
+        <div class="fill-row"><span class="swatch"></span><input id="fillInput" value="#FCFCF9"><button>100%</button></div>
+      </section>
+
+      <section class="inspector typography">
+        <div class="section-head"><b>Typography</b><span>⌄</span></div>
+        <label>Font<input id="fontInput" value="Manrope"></label>
+        <div class="field-grid">
+          <label>Weight<select id="weightInput"><option>400</option><option>500</option><option>600</option></select></label>
+          <label>Size<input id="sizeInput" type="number" value="48"></label>
+          <label>Line<input id="lineInput" type="number" value="1.14" step=".01"></label>
+        </div>
+      </section>
+
+      <section class="inspector">
+        <div class="section-head"><b>Effects</b><span>＋</span></div>
+        <button class="effect">Drop shadow <span>›</span></button>
+        <button class="effect">Inner shadow <span>›</span></button>
+      </section>
+    </aside>
+  </div>
+</div>
+<script src="./app.js"></script>
+</body>
+</html>

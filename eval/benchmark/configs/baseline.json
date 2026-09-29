@@ -1,0 +1,7 @@
+{
+  "label": "baseline",
+  "git_commit": null,
+  "corpus_version": null,
+  "description": "Bản cơ bản đã qua cổng BL-30",
+  "runs": {"accuracy": null, "safety": null, "perf_search": null, "perf_answer": null, "ragas": null, "router": null}
+}

@@ -83,6 +83,20 @@ uvicorn src.main:app --reload --port 8000
 Swagger UI ở <http://localhost:8000/docs>. Hoặc dùng `make run`, `make test`,
 `make lint` — xem `Makefile`.
 
+Để chạy cả frontend và backend trên Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+```
+
+Hoặc nếu đã cài `make`:
+
+```bash
+make dev
+```
+
+Frontend ở <http://localhost:3000>, backend ở <http://localhost:8000>.
+
 ## Cấu trúc thư mục
 
 ```
