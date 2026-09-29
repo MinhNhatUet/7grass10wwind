@@ -1,6 +1,7 @@
-import { redirect } from "next/navigation";
+"use client";
 
-// One management workflow: do not retain the former simulated upload dashboard.
-export default function LecturerDashboard() {
-  redirect("/hub/review");
+import ManageHub from "@/components/manage-hub";
+
+export default function LecturerDashboardPage() {
+  return <ManageHub viewer defaultTab="Dashboard" />;
 }

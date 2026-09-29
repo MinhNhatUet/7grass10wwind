@@ -17,12 +17,12 @@ from sqlalchemy.orm import Session
 
 from src.agents import orchestrator
 from src.config import get_settings
-from src.models.orm import Chunk, Citation, Conversation, Course, Document, Message, StudyPlan, UsageEvent, User, new_id
+from src.models.orm import Chunk, Citation, Conversation, Course, Document, DocumentVersion, Message, StudyPlan, UsageEvent, User, new_id
 from src.services import acl
 from src.services.assistants import AssistantResult, LlmError, learning
 from src.services.errors import AppError, bad_request, forbidden, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
-from src.services.retrieval import still_servable
+from src.services.retrieval import EmbeddingUnavailableError, document_scope, still_servable
 
 ASSISTANTS = ("academic", "learning", "hub")
 MODES = ("auto", *ASSISTANTS)  # "auto" = router điều phối (FR-11); còn lại = chuyển thủ công (FR-11.5)
@@ -32,14 +32,32 @@ QUOTE_CHARS = 400
 # ---------------------------------------------------------------- hội thoại
 
 
-def create(db: Session, user: User, course_id: str | None, assistant: str, title: str | None) -> Conversation:
+def scoped_document(db: Session, user: User, document_id: str) -> Document:
+    doc = db.get(Document, document_id)
+    if doc is None or not acl.can_read_course(db, user, doc.course_id):
+        raise not_found()
+    version = db.get(DocumentVersion, doc.current_version_id) if doc.current_version_id else None
+    if version is None or not acl.can_serve_version(db, user, version, doc):
+        raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
+    return doc
+
+
+def create(db: Session, user: User, course_id: str | None, assistant: str, title: str | None,
+           document_id: str | None = None) -> Conversation:
     """course_id None (mặc định, D-28): router chọn môn theo từng câu hỏi. Có course_id: cố định một môn."""
     if assistant not in MODES:
         raise bad_request("INVALID_ASSISTANT")
+    if document_id:
+        doc = scoped_document(db, user, document_id)
+        if course_id is not None and course_id != doc.course_id:
+            raise bad_request("DOCUMENT_COURSE_MISMATCH")
+        course_id = doc.course_id
+        title = title or f"Hỏi về: {doc.title}"
     if course_id is not None and not acl.can_read_course(db, user, course_id):
         raise forbidden("COURSE_NOT_ALLOWED")  # BR-02: không tin course do client gửi
     conv = Conversation(
-        owner_id=user.id, course_id=course_id, assistant_mode=assistant, title=(title or "Hội thoại mới")[:300]
+        owner_id=user.id, course_id=course_id, assistant_mode=assistant, title=(title or "Hội thoại mới")[:300],
+        document_id=document_id,
     )
     db.add(conv)
     db.commit()
@@ -51,6 +69,14 @@ def get_owned(db: Session, user: User, conversation_id: str) -> Conversation:
     if conv is None or conv.owner_id != user.id or conv.deleted_at is not None:
         raise not_found()  # không tiết lộ hội thoại người khác có tồn tại (AC-05.1)
     return conv
+
+
+def replay(db: Session, user: User, conv: Conversation, cached: dict[str, Any]) -> dict[str, Any]:
+    """Never return cached answer text without checking current source permissions."""
+    msg = db.get(Message, cached.get("message_id") or cached.get("answer_id"))
+    if msg is None or msg.conversation_id != conv.id or msg.role != "assistant":
+        raise not_found()
+    return serialize(db, user, msg, conv)
 
 
 def list_owned(db: Session, user: User, limit: int, cursor: int) -> tuple[list[Conversation], int | None]:
@@ -169,7 +195,9 @@ def _history(db: Session, conv: Conversation, before_id: str) -> list[tuple[str,
     for m in msgs:
         if m.id == before_id:
             break
-        out.append((m.role, m.content))
+        current = serialize(db, db.get(User, conv.owner_id), m, conv)
+        if not current["metadata"].get("masked"):
+            out.append((m.role, current["content"]))
     return out
 
 
@@ -217,6 +245,8 @@ def _persist_answer(
 
 def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], request_id: str | None) -> dict[str, Any]:
     conv = get_owned(db, user, conversation_id)
+    if conv.document_id:
+        scoped_document(db, user, conv.document_id)
     # Router chỉ được chọn trong các môn user đang được đọc (BR-02); hội thoại cố định môn thì chỉ môn đó
     readable = acl.readable_course_ids(db, user)
     candidates = [conv.course_id] if conv.course_id else readable
@@ -265,17 +295,18 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     started = time.perf_counter()
     status, chosen, routed_course = "error", mode, None
     try:
-        result, trace = orchestrator.run(
-            db=db,
-            user=user,
-            courses=courses,
-            previous_course_id=_previous_course(db, conv, user_msg.id),
-            request_id=request_id,
-            question=content,
-            history=_history(db, conv, user_msg.id),
-            mode=mode,
-            options=body.get("learning") or {},
-        )
+        with document_scope(conv.document_id):
+            result, trace = orchestrator.run(
+                db=db,
+                user=user,
+                courses=courses,
+                previous_course_id=_previous_course(db, conv, user_msg.id),
+                request_id=request_id,
+                question=content,
+                history=_history(db, conv, user_msg.id),
+                mode=mode,
+                options=body.get("learning") or {},
+            )
         chosen = trace["assistant"] if trace["assistant"] in ASSISTANTS else "router"
         routed_course = trace.get("course_id")
         result.payload["route"] = trace  # trace điều phối (AC-11.5), hiển thị "Router: đã chọn …" (FR-11.5)
@@ -285,6 +316,10 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
         status = result.status
         db.commit()
         return serialize(db, user, msg, conv)
+    except EmbeddingUnavailableError as e:
+        db.rollback()
+        code = "EMBEDDING_RATE_LIMITED" if e.rate_limited else "EMBEDDING_UNAVAILABLE"
+        raise AppError(code, 503, retryable=True) from e
     except LlmError as e:
         db.rollback()
         raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
@@ -395,6 +430,8 @@ def save_quiz_answers(
     if msg is None or (msg.payload or {}).get("kind") != "quiz":
         raise not_found()
     conv = get_owned(db, user, msg.conversation_id)
+    if any(not still_servable(db, user, c.version_id) for c in msg.citations):
+        raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
     payload = dict(msg.payload)
     ids = {q["id"] for q in payload.get("questions", [])}
     payload["answers"] = {**payload.get("answers", {}), **{k: str(v)[:2000] for k, v in answers.items() if k in ids}}

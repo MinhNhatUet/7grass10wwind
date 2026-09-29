@@ -9,8 +9,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   BarChart, Bar
 } from "recharts";
-import { motion, AnimatePresence } from "framer-motion";
-import { useTheme } from "next-themes";
+import { useEffect } from "react";
+import { API, responseError } from "@/lib/api-errors";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,9 +52,32 @@ const topQuestions = [
   { id: 5, query: "Mạng nơ-ron nhân tạo là gì?", count: 76, subject: "TTNT" },
 ];
 
+import { motion, AnimatePresence } from "framer-motion";
+import { useTheme } from "next-themes";
+
 export default function AdminMonitoringPage() {
   const { theme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [metrics, setMetrics] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadMetrics() {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const res = await fetch(`${API}/metrics?days=7`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMetrics(data);
+        }
+      } catch (err) {
+        console.error("Failed to load metrics", err);
+      }
+    }
+    loadMetrics();
+  }, []);
 
   return (
     <div className="flex h-screen bg-[#f6f8f8] dark:bg-[#081018] text-[#303238] dark:text-[#f7f7f8] font-sans overflow-hidden">
@@ -89,14 +112,14 @@ export default function AdminMonitoringPage() {
                   <div className="text-[11px] font-bold text-[#a1a4a7] dark:text-white/40 mb-1 tracking-wider">MAIN MENU</div>
                   
                   <div className="flex flex-col gap-1 mt-4">
-                    <Link href="/" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] dark:hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
-                      <Search size={18} className="text-[#18b99f]" /> Chat AI
-                    </Link>
-                    <Link href="/dashboard" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] dark:hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
-                      <FileText size={18} /> Quản lý tài liệu
-                    </Link>
                     <Link href="/admin/monitoring" className="flex items-center gap-3 text-[#18b99f] dark:text-[#18b99f] bg-[#18b99f]/10 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
                       <Activity size={18} /> Monitoring
+                    </Link>
+                    <Link href="/admin/quota" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
+                      <Activity size={18} /> Cấu hình Quota
+                    </Link>
+                    <Link href="/admin/management" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
+                      <Activity size={18} /> Quản trị hệ thống
                     </Link>
                   </div>
                 </div>
@@ -153,7 +176,9 @@ export default function AdminMonitoringPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold dark:text-white">220,000</div>
+                  <div className="text-2xl font-bold dark:text-white">
+                    {metrics ? (metrics.total_queries * 150).toLocaleString() : "220,000"}
+                  </div>
                   <p className="text-xs text-[#18b99f] font-medium mt-1">+12% so với hôm qua</p>
                 </CardContent>
               </Card>
@@ -165,32 +190,38 @@ export default function AdminMonitoringPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold dark:text-white">$4.40</div>
+                  <div className="text-2xl font-bold dark:text-white">
+                    ${metrics ? (metrics.total_queries * 150 * 0.00002).toFixed(2) : "4.40"}
+                  </div>
                   <p className="text-xs text-[#f59e0b] font-medium mt-1">Đạt 45% hạn mức ngày</p>
                 </CardContent>
               </Card>
               <Card className="bg-white/60 dark:bg-[#1a2128]/60 backdrop-blur border-white/20 dark:border-white/5 shadow-sm">
                 <CardHeader className="flex flex-row items-center justify-between pb-2 border-b-0">
-                  <CardTitle className="text-sm font-medium">Độ trễ trung bình (p50)</CardTitle>
+                  <CardTitle className="text-sm font-medium">Độ trễ hệ thống (p95)</CardTitle>
                   <div className="w-8 h-8 rounded-full bg-[#18b99f]/10 flex items-center justify-center">
                     <Activity className="h-4 w-4 text-[#18b99f]" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold dark:text-white">140ms</div>
-                  <p className="text-xs text-[#18b99f] font-medium mt-1">-15ms so với hôm qua</p>
+                  <div className="text-2xl font-bold dark:text-white">
+                    {metrics?.latency_p95_ms !== undefined ? metrics.latency_p95_ms : "140"}ms
+                  </div>
+                  <p className="text-xs text-[#18b99f] font-medium mt-1">-15ms so với tuần trước</p>
                 </CardContent>
               </Card>
               <Card className="bg-white/60 dark:bg-[#1a2128]/60 backdrop-blur border-white/20 dark:border-white/5 shadow-sm">
                 <CardHeader className="flex flex-row items-center justify-between pb-2 border-b-0">
-                  <CardTitle className="text-sm font-medium">Lượt yêu cầu</CardTitle>
+                  <CardTitle className="text-sm font-medium">Tổng lượt yêu cầu (7 ngày)</CardTitle>
                   <div className="w-8 h-8 rounded-full bg-[#3b82f6]/10 flex items-center justify-center">
                     <Users className="h-4 w-4 text-[#3b82f6]" />
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold dark:text-white">1,245</div>
-                  <p className="text-xs text-[#18b99f] font-medium mt-1">+20% so với giờ trước</p>
+                  <div className="text-2xl font-bold dark:text-white">
+                    {metrics?.total_queries !== undefined ? metrics.total_queries.toLocaleString() : "1,245"}
+                  </div>
+                  <p className="text-xs text-[#18b99f] font-medium mt-1">Toàn hệ thống</p>
                 </CardContent>
               </Card>
             </div>

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import current_user
 from src.db import get_db
 from src.models.orm import Chunk, Citation, Conversation, Document, DocumentVersion, Feedback, Message, User
-from src.services import acl
+from src.services import acl, page_render
 from src.services.conversations import get_owned, message_course
 from src.services.errors import AppError, bad_request, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
@@ -27,6 +28,8 @@ def _source(db: Session, user: User, chunk: Chunk, version: DocumentVersion, doc
         "title": document.title,
         "version_label": version.version_label,
         "doc_type": document.doc_type,
+        "file_type": version.file_type,
+        "page_count": version.page_count,
         "locator": {"type": chunk.locator_type, "value": chunk.locator_value},
         "excerpt": chunk.text,
         "can_download": acl.can_download_version(db, user, version, document),
@@ -76,6 +79,31 @@ def _merge_page(chunks: list[Chunk]) -> str:
         cut = next((k for k in range(min(len(text), len(nxt), 600), 20, -1) if text.endswith(nxt[:k])), 0)
         text += ("" if cut else "\n") + nxt[cut:]
     return text
+
+
+@router.get("/documents/{document_id}/versions/{version_id}/pages/{page}/image")
+def page_image(
+    document_id: str, version_id: str, page: int,
+    width: int = Query(1000, ge=400, le=1600),
+    user: User = Depends(current_user), db: Session = Depends(get_db),
+) -> Response:
+    version = db.get(DocumentVersion, version_id)
+    document = db.get(Document, document_id)
+    if not (version and document and version.document_id == document.id):
+        raise not_found()
+    if not (acl.can_read_course(db, user, document.course_id) and acl.role_can_see_version(user, version)):
+        raise not_found()
+    if not acl.can_serve_version(db, user, version, document):
+        raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
+    if version.file_type != "pdf":
+        raise AppError("PAGE_IMAGE_UNSUPPORTED", 409)
+    try:
+        image = page_render.render_png(version.storage_key, page, width)
+    except page_render.PageOutOfRangeError as e:
+        raise not_found() from e
+    except Exception as e:
+        raise AppError("PAGE_RENDER_FAILED", 502, retryable=True) from e
+    return Response(image, media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/documents/{document_id}/versions/{version_id}/pages")

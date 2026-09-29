@@ -213,18 +213,26 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
         from src.services.retrieval import embed_texts
 
         todo = [c for c in chunks if c.embedding is None]
+        done = len(chunks) - len(todo)
+        job.stage = "embedding"
+        job.progress = done / max(len(chunks), 1)
+        db.commit()
         batch = get_settings().embedding_batch_size
         for i in range(0, len(todo), batch):
             part = todo[i : i + batch]
             for c, blob in zip(part, embed_texts([c.text for c in part]), strict=True):
                 c.embedding = blob
-            job.progress = min(1.0, (i + len(part)) / max(len(todo), 1))
+            job.progress = min(1.0, (done + i + len(part)) / max(len(chunks), 1))
             db.commit()
     except Exception as e:  # noqa: BLE001 — lỗi provider: giữ approval, Failed để retry (PRD 7.1.7.1)
         log.warning("index job %s lỗi: %s", job.id, type(e).__name__)
         version.state = FAILED
-        job.status, job.error_code = "failed", f"EMBEDDING_{type(e).__name__}"[:100]
+        from src.services.retrieval import _is_rate_limit
+        job.status = "failed"
+        job.error_code = "EMBEDDING_RATE_LIMITED" if _is_rate_limit(e) else "EMBEDDING_UNAVAILABLE"
         return
+    job.stage = "publishing"
+    db.commit()
     # Phát hành: chỉ sau approval đúng revision và index sẵn sàng (FR-08.3)
     approval = db.scalar(
         select(Approval)

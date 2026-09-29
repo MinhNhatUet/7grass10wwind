@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key
@@ -94,11 +94,11 @@ def list_documents(
 
 @router.get("/documents/{document_id}/versions/{version_id}/download")
 def download(
-    document_id: str, version_id: str, db: Session = Depends(get_db)
+    document_id: str, version_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> FileResponse:
-    """Tạm thời public route này để phục vụ việc test UI hiển thị trích dẫn (click vào link là xem được)."""
+    """Original download requires current source access AND download permission."""
     version, document = documents.get_version(db, version_id)
-    if document.id != document_id:
+    if document.id != document_id or not acl.can_download_version(db, user, version, document):
         raise not_found()
     media = (
         "application/pdf"
@@ -115,6 +115,27 @@ def download(
         filename=version.original_filename,
         content_disposition_type="inline"
     )
+
+
+def processing_views(db: Session, version_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Batch counts and latest job; only called after management authorization."""
+    if not version_ids:
+        return {}
+    result = {vid: {"chunk_count": 0, "embedded_count": 0, "job": None} for vid in version_ids}
+    for vid, total, done in db.execute(
+        select(Chunk.version_id, func.count(Chunk.id), func.count(Chunk.embedding))
+        .where(Chunk.version_id.in_(version_ids)).group_by(Chunk.version_id)
+    ):
+        result[vid].update(chunk_count=total, embedded_count=done)
+    jobs = db.scalars(select(IngestionJob).where(IngestionJob.version_id.in_(version_ids))
+                      .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc()))
+    for job in jobs:
+        if result[job.version_id]["job"] is None:
+            result[job.version_id]["job"] = {
+                "id": job.id, "kind": job.kind, "stage": job.stage, "status": job.status,
+                "progress": job.progress, "error_code": job.error_code, "attempts": job.attempts,
+            }
+    return result
 
 
 # ---------------------------------------------------------------- upload + quản lý (Giảng viên)
@@ -209,7 +230,9 @@ def manage_versions(
     )
     if state:
         stmt = stmt.where(DocumentVersion.state == state)
-    return {"items": [version_view(v, d, full=True) for v, d in db.execute(stmt).all()]}
+    rows = db.execute(stmt).all()
+    progress = processing_views(db, [v.id for v, _ in rows])
+    return {"items": [version_view(v, d, full=True) | progress[v.id] for v, d in rows]}
 
 
 @router.get("/jobs/{job_id}")
@@ -257,7 +280,7 @@ def preview(
         p["text"] += ("\n" if p["text"] else "") + c.text
     approvals = db.scalars(select(Approval).where(Approval.version_id == version.id).order_by(Approval.created_at))
     return {
-        "version": version_view(version, document, full=True),
+        "version": version_view(version, document, full=True) | processing_views(db, [version.id])[version.id],
         "pages": [pages[k] for k in sorted(pages)],
         "page_from": page_from,
         "page_to": page_to,

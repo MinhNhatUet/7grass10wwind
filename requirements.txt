@@ -19,6 +19,7 @@ psycopg2-binary>=2.9.0
 # Ingestion + retrieval MVP (D-21, D-22, D-23)
 pypdf>=6.19,<7
 python-pptx>=1.0.2,<2
+pypdfium2==5.13.0
 python-multipart>=0.0.32
 numpy>=2.0,<3
 

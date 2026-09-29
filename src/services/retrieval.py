@@ -9,6 +9,8 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import numpy as np
 from sqlalchemy import select
@@ -20,6 +22,23 @@ from src.services import acl
 
 _cache: dict[str, tuple[list[str], np.ndarray]] = {}  # version_id → (chunk_ids, ma trận đã chuẩn hóa)
 _cache_lock = threading.Lock()
+_document_scope: ContextVar[str | None] = ContextVar("document_scope", default=None)
+
+
+@contextmanager
+def document_scope(document_id: str | None):
+    """Request-local scope shared by Academic, Learning and Hub retrieval."""
+    token = _document_scope.set(document_id)
+    try:
+        yield
+    finally:
+        _document_scope.reset(token)
+
+
+class EmbeddingUnavailableError(Exception):
+    def __init__(self, rate_limited: bool):
+        self.rate_limited = rate_limited
+        super().__init__("Embedding provider unavailable")
 
 
 def to_blob(vec: list[float]) -> bytes:
@@ -68,7 +87,10 @@ def embed_texts(texts: list[str]) -> list[bytes]:
 def embed_query(text: str) -> np.ndarray:
     from src.services.llm import get_embeddings
 
-    return np.frombuffer(to_blob(get_embeddings().embed_query(text)), dtype=np.float32)
+    try:
+        return np.frombuffer(to_blob(get_embeddings().embed_query(text)), dtype=np.float32)
+    except Exception as e:
+        raise EmbeddingUnavailableError(_is_rate_limit(e)) from e
 
 
 def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[DocumentVersion, Document]]:
@@ -85,7 +107,8 @@ def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[Doc
             DocumentVersion.state == PUBLISHED,
         )
     ).all()
-    return [(v, d) for v, d in rows if acl.role_can_see_version(user, v)]
+    scope = _document_scope.get()
+    return [(v, d) for v, d in rows if acl.role_can_see_version(user, v) and (scope is None or d.id == scope)]
 
 
 def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray]:

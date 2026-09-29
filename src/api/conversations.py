@@ -20,6 +20,7 @@ def conv_view(c: Conversation) -> dict[str, Any]:
     return {
         "id": c.id,
         "course_id": c.course_id,
+        "document_id": c.document_id,
         "assistant_mode": c.assistant_mode,
         "title": c.title,
         "created_at": svc._iso(c.created_at),
@@ -31,13 +32,14 @@ class CreateConversation(BaseModel):
     course_id: str | None = None  # None = router chọn môn theo từng câu hỏi (D-28)
     assistant: str = Field("auto", pattern="^(auto|academic|learning|hub)$")
     title: str | None = None
+    document_id: str | None = None
 
 
 @router.post("/conversations", status_code=201)
 def create(
     body: CreateConversation, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
-    conv = svc.create(db, user, body.course_id, body.assistant, body.title)
+    conv = svc.create(db, user, body.course_id, body.assistant, body.title, body.document_id)
     return {"conversation_id": conv.id, **conv_view(conv)}
 
 
@@ -113,9 +115,10 @@ def send(
 ) -> dict[str, Any]:
     """Business result (answered/partial/...) trả HTTP 200; chỉ lỗi kỹ thuật mới là 4xx/5xx (PRD 11.4)."""
     payload = body.model_dump()
+    conv = svc.get_owned(db, user, conversation_id)
     idem = Idempotency(db, user, f"message:{conversation_id}", key, payload)
     if (replayed := idem.replay()) is not None:
-        return replayed
+        return svc.replay(db, user, conv, replayed)
     resp = svc.send(db, user, conversation_id, payload, key)
     idem.store(resp)
     db.commit()

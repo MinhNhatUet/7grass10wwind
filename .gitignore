@@ -69,3 +69,7 @@ docs/plans/
 *.avi
 *.mkv
 frontend/public/assets/*.mp4
+
+# Scratch & temporary
+scratch/
+output.json

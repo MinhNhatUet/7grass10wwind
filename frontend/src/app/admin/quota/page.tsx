@@ -59,17 +59,14 @@ export default function AdminQuotaPage() {
                   <div className="text-[11px] font-bold text-[#a1a4a7] dark:text-white/40 mb-1 tracking-wider">MAIN MENU</div>
                   
                   <div className="flex flex-col gap-1 mt-4">
-                    <Link href="/" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] dark:hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
-                      <Search size={18} className="text-[#18b99f]" /> Chat AI
-                    </Link>
-                    <Link href="/dashboard" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] dark:hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
-                      <FileText size={18} /> Quản lý tài liệu
-                    </Link>
-                    <Link href="/admin/monitoring" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] dark:hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
+                    <Link href="/admin/monitoring" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
                       <Activity size={18} /> Monitoring
                     </Link>
                     <Link href="/admin/quota" className="flex items-center gap-3 text-[#18b99f] dark:text-[#18b99f] bg-[#18b99f]/10 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
                       <Sliders size={18} /> Cấu hình Quota
+                    </Link>
+                    <Link href="/admin/management" className="flex items-center gap-3 text-[#3e4247] dark:text-white/70 hover:text-[#18b99f] hover:bg-[#18b99f]/5 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-colors">
+                      <Activity size={18} /> Quản trị hệ thống
                     </Link>
                   </div>
                 </div>

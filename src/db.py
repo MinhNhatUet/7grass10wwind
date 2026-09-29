@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, inspect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.config import get_settings
@@ -57,6 +57,14 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(engine)
     _migrate_nullable_conversation_course(engine)
+    _migrate_conversation_document(engine)
+
+
+def _migrate_conversation_document(engine: Engine) -> None:
+    """Add optional document scope to existing SQLite and PostgreSQL databases without replacing data."""
+    with engine.begin() as conn:
+        if "document_id" not in {c["name"] for c in inspect(conn).get_columns("conversations")}:
+            conn.exec_driver_sql("ALTER TABLE conversations ADD COLUMN document_id VARCHAR(40)")
 
 
 def _migrate_nullable_conversation_course(engine: Engine) -> None:

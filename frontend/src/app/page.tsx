@@ -1,16 +1,18 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Paperclip, ArrowUp, Zap, FileText, Menu, Plus, MessageSquare, X, ChevronRight, BookOpen, User, Compass, MoreHorizontal, Pencil, Pin, Folder, Share, Archive, Trash2, Sun, Moon } from "lucide-react";
+import { Paperclip, ArrowUp, Zap, FileText, Menu, Plus, MessageSquare, X, ChevronRight, BookOpen, User, Compass, MoreHorizontal, Pencil, Pin, Folder, Share, Archive, Trash2, Sun, Moon, ShieldCheck, Check, ThumbsUp, ThumbsDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import * as HoverCard from '@radix-ui/react-hover-card';
 import { useTheme } from "next-themes";
+import SourceReader from "../components/source-reader";
+import { API, responseError } from "../lib/api-errors";
 
 // MOCK DATA TYPES
 type Role = 'user' | 'assistant';
-type Source = { id: string; title: string; page: number; content: string; url?: string };
+type Source = { id: string; title: string; page: number; content: string; url?: string; citationId?: string; documentId: string; versionId: string };
 type Message = {
   id: string;
   role: Role;
@@ -34,14 +36,27 @@ export default function UnifiedChat() {
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [documentScope, setDocumentScope] = useState<{ id: string; title: string } | null>(null);
+  const [conversationLoading, setConversationLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [history, setHistory] = useState<any[]>([]);
   const hasMessages = messages.length > 0;
   const [user, setUser] = useState<{ display_name?: string; role?: string } | null>(null);
 
+  // Rename / Delete state
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // Feedback state
+  const [feedbackSent, setFeedbackSent] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const doc = params.get("document");
+      if (doc) setDocumentScope({ id: doc, title: params.get("title") || "Tài liệu đã chọn" });
       try {
         const stored = localStorage.getItem('user');
         if (stored) setUser(JSON.parse(stored));
@@ -55,6 +70,70 @@ export default function UnifiedChat() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  // ── Rename conversation ──────────────────────────────────────
+  const startRename = (chatId: string, currentTitle: string) => {
+    setRenamingId(chatId);
+    setRenameValue(currentTitle || "");
+    setTimeout(() => renameInputRef.current?.select(), 30);
+  };
+
+  const submitRename = async (chatId: string) => {
+    const title = renameValue.trim();
+    if (!title) { setRenamingId(null); return; }
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      const res = await fetch(`${API}/conversations/${chatId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title }),
+      });
+      if (res.status === 401) { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/login"; return; }
+      if (!res.ok) { const err = await responseError(res); console.error(err); }
+      setHistory(prev => prev.map(h => h.id === chatId ? { ...h, title } : h));
+    } catch (err) { console.error("Rename failed", err); }
+    setRenamingId(null);
+  };
+
+  // ── Delete conversation ─────────────────────────────────────
+  const deleteConversation = async (chatId: string) => {
+    if (!confirm("Bạn có chắc muốn xóa hội thoại này?")) return;
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      const res = await fetch(`${API}/conversations/${chatId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/login"; return; }
+      if (!res.ok && res.status !== 204) { const err = await responseError(res); console.error(err); return; }
+      setHistory(prev => prev.filter(h => h.id !== chatId));
+      if (activeConversationId === chatId) {
+        setActiveConversationId(null);
+        setMessages([]);
+        setActiveSource(null);
+        setDocumentScope(null);
+        window.history.replaceState(null, "", "/");
+      }
+    } catch (err) { console.error("Delete failed", err); }
+  };
+
+  // ── Send feedback ──────────────────────────────────────────
+  const submitFeedback = async (msgId: string, type: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      setFeedbackSent(prev => ({ ...prev, [msgId]: type }));
+      await fetch(`${API}/answers/${msgId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type, share_content: false })
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchHistory = async () => {
     try {
@@ -79,6 +158,8 @@ export default function UnifiedChat() {
   };
 
   const loadConversation = async (convId: string) => {
+    if (isLoading || conversationLoading) return;
+    setConversationLoading(true);
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem("token") : "";
       if (!token) return;
@@ -100,18 +181,26 @@ export default function UnifiedChat() {
           agentName: m.role === 'assistant' ? 'Academic Assistant' : undefined,
           sources: m.citations?.map((c: any) => ({
             id: c.id,
+            citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
             title: c.document_title || `Tài liệu ${c.document_id}`,
             page: c.locator?.value ?? c.locator_value ?? 1,
             content: c.quote || "",
-            url: c.url || `http://localhost:8000/api/v1/documents/${c.document_id}/versions/${c.version_id}/download`
+            url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`
           })) || []
         }));
+        const detail = await fetch(`${API}/conversations/${convId}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!detail.ok) throw await responseError(detail);
+        const conversation = await detail.json();
+        setDocumentScope(conversation.document_id ? { id: conversation.document_id, title: conversation.title } : null);
+        window.history.replaceState(null, "", "/");
         setMessages(loadedMessages);
         setActiveConversationId(convId);
         setActiveSource(null);
       }
     } catch (err) {
       console.error("Failed to load conversation", err);
+    } finally {
+      setConversationLoading(false);
     }
   };
 
@@ -121,7 +210,7 @@ export default function UnifiedChat() {
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!prompt.trim() || isLoading) return;
+    if (!prompt.trim() || isLoading || conversationLoading) return;
 
     const userMessage: Message = { id: Date.now().toString(), role: "user", content: prompt };
     setMessages(prev => [...prev, userMessage]);
@@ -141,7 +230,7 @@ export default function UnifiedChat() {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
           },
-          body: JSON.stringify({ assistant: "academic" })
+          body: JSON.stringify({ assistant: "academic", document_id: documentScope?.id })
         });
         if (convRes.status === 401) {
           localStorage.removeItem("token");
@@ -149,6 +238,7 @@ export default function UnifiedChat() {
           window.location.href = "/login";
           return;
         }
+        if (!convRes.ok) throw await responseError(convRes);
         if (convRes.ok) {
           const convData = await convRes.json();
           convId = convData.conversation_id || convData.id;
@@ -174,7 +264,7 @@ export default function UnifiedChat() {
       }
 
       if (!response.ok) {
-        throw new Error("Chat request failed");
+        throw await responseError(response);
       }
       
       const data = await response.json();
@@ -186,10 +276,11 @@ export default function UnifiedChat() {
         content: data.content,
         sources: data.citations?.map((c: any) => ({
           id: c.id,
+          citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
           title: c.document_title || `Tài liệu ${c.document_id}`,
           page: c.locator?.value ?? c.locator_value ?? 1,
           content: c.quote || "",
-          url: c.url || `http://localhost:8000/api/v1/documents/${c.document_id}/versions/${c.version_id}/download`
+          url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`
         })) || []
       };
       setMessages(prev => [...prev, assistantMessage]);
@@ -199,7 +290,7 @@ export default function UnifiedChat() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: "Xin lỗi, đã có lỗi xảy ra khi kết nối tới máy chủ."
+        content: err instanceof Error ? err.message : "Không thể kết nối máy chủ. Vui lòng thử lại."
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -245,7 +336,7 @@ export default function UnifiedChat() {
 
             {/* New Chat Button */}
             <div className="px-3 pb-3 w-[260px] shrink-0">
-              <button onClick={() => { setMessages([]); setActiveSource(null); setActiveConversationId(null); }} className="w-full flex items-center justify-between bg-white/5 dark:bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 dark:bg-black/10 dark:bg-white/10 border border-black/5 dark:border-white/5 text-black dark:text-black/90 dark:text-white/90 px-3 py-2.5 rounded-lg transition-colors cursor-pointer text-[14px] font-medium">
+              <button disabled={isLoading || conversationLoading} onClick={() => { setMessages([]); setActiveSource(null); setActiveConversationId(null); setDocumentScope(null); window.history.replaceState(null, "", "/"); }} className="w-full flex items-center justify-between bg-white/5 dark:bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 dark:bg-black/10 dark:bg-white/10 border border-black/5 dark:border-white/5 text-black dark:text-black/90 dark:text-white/90 px-3 py-2.5 rounded-lg transition-colors cursor-pointer text-[14px] font-medium">
                 <span className="flex items-center gap-2">
                   <div className="w-[20px] h-[20px] rounded-full bg-gradient-to-br from-[#c69aff] to-[#8c55db] flex items-center justify-center shadow-md">
                     <Zap size={12} className="text-black dark:text-white" />
@@ -258,12 +349,17 @@ export default function UnifiedChat() {
 
             {/* Main Links */}
             <div className="px-3 py-1 flex flex-col gap-1 w-[260px] shrink-0">
-              <Link href="/hub" className="flex items-center gap-3 text-black dark:text-black/70 dark:text-white/70 hover:text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline">
-                <BookOpen size={18} /> Thư viện tài liệu
+              <Link href="/library" className="flex items-center gap-3 text-black dark:text-black/70 dark:text-white/70 hover:text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline">
+                <Compass size={18} /> Tài liệu học tập
               </Link>
-              <Link href="/courses" className="flex items-center gap-3 text-black dark:text-black/70 dark:text-white/70 hover:text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline">
-                <Compass size={18} /> Khóa học của tôi
+              <Link href="/learning" className="flex items-center gap-3 text-black dark:text-black/70 dark:text-white/70 hover:text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline">
+                <BookOpen size={18} /> Learning & Quiz
               </Link>
+              {user && ["lecturer", "reviewer", "admin"].includes(user.role || "") && (
+                <Link href={user.role === "reviewer" ? "/hub/review" : "/hub/manage"} className="flex items-center gap-3 text-blue-600 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-2 rounded-lg text-[14px] font-medium transition-colors no-underline mt-1">
+                  <ShieldCheck size={18} /> Không gian làm việc
+                </Link>
+              )}
             </div>
 
             {/* History */}
@@ -271,12 +367,31 @@ export default function UnifiedChat() {
               <div className="text-xs font-semibold text-black dark:text-black/40 dark:text-white/40 mb-3 px-2">Gần đây (Recents)</div>
               
               {history.map((chat) => (
-                <div key={chat.id} onClick={() => loadConversation(chat.id)} className={`group relative w-full flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2.5 rounded-lg cursor-pointer mb-1 ${activeConversationId === chat.id ? 'bg-black/5 dark:bg-white/10' : ''}`}>
+                <div key={chat.id} onClick={() => { if (renamingId !== chat.id) loadConversation(chat.id); }} className={`group relative w-full flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 px-3 py-2.5 rounded-lg cursor-pointer mb-1 ${activeConversationId === chat.id ? 'bg-black/5 dark:bg-white/10' : ''}`}>
                   <div className="flex items-center gap-3 overflow-hidden flex-1">
-                     <span className="truncate text-[14px] text-black dark:text-black/80 dark:text-white/80">{chat.title || "Hội thoại mới"}</span>
+                    {renamingId === chat.id ? (
+                      <form className="flex items-center gap-1 w-full" onSubmit={(e) => { e.preventDefault(); submitRename(chat.id); }}>
+                        <input
+                          ref={renameInputRef}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => submitRename(chat.id)}
+                          onKeyDown={(e) => { if (e.key === 'Escape') setRenamingId(null); }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 min-w-0 text-[14px] bg-white dark:bg-white/10 border border-blue-400 rounded px-1.5 py-0.5 outline-none text-black dark:text-white"
+                          autoFocus
+                        />
+                        <button type="submit" onClick={(e) => e.stopPropagation()} className="p-0.5 text-blue-500 hover:text-blue-700 bg-transparent border-0 cursor-pointer shrink-0">
+                          <Check size={14} />
+                        </button>
+                      </form>
+                    ) : (
+                      <span className="truncate text-[14px] text-black dark:text-black/80 dark:text-white/80">{chat.title || "Hội thoại mới"}</span>
+                    )}
                   </div>
                   
                   {/* Radix Hover Card */}
+                  {renamingId !== chat.id && (
                   <HoverCard.Root openDelay={0} closeDelay={150}>
                     <HoverCard.Trigger asChild>
                       <div className="flex items-center shrink-0 ml-2 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
@@ -296,7 +411,7 @@ export default function UnifiedChat() {
                         sideOffset={8}
                         className="w-[180px] bg-white dark:bg-[#1a1b1e] border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 py-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=closed]:zoom-out-95"
                       >
-                        <button className="w-full flex items-center gap-3 px-4 py-2 text-[13px] font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white focus:bg-black/5 dark:focus:bg-white/10 focus:text-black dark:focus:text-white text-left cursor-pointer border-0 bg-transparent outline-none">
+                        <button onClick={(e) => { e.stopPropagation(); startRename(chat.id, chat.title || ""); }} className="w-full flex items-center gap-3 px-4 py-2 text-[13px] font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white focus:bg-black/5 dark:focus:bg-white/10 focus:text-black dark:focus:text-white text-left cursor-pointer border-0 bg-transparent outline-none">
                           <Pencil size={15} /> Rename
                         </button>
                         <button className="w-full flex items-center gap-3 px-4 py-2 text-[13px] font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white focus:bg-black/5 dark:focus:bg-white/10 focus:text-black dark:focus:text-white text-left cursor-pointer border-0 bg-transparent outline-none">
@@ -315,12 +430,13 @@ export default function UnifiedChat() {
                         <button className="w-full flex items-center gap-3 px-4 py-2 text-[13px] font-medium text-black/80 dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/10 hover:text-black dark:hover:text-white focus:bg-black/5 dark:focus:bg-white/10 focus:text-black dark:focus:text-white text-left cursor-pointer border-0 bg-transparent outline-none">
                           <Archive size={15} /> Archive
                         </button>
-                        <button className="w-full flex items-center gap-3 px-4 py-2 text-[13px] font-medium text-[#ff6b6b] hover:bg-[#ff6b6b]/10 hover:text-[#ff8787] focus:bg-[#ff6b6b]/10 focus:text-[#ff8787] text-left cursor-pointer border-0 bg-transparent outline-none">
+                        <button onClick={(e) => { e.stopPropagation(); deleteConversation(chat.id); }} className="w-full flex items-center gap-3 px-4 py-2 text-[13px] font-medium text-[#ff6b6b] hover:bg-[#ff6b6b]/10 hover:text-[#ff8787] focus:bg-[#ff6b6b]/10 focus:text-[#ff8787] text-left cursor-pointer border-0 bg-transparent outline-none">
                           <Trash2 size={15} /> Delete
                         </button>
                       </HoverCard.Content>
                     </HoverCard.Portal>
                   </HoverCard.Root>
+                  )}
                 </div>
               ))}
             </div>
@@ -371,11 +487,13 @@ export default function UnifiedChat() {
           <div className="flex-1 flex justify-center w-full">
             <div className="flex bg-white/80 dark:bg-[#151619]/80 backdrop-blur-md rounded-xl p-1 border border-black/5 dark:border-white/5 shadow-sm">
               <button className="px-4 py-1.5 text-[14px] font-medium bg-black/10 dark:bg-white/10 text-black dark:text-white rounded-lg cursor-pointer border-0 shadow-sm">Chat</button>
-              <button className="px-4 py-1.5 text-[14px] font-medium text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent rounded-lg cursor-pointer border-0 transition-colors">Tài liệu</button>
+              <Link href="/library" className="px-4 py-1.5 text-[14px] font-medium text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent rounded-lg cursor-pointer border-0 transition-colors">Tài liệu</Link>
             </div>
           </div>
         </header>
 
+        {documentScope && <div className="mx-4 flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900"><span className="truncate">Chỉ hỏi trong: <strong>{documentScope.title}</strong></span><button disabled={isLoading || conversationLoading} className="shrink-0 underline" onClick={() => { setDocumentScope(null); setMessages([]); setActiveConversationId(null); setActiveSource(null); window.history.replaceState(null, "", "/"); }}>Chat tất cả tài liệu</button></div>}
+        {conversationLoading && <p role="status" className="px-4 text-sm">Đang tải hội thoại…</p>}
         {/* BODY - Morphing Layout */}
         <div className="flex-1 flex flex-col relative w-full h-full overflow-hidden">
           
@@ -460,6 +578,27 @@ export default function UnifiedChat() {
                             </ul>
                           </section>
                         )}
+                        {msg.role === 'assistant' && (
+                          <div className="mt-3 flex items-center gap-2 border-t border-blue-200/50 dark:border-blue-800/50 pt-2">
+                            <button 
+                              onClick={() => submitFeedback(msg.id, "helpful")}
+                              className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 ${feedbackSent[msg.id] === 'helpful' ? 'text-green-600 dark:text-green-400' : 'text-black/50 dark:text-white/50'}`}
+                              title="Hữu ích"
+                            >
+                              <ThumbsUp size={14} className={feedbackSent[msg.id] === 'helpful' ? 'fill-current' : ''} />
+                            </button>
+                            <button 
+                              onClick={() => submitFeedback(msg.id, "not_helpful")}
+                              className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 ${feedbackSent[msg.id] === 'not_helpful' ? 'text-red-500' : 'text-black/50 dark:text-white/50'}`}
+                              title="Không hữu ích"
+                            >
+                              <ThumbsDown size={14} className={feedbackSent[msg.id] === 'not_helpful' ? 'fill-current' : ''} />
+                            </button>
+                            {feedbackSent[msg.id] && (
+                              <span className="text-[11px] text-black/40 dark:text-white/40 ml-1">Đã gửi phản hồi</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -529,7 +668,7 @@ export default function UnifiedChat() {
                  }}
                />
                
-               <button type="submit" disabled={!prompt.trim() || isLoading} className={`p-2.5 shrink-0 rounded-full border-0 cursor-pointer transition-colors flex items-center justify-center mb-1 ${prompt.trim() && !isLoading ? 'bg-black text-white dark:bg-white dark:text-black hover:opacity-80' : 'bg-black/10 dark:bg-white/10 text-black/30 dark:text-white/30'}`}>
+               <button type="submit" disabled={!prompt.trim() || isLoading || conversationLoading} className={`p-2.5 shrink-0 rounded-full border-0 cursor-pointer transition-colors flex items-center justify-center mb-1 ${prompt.trim() && !isLoading ? 'bg-black text-white dark:bg-white dark:text-black hover:opacity-80' : 'bg-black/10 dark:bg-white/10 text-black/30 dark:text-white/30'}`}>
                   <ArrowUp size={20} strokeWidth={3} />
                </button>
              </motion.form>
@@ -555,12 +694,12 @@ export default function UnifiedChat() {
         {activeSource && (
           <motion.aside 
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 320, opacity: 1 }}
+            animate={{ width: 480, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", bounce: 0, duration: 0.4 }}
             className="bg-white/95 dark:bg-[#0c1219]/95 backdrop-blur-xl border-l border-black/10 dark:border-white/10 flex flex-col shrink-0 z-20 overflow-hidden"
           >
-            <div className="w-[320px] flex flex-col h-full">
+            <div className="w-full flex flex-col h-full">
               <header className="h-[60px] shrink-0 border-b border-black/10 dark:border-white/10 flex items-center justify-between px-4">
                 <span className="font-semibold text-[14px]">Trích dẫn nguồn</span>
                 <button onClick={() => setActiveSource(null)} className="p-1 text-black/60 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
@@ -568,24 +707,7 @@ export default function UnifiedChat() {
                 </button>
               </header>
               <div className="flex-1 p-4 overflow-y-auto">
-                <div className="bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl p-4">
-                  <div className="flex items-center gap-2 text-blue-600 dark:text-[#60a5fa] mb-2">
-                    <FileText size={16} />
-                    <span className="text-[13px] font-medium break-all">{activeSource.title}</span>
-                  </div>
-                  <div className="text-[12px] text-black/50 dark:text-white/50 mb-4">Trang {activeSource.page}</div>
-                  
-                  <div className="relative">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500/40 dark:bg-[#60a5fa]/30 rounded-full"></div>
-                    <p className="text-[14px] text-black/80 dark:text-white/80 leading-relaxed pl-4 m-0 italic">
-                      "{activeSource.content}"
-                    </p>
-                  </div>
-
-                  <a href={activeSource.url || "#"} target="_blank" rel="noreferrer" className="w-full mt-6 flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-black/90 dark:text-white/90 py-2 rounded-lg text-[13px] font-medium transition-colors cursor-pointer no-underline">
-                    Mở tài liệu gốc <ChevronRight size={14} />
-                  </a>
-                </div>
+                <SourceReader key={`${activeSource.citationId || activeSource.versionId}-${activeSource.page}`} source={activeSource} />
               </div>
             </div>
           </motion.aside>

@@ -59,7 +59,7 @@ async def register(
     user = User(
         login_id=body.login_id,
         display_name=body.display_name or body.login_id.split("@")[0],
-        role=body.role,
+        role="student",  # Self-registration must never grant staff/admin privileges.
         password_hash=hash_password(body.password),
     )
     db.add(user)

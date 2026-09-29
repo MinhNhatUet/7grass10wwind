@@ -174,6 +174,7 @@ class Conversation(Base):
     # D-28: None = router chọn môn theo từng câu hỏi (trong các môn được phép); môn đã chọn lưu ở message
     course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id"), nullable=True)
     assistant_mode: Mapped[str] = mapped_column(String(20), default="auto")
+    document_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(300), default="Hội thoại mới")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
