@@ -1,43 +1,40 @@
-"""Render một trang PDF thành ảnh PNG phía server (FR-04.4: mở đúng trang; D-31).
-
-Trình duyệt chỉ nhận ảnh từng trang, không nhận file gốc — nên sách "không cho tải" (FR-04.5) vẫn xem được
-mà không lộ bản gốc. Quyền được kiểm tra ở API trước khi gọi hàm này.
-"""
+"""Render a single bounded PDF page; authorization belongs to the API on every request."""
 
 from __future__ import annotations
 
 import io
 import threading
-from functools import lru_cache
 
 import pypdfium2 as pdfium
 
 from src.services import storage
 
-MIN_WIDTH, MAX_WIDTH = 400, 1600
-_lock = threading.Lock()  # pdfium không an toàn đa luồng
+_lock = threading.Lock()  # PDFium is not thread-safe.
 
 
 class PageOutOfRangeError(Exception):
     pass
 
 
-def render_png(storage_key: str, page: int, width: int) -> bytes:
-    width = max(MIN_WIDTH, min(MAX_WIDTH, width))
-    return _render(storage_key, page, (width // 100) * 100)  # làm tròn để cache trúng nhiều hơn
-
-
-@lru_cache(maxsize=64)
-def _render(storage_key: str, page: int, width: int) -> bytes:
+def render_png(storage_key: str, page: int, width: int = 1000) -> bytes:
     with _lock:
-        pdf = pdfium.PdfDocument(str(storage.path_of(storage_key)))
-        try:
+        with pdfium.PdfDocument(str(storage.path_of(storage_key))) as pdf:
             if not 1 <= page <= len(pdf):
                 raise PageOutOfRangeError(page)
-            p = pdf[page - 1]
-            image = p.render(scale=width / p.get_width()).to_pil()
-            buf = io.BytesIO()
-            image.save(buf, format="PNG", optimize=True)
-            return buf.getvalue()
-        finally:
-            pdf.close()
+            pdf_page = pdf[page - 1]
+            try:
+                w, h = pdf_page.get_size()
+                scale = min(max(400, min(width, 1600)) / w, 2200 / h)
+                bitmap = pdf_page.render(scale=scale)
+                try:
+                    image = bitmap.to_pil()
+                    try:
+                        out = io.BytesIO()
+                        image.save(out, format="PNG")
+                        return out.getvalue()
+                    finally:
+                        image.close()
+                finally:
+                    bitmap.close()
+            finally:
+                pdf_page.close()
