@@ -25,8 +25,9 @@ export default function LoginPage() {
       return;
     }
 
-    if (!email || !email.includes("@")) {
-      setError("Vui lòng nhập địa chỉ email hợp lệ.");
+    // login_id là định danh bất kỳ (PRD 9.1, D-17) — không bắt buộc email; server tự kiểm tra tài khoản
+    if (!email.trim()) {
+      setError("Vui lòng nhập định danh đăng nhập.");
       return;
     }
 
@@ -44,7 +45,7 @@ export default function LoginPage() {
 
     try {
       const endpoint = isLoginView ? "/api/v1/auth/login" : "/api/v1/auth/register";
-      const payload: any = { login_id: email, password };
+      const payload: any = { login_id: email.trim(), password };
       if (!isLoginView) {
         payload.display_name = name;
       }
@@ -83,18 +84,10 @@ export default function LoginPage() {
     <div className="h-screen w-full bg-white overflow-hidden">
       <main className="w-full h-full md:grid md:grid-cols-[57.2%_42.8%] overflow-hidden bg-white flex flex-col">
         
-        {/* LEFT: actual moving video */}
-        <section className="relative overflow-hidden bg-[#e7e8e9] h-[34vh] min-h-[210px] md:h-full md:min-h-0" aria-label="EDU-04 product visual">
-          <video 
-            autoPlay 
-            muted 
-            loop 
-            playsInline 
-            preload="auto" 
-            className="absolute inset-0 w-full h-full object-cover object-center"
-          >
-            <source src="/assets/login-left.mp4" type="video/mp4" />
-          </video>
+        {/* LEFT: logo (video login-left.mp4 của TV4 bị .gitignore nên không có trong repo) */}
+        <section className="relative overflow-hidden bg-white h-[34vh] min-h-[210px] md:h-full md:min-h-0 flex items-center justify-center" aria-label="EDU-04 product visual">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/vedu-logo.png" alt="Vedu" className="max-w-[40%] max-h-[40%] object-contain" />
         </section>
 
         {/* RIGHT: clean HTML form */}
@@ -127,13 +120,13 @@ export default function LoginPage() {
               )}
 
               <div className="mb-[12px]">
-                <label className="sr-only" htmlFor="email">Email</label>
+                <label className="sr-only" htmlFor="email">Định danh đăng nhập</label>
                 <Input 
                   id="email" 
                   name="email" 
-                  type="email"
-                  autoComplete="email"
-                  placeholder="Eg. sinhvien@school.edu.vn"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="Định danh đăng nhập (vd. sinhvien01)"
                   className="w-full h-[48px] md:h-[54px] border-[#d3d3d3] rounded-[14px] px-[18px] text-[#24272b] bg-white text-[15px] md:text-[16px] placeholder:text-[#747474] focus-visible:border-[#a8a8a8] focus-visible:ring-4 focus-visible:ring-[#27323d]/5 focus-visible:ring-offset-0"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

@@ -15,7 +15,16 @@ from langchain_core.runnables import RunnableConfig
 
 from src.agents.orchestrator_state import OrchestratorState, RouteDecision
 from src.models.orm import StudyPlan
-from src.services.assistants import AssistantResult, academic, call_json, format_history, hub, learning, study_tools
+from src.services.assistants import (
+    AssistantResult,
+    LlmError,
+    academic,
+    call_json,
+    format_history,
+    hub,
+    learning,
+    study_tools,
+)
 from src.services.errors import not_found
 from src.services.policy import INTEGRITY_MESSAGE, is_integrity_violation
 
@@ -38,7 +47,7 @@ TRƯỚC. Không xác định được môn → course_id null.
 - "clarify": ý định thật sự mơ hồ, không thể chọn một trong ba (không dùng khi chỉ thiếu chi tiết nhỏ).
 Trả về DUY NHẤT JSON:
 {"course_id":"mã môn trong danh sách hoặc null","assistant":"academic|learning|hub|clarify",
- "learning_action":"explain|analogy|quiz|diagnose|flashcards|cloze|triage|plan|null",
+ "learning_action":"explain|analogy|quiz|mcq|diagnose|flashcards|cloze|triage|plan|null (mcq = trắc nghiệm A–D; quiz = câu hỏi tự luận ngắn)",
  "level":"short|step|detailed|null","goal":"mục tiêu/chủ đề cho lộ trình hoặc null","topic":"chủ đề/khái niệm chính (quiz, diagnose, flashcards, cloze, triage, analogy — với analogy chỉ ghi khái niệm, KHÔNG kèm bối cảnh ẩn dụ) hoặc null",
  "analogy_context":"bối cảnh ẩn dụ người dùng muốn (vd bóng đá) hoặc null",
  "search_terms":"thuật ngữ chuyên ngành chính của yêu cầu KÈM tên tiếng Anh (vd \"cây khung spanning tree\")",
@@ -47,7 +56,7 @@ Trả về DUY NHẤT JSON:
 Chỉ điền days/minutes_per_day khi người dùng NÓI RÕ con số; không tự đoán."""
 
 ASSISTANTS = ("academic", "learning", "hub", "clarify")
-ACTIONS = ("explain", "analogy", "quiz", "diagnose", "flashcards", "cloze", "triage", "plan")
+ACTIONS = ("explain", "analogy", "quiz", "mcq", "diagnose", "flashcards", "cloze", "triage", "plan")
 LEVELS = ("short", "step", "detailed")
 
 
@@ -77,33 +86,49 @@ def policy_node(state: OrchestratorState) -> dict[str, Any]:
     return {"integrity": "allow", "steps": _step(state, "policy:allow")}
 
 
-def _course_prompt(state: OrchestratorState) -> str:
-    lines = [f"- {cid}: {name}" for cid, name in state["courses"]]
+def _course_prompt(state: OrchestratorState, empty: set[str] = frozenset()) -> str:
+    # Môn chưa có tài liệu đã phát hành: vẫn cho chọn khi người dùng nêu rõ, nhưng router không đoán vào môn rỗng
+    note = " (CHƯA có tài liệu đã phát hành — chỉ chọn khi người dùng nêu rõ môn này)"
+    lines = [f"- {cid}: {name}{note if cid in empty else ''}" for cid, name in state["courses"]]
     prev = state.get("previous_course_id") or "không có"
     return "DANH SÁCH MÔN ĐƯỢC PHÉP:\n" + "\n".join(lines) + f"\nMÔN LƯỢT TRƯỚC: {prev}"
+
+
+def _empty_courses(config: RunnableConfig, allowed: set[str]) -> set[str]:
+    """Môn user được đọc nhưng chưa có bản tài liệu nào đang phục vụ (đếm theo đúng quyền của user)."""
+    from src.services.retrieval import servable_versions
+
+    d = _deps(config)
+    return {cid for cid in allowed if not servable_versions(d["db"], d["user"], cid)}
 
 
 def _ask_course(state: OrchestratorState) -> str:
     return "Câu hỏi của bạn thuộc môn nào: " + ", ".join(name for _, name in state["courses"]) + "?"
 
 
-def router_node(state: OrchestratorState) -> dict[str, Any]:
+def router_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     allowed = {cid for cid, _ in state["courses"]}
     single = next(iter(allowed)) if len(allowed) == 1 else None
     manual = state.get("mode", "auto") != "auto"
-    if manual and single:  # đã biết trợ lý và chỉ có một môn → không cần gọi LLM
+    if manual and single and state.get("mode") != "learning":  # đã biết trợ lý + một môn → không cần gọi LLM
         return _manual(state, single, "người dùng chọn trợ lý; chỉ có một môn")
 
-    data = call_json(
-        ROUTER_SYSTEM,
-        f"{_course_prompt(state)}\nNGỮ CẢNH GẦN NHẤT:\n{format_history(state.get('history', []))}"
-        f"\n\nYÊU CẦU MỚI: {state['question']}",
-        temperature=0,
-    )
+    try:
+        data = call_json(
+            ROUTER_SYSTEM,
+            f"{_course_prompt(state, _empty_courses(config, allowed))}\nNGỮ CẢNH GẦN NHẤT:\n{format_history(state.get('history', []))}"
+            f"\n\nYÊU CẦU MỚI: {state['question']}",
+            temperature=0,
+        )
+    except LlmError:
+        if not manual:
+            raise
+        # Ôn tập ép qua API: router chỉ để bổ sung thuật ngữ — lỗi thì vẫn chạy với môn đã biết, không có thuật ngữ
+        return _manual(state, single, "người dùng chọn trợ lý; router lỗi")
     course_id = data.get("course_id") if data.get("course_id") in allowed else None
     course_id = course_id or single  # chỉ một môn: không cần hỏi lại
     if manual:
-        return _manual(state, course_id, "người dùng chọn trợ lý")
+        return _manual(state, course_id, "người dùng chọn trợ lý", data.get("search_terms"))
     assistant = data.get("assistant") if data.get("assistant") in ASSISTANTS else "clarify"
     route: RouteDecision = {
         "course_id": course_id,
@@ -129,10 +154,12 @@ def router_node(state: OrchestratorState) -> dict[str, Any]:
     return {"route": route, "course_id": course_id, "steps": _step(state, f"router:{route['assistant']}@{course_id}")}
 
 
-def _manual(state: OrchestratorState, course_id: str | None, reason: str) -> dict[str, Any]:
+def _manual(state: OrchestratorState, course_id: str | None, reason: str, search_terms: Any = None) -> dict[str, Any]:
     """Ép trợ lý qua API (FR-11.5): vẫn qua policy và vẫn phải chốt môn (AC-11.4)."""
     opts = state.get("options") or {}
     route: RouteDecision = {"course_id": course_id, "assistant": state["mode"], "reason": reason}  # type: ignore[typeddict-item]
+    if search_terms:
+        route["search_terms"] = str(search_terms).strip()[:200] or None
     if state["mode"] == "learning":
         route["learning_action"] = opts.get("action") if opts.get("action") in ACTIONS else "explain"
     if course_id is None:
@@ -178,12 +205,15 @@ def learning_node(state: OrchestratorState, config: RunnableConfig) -> dict[str,
     # topic: chủ đề hiển thị/đưa vào prompt; query: topic + thuật ngữ router rút ra, CHỈ dùng để truy xuất
     topic = opts.get("topic") or route.get("topic") or question
     query = _retrieval_query(topic, route)
+    count = _int(opts.get("count"))  # số câu/thẻ người học chọn (3–20, đã kiểm ở API)
     if action == "quiz":
-        result = learning.quiz(db, user, course_id, topic, query)
+        result = learning.quiz(db, user, course_id, topic, query, n=count)
+    elif action == "mcq":
+        result = study_tools.mcq(db, user, course_id, topic, query, count=count)
     elif action == "diagnose":
         result = study_tools.diagnose(db, user, course_id, topic, query)
     elif action in ("flashcards", "cloze"):
-        result = study_tools.flashcards(db, user, course_id, topic, action, query)
+        result = study_tools.flashcards(db, user, course_id, topic, action, query, count=count)
     elif action == "triage":
         result = study_tools.triage(db, user, course_id, topic, query)
     elif action == "analogy":

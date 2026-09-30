@@ -161,7 +161,7 @@ export default function ProfilePage() {
   const [editAccountForm, setEditAccountForm] = useState<AccountInfo>(DEFAULT_ACCOUNT);
   const [editHeaderForm, setEditHeaderForm] = useState<HeaderInfo>(DEFAULT_HEADER);
 
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme: theme, setTheme } = useTheme();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Derived dynamic labels based on role

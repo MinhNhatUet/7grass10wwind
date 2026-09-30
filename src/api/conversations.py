@@ -99,14 +99,17 @@ def messages(
 
 
 class LearningOptions(BaseModel):
-    action: str = Field("explain", pattern="^(explain|quiz|plan)$")
+    action: str = Field("explain", pattern="^(explain|quiz|plan|mcq|flashcards|cloze|diagnose)$")
     level: str | None = Field(None, pattern="^(short|step|detailed)$")
     topic: str | None = None
     goal: str | None = None
     days: int | None = None
     minutes_per_day: int | None = None
     previous_plan_id: str | None = None
-    plan_id: str | None = None  # D-37: ôn tập một buổi của lộ trình → server lấy môn từ lộ trình
+    plan_id: str | None = None
+    count: int | None = Field(
+        None, ge=3, le=20
+    )  # số câu/thẻ người học chọn khi ôn tập  # D-37: ôn tập một buổi của lộ trình → server lấy môn từ lộ trình
 
 
 class SendMessage(BaseModel):
@@ -189,6 +192,34 @@ def session_status(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return svc.plan_view(db, user, svc.update_session(db, user, plan_id, session_id, body.status))
+
+
+class PlanSessionEdit(BaseModel):
+    id: str | None = Field(None, max_length=20)  # None = buổi mới
+    day: int = Field(ge=1, le=60)
+    title: str = Field(min_length=1, max_length=200)
+    objective: str = Field("", max_length=1000)
+    activity: str = Field("", max_length=1000)
+    self_check: str = Field("", max_length=1000)
+    minutes: int = Field(ge=5, le=600)
+
+
+class PlanEdit(BaseModel):
+    goal: str = Field(min_length=1, max_length=2000)
+    sessions: list[PlanSessionEdit] = Field(min_length=1, max_length=60)
+
+
+@router.put("/learning/plans/{plan_id}")
+def edit_plan(
+    plan_id: str, body: PlanEdit, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    sessions = [s.model_dump() for s in body.sessions]
+    return svc.plan_view(db, user, svc.update_plan(db, user, plan_id, body.goal.strip(), sessions))
+
+
+@router.delete("/learning/plans/{plan_id}", status_code=204)
+def delete_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    svc.delete_plan(db, user, plan_id)
 
 
 class PlanStatus(BaseModel):

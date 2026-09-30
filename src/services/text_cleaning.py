@@ -61,12 +61,26 @@ def _signature(line: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"\d+", "#", line)).strip().lower()
 
 
+# Chỉ số dưới/trên dựng lại từ cỡ chữ + baseline của pdfium (n₁, ∑ⁿᵢ₌₁ mᵢ — D-42); ký tự không có dạng Unicode giữ nguyên
+SUB = dict(zip("0123456789+-−=()aehijklmnoprstuvxβγρφχ", "₀₁₂₃₄₅₆₇₈₉₊₋₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵦᵧᵨᵩᵪ", strict=True))
+SUP = dict(
+    zip(
+        "0123456789+-−=()abcdefghijklmnoprstuvwxyzABDEGHIJKLMNOPRTUW",
+        "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁻⁼⁽⁾ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁᵂ",
+        strict=True,
+    )
+)
+SCRIPT_CHARS = re.escape("".join(sorted(set(SUB.values()) | set(SUP.values()))))
+SCRIPT_KEEP = re.compile(f"([{SCRIPT_CHARS}]+)|[^{SCRIPT_CHARS}]+")
+
+
 def _basic(text: str, stats: CleaningStats) -> str:
     before = len(text)
     text = "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch)[0] != "C")
     stats.control_chars += before - len(text)
     stats.ligatures += len(re.findall("[ﬀ-ﬆ]", text))
-    text = unicodedata.normalize("NFKC", text)
+    # NFKC nhưng giữ chỉ số dưới/trên dựng lại từ PDF (n₁, xⁿ — D-42); NFKC sẽ biến chúng thành chữ thường
+    text = SCRIPT_KEEP.sub(lambda m: m.group(0) if m.group(1) else unicodedata.normalize("NFKC", m.group(0)), text)
     # TeX font encoding: dấu “ bị trích thành "\" ngay trước chữ (\How → “How)
     text, n = re.subn(r"\\(?=[A-Za-zÀ-ỹ])", "“", text)
     stats.tex_quotes += n

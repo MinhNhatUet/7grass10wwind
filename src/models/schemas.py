@@ -72,6 +72,7 @@ class CourseItem(BaseModel):
     assigned: bool = False
     can_upload: bool = False
     can_review: bool = False
+    can_read: bool = True  # /me/courses chỉ trả môn user ĐỌC được; trang /library (TV4) lọc theo trường này
 
 
 class CoursesResponse(BaseModel):
