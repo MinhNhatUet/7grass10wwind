@@ -67,8 +67,8 @@ export default function QuizBuilderPage() {
                 
                 {activeId === q.id && (
                   <div className="mt-4 flex justify-center gap-4 text-slate-400">
-                    <button className="hover:text-[#4f2b96] transition-colors"><Copy size={16} /></button>
-                    <button className="hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                    <button className="hover:text-black transition-colors"><Copy size={16} /></button>
+                    <button className="hover:text-black transition-colors"><Trash2 size={16} /></button>
                   </div>
                 )}
               </div>
@@ -76,7 +76,7 @@ export default function QuizBuilderPage() {
           </div>
 
           <div className="p-4 border-t border-slate-100 bg-white rounded-b-2xl">
-            <button className="w-full py-3 rounded-full border-2 border-[#4f2b96] text-[#4f2b96] font-semibold flex items-center justify-center gap-2 hover:bg-[#f5f3ff] transition-colors">
+            <button className="w-full py-3 rounded-full border-2 border-black text-black font-semibold flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
               <Plus size={18} /> Add Question
             </button>
           </div>
@@ -88,7 +88,7 @@ export default function QuizBuilderPage() {
           
           <div className="space-y-4">
             {/* Question Input */}
-            <div className="rounded-xl border border-slate-200 p-1 flex items-start focus-within:border-[#4f2b96] focus-within:ring-1 focus-within:ring-[#4f2b96] transition-all">
+            <div className="rounded-xl border border-slate-200 p-1 flex items-start focus-within:border-black focus-within:ring-1 focus-within:ring-black transition-all">
               <div className="p-3 text-slate-400">
                 <HelpCircle size={20} />
               </div>
@@ -99,9 +99,9 @@ export default function QuizBuilderPage() {
             </div>
 
             {/* Image Banner */}
-            <div className="bg-[#4f2b96] rounded-xl p-4 flex items-center justify-between text-white shadow-md">
+            <div className="bg-black rounded-xl p-4 flex items-center justify-between text-white shadow-md">
               <span className="text-sm font-medium">Choose image to add to this question (optional)</span>
-              <button className="bg-white text-slate-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-slate-100 transition-colors">
+              <button className="bg-white text-black px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-slate-100 transition-colors">
                 Add image
               </button>
             </div>
@@ -109,7 +109,7 @@ export default function QuizBuilderPage() {
             {/* Options */}
             <div className="space-y-3 pt-2">
               {['A', 'B', 'C', 'D'].map((letter, i) => (
-                <div key={letter} className="flex items-center gap-3 rounded-xl border border-slate-200 p-1.5 focus-within:border-[#4f2b96] transition-colors bg-white">
+                <div key={letter} className="flex items-center gap-3 rounded-xl border border-slate-200 p-1.5 focus-within:border-black transition-colors bg-white">
                   <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 font-bold flex items-center justify-center text-sm ml-1 shrink-0">
                     {letter}
                   </div>
@@ -119,14 +119,14 @@ export default function QuizBuilderPage() {
                     className="flex-1 p-2 outline-none text-slate-700 bg-transparent"
                   />
                   <div className="pr-3">
-                    <div className="w-5 h-5 rounded-full border-2 border-slate-300 hover:border-[#4f2b96] cursor-pointer transition-colors"></div>
+                    <div className="w-5 h-5 rounded-full border-2 border-slate-300 hover:border-black cursor-pointer transition-colors"></div>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* Explanation */}
-            <div className="rounded-xl border border-slate-200 p-1 flex items-start focus-within:border-[#4f2b96] focus-within:ring-1 focus-within:ring-[#4f2b96] transition-all mt-6">
+            <div className="rounded-xl border border-slate-200 p-1 flex items-start focus-within:border-black focus-within:ring-1 focus-within:ring-black transition-all mt-6">
               <div className="p-3 text-slate-400">
                 <Info size={20} />
               </div>
