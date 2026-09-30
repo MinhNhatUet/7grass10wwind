@@ -10,7 +10,7 @@ import * as HoverCard from '@radix-ui/react-hover-card';
 import { useTheme } from "next-themes";
 import SourceReader from "../components/source-reader";
 import { API, responseError } from "../lib/api-errors";
-import { HIDE_SOURCE_KINDS, LearningCards, QuickStart, noCite } from "../components/learning-cards";
+import { HIDE_SOURCE_KINDS, LearningCards, PENDING_SEND, QuickStart, noCite } from "../components/learning-cards";
 import type { ChatMessage, HubResult } from "../lib/api";
 
 // Router chọn trợ lý (FR-11, D-27): không ép "academic"; nhãn hiển thị theo trợ lý router đã chọn
@@ -221,7 +221,7 @@ export default function UnifiedChat() {
     fetchHistory();
   }, []);
 
-  const handleSend = async (e?: React.FormEvent, override?: { content: string; body: Record<string, unknown> }) => {
+  const handleSend = async (e?: React.FormEvent, override?: { content: string; body: Record<string, unknown>; courseId?: string }) => {
     if (e) e.preventDefault();
     const text = override?.content ?? prompt;
     if (!text.trim() || isLoading || conversationLoading) return;
@@ -244,7 +244,7 @@ export default function UnifiedChat() {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
           },
-          body: JSON.stringify({ document_id: documentScope?.id })
+          body: JSON.stringify({ document_id: documentScope?.id, course_id: override?.courseId })
         });
         if (convRes.status === 401) {
           localStorage.removeItem("token");
@@ -312,6 +312,19 @@ export default function UnifiedChat() {
       setIsLoading(false);
     }
   };
+
+  // Từ Learning / Lộ trình (D-45): trang đó chuyển sang ngay, chat tự gửi yêu cầu và hiện "đang trả lời".
+  // Xoá khỏi sessionStorage trước khi gửi → StrictMode chạy effect 2 lần cũng không gửi trùng.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).get("pending")) return;
+    let pending: string | null = null;
+    try { pending = sessionStorage.getItem(PENDING_SEND); sessionStorage.removeItem(PENDING_SEND); } catch { /* storage bị chặn */ }
+    window.history.replaceState(null, "", "/");
+    if (!pending) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- gửi yêu cầu một lần khi mở trang, như người dùng bấm Gửi
+    try { void handleSend(undefined, JSON.parse(pending)); } catch { /* dữ liệu hỏng → bỏ qua */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy một lần khi mở trang
+  }, []);
 
   return (
     <div className="flex h-screen bg-white dark:bg-[#081018] text-black dark:text-[#f7f7f8] font-sans overflow-hidden isolate relative">

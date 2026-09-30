@@ -15,6 +15,9 @@ const btn = "rounded-full px-4 py-1.5 text-[13px] font-medium cursor-pointer bor
 const btn2 = "rounded-full px-3 py-1.5 text-[13px] cursor-pointer border border-black/10 dark:border-white/15 bg-transparent hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40";
 const muted = "text-black/50 dark:text-white/50";
 
+/** Khoá sessionStorage của yêu cầu học tập chờ trang chat gửi (D-45). */
+export const PENDING_SEND = "pendingLearningSend";
+
 /** Loại bài KHÔNG hiện nguồn khi vừa tạo (người học tự làm trước); dẫn chứng chỉ hiện sau khi trả lời/lật/kiểm tra. */
 export const HIDE_SOURCE_KINDS = ["quiz", "diagnose", "mcq", "flashcards", "cloze", "plan"];
 /** Bỏ nhãn [n] / [1, 3] khỏi văn bản hiển thị. */
@@ -131,17 +134,28 @@ function gcalLink(title: string, details: string, begin: Date, minutes: number):
 }
 
 /** Cùng quy tắc với file .ics phía server: ngày 1 = ngày bắt đầu, buổi cùng ngày nối tiếp. */
-function sessionStarts(sessions: PlanSession[], start: string, at: string): Map<string, Date> {
+function sessionStarts(sessions: PlanSession[], start: string, at: string, dates?: string[] | null): Map<string, Date> {
   const out = new Map<string, Date>();
   const used = new Map<number, number>();
-  const [y, mo, d] = start.split("-").map(Number);
   const [h, mi] = at.split(":").map(Number);
   for (const s of sessions.slice().sort((a, b) => a.day - b.day || a.id.localeCompare(b.id))) {
     const off = used.get(s.day) ?? 0;
-    out.set(s.id, new Date(y, mo - 1, d + s.day - 1, h, mi + off));
+    const iso = dates?.[s.day - 1]; // D-46: ngày người học chọn; không có thì ngày bắt đầu + (k − 1)
+    const [y, mo, d] = (iso ?? start).split("-").map(Number);
+    out.set(s.id, new Date(y, mo - 1, iso ? d : d + s.day - 1, h, mi + off));
     used.set(s.day, off + s.minutes);
   }
   return out;
+}
+
+const WEEKDAY = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+/** "T4 01/10" khi lộ trình có ngày cụ thể (D-46), không thì "Ngày k". */
+export function dayLabel(dates: string[] | null | undefined, day: number): string {
+  const iso = dates?.[day - 1];
+  if (!iso) return `Ngày ${day}`;
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${WEEKDAY[new Date(y, m - 1, d).getDay()]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
 }
 
 function tomorrow(): string {
@@ -187,7 +201,13 @@ function PlanEditor({ plan, onSaved, onCancel }: { plan: NonNullable<Meta["plan"
         {rows.map((r, k) => (
           <li key={r.id ?? `new-${k}`} className="rounded-xl border border-black/10 dark:border-white/10 p-3 space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-[13px]">
-              <label>Ngày <input type="number" min={1} max={60} value={r.day} onChange={(e) => set(k, { day: Math.min(60, Math.max(1, Number(e.target.value) || 1)) })} className={`${inp} !w-16`} /></label>
+              {plan.dates?.length ? (
+                <label>Ngày <select value={r.day} onChange={(e) => set(k, { day: Number(e.target.value) })} className={`${inp} !w-auto`}>
+                  {plan.dates.map((_, i) => <option key={i} value={i + 1}>{dayLabel(plan.dates, i + 1)}</option>)}
+                </select></label>
+              ) : (
+                <label>Ngày <input type="number" min={1} max={60} value={r.day} onChange={(e) => set(k, { day: Math.min(60, Math.max(1, Number(e.target.value) || 1)) })} className={`${inp} !w-16`} /></label>
+              )}
               <label>Phút <input type="number" min={5} max={600} step={5} value={r.minutes} onChange={(e) => set(k, { minutes: Math.min(600, Math.max(5, Number(e.target.value) || 5)) })} className={`${inp} !w-20`} /></label>
               <span className="flex-1" />
               <button type="button" className={btn2} onClick={() => setRows(rows.filter((_, i) => i !== k))} aria-label={`Xoá buổi ${k + 1}`}>Xoá buổi</button>
@@ -200,7 +220,7 @@ function PlanEditor({ plan, onSaved, onCancel }: { plan: NonNullable<Meta["plan"
         ))}
       </ol>
       <button type="button" className={`${btn2} mt-3`} disabled={rows.length >= 60}
-        onClick={() => setRows([...rows, { id: null, day: (rows.at(-1)?.day ?? 0) + 1, title: "", objective: "", activity: "", self_check: "", minutes: plan.minutes_per_day || 45 }])}>
+        onClick={() => setRows([...rows, { id: null, day: Math.min((rows.at(-1)?.day ?? 0) + 1, plan.dates?.length || 60), title: "", objective: "", activity: "", self_check: "", minutes: plan.minutes_per_day || 45 }])}>
         + Thêm buổi
       </button>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -224,11 +244,12 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
   const [at, setAt] = useState("19:00");
   const active = plan.status === "Confirmed" || plan.status === "InProgress";
   const exportable = active || plan.status === "Paused";
-  const starts = start && at ? sessionStarts(plan.sessions, start, at) : new Map<string, Date>();
+  const hasDates = !!plan.dates?.length;
+  const starts = (start || hasDates) && at ? sessionStarts(plan.sessions, start, at, plan.dates) : new Map<string, Date>();
 
   const [picking, setPicking] = useState<string | null>(null); // buổi đang mở bộ chọn hình thức ôn tập
   function practice(s: PlanSession, choice: PracticeChoice) {
-    const content = `Ôn tập ngày ${s.day} (${FORMAT_LABEL[choice.action]}, ${choice.count} câu): ${s.title}`;
+    const content = `Ôn tập ${dayLabel(plan.dates, s.day)} (${FORMAT_LABEL[choice.action]}, ${choice.count} câu): ${s.title}`;
     onSend(content, { content, assistant: "learning", learning: { action: choice.action, count: choice.count, topic: `${noCite(s.title)}. ${noCite(s.objective)}`, plan_id: plan.id } });
     setPicking(null);
   }
@@ -245,7 +266,7 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
   async function ics() {
     setErr(null);
     try {
-      await downloadFile(`/learning/plans/${plan.id}/calendar.ics?start=${start}&at=${at}`, `lo-trinh-${plan.id}.ics`);
+      await downloadFile(`/learning/plans/${plan.id}/calendar.ics?${hasDates ? "" : `start=${start}&`}at=${at}`, `lo-trinh-${plan.id}.ics`);
     } catch (e) {
       setErr(e instanceof ApiError ? errorMessage(e.code) : MSG.serviceError);
     }
@@ -268,7 +289,7 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
           <li key={s.id} className={`rounded-xl border border-black/5 dark:border-white/10 p-3 ${s.needs_update ? "opacity-60" : ""}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold">Ngày {s.day} · {s.minutes}′ — <M>{noCite(s.title)}</M></p>
+                <p className="font-semibold">{dayLabel(plan.dates, s.day)} · {s.minutes}′ — <M>{noCite(s.title)}</M></p>
                 <p className="mt-0.5"><M>{noCite(s.objective)}</M></p>
                 <p className={`mt-0.5 text-[12px] ${muted}`}><M>{noCite(s.activity)}</M> · Tự kiểm tra: <M>{noCite(s.self_check)}</M></p>
                 {s.missing_source && <p className="text-[12px] text-amber-700">⚠ Thiếu nguồn cho buổi này</p>}
@@ -287,7 +308,7 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
                 <button type="button" className={btn2} onClick={() => setPicking(picking === s.id ? null : s.id)}>📝 Ôn tập</button>
                 {exportable && starts.get(s.id) && (
                   <a target="_blank" rel="noopener noreferrer" className="text-[12px] underline"
-                    href={gcalLink(`EDU-04 · Ngày ${s.day}: ${s.title}`, `Mục tiêu: ${noCite(s.objective)}\nHoạt động: ${noCite(s.activity)}\nÔn tập: mở lộ trình trong EDU-04, bấm "Ôn tập" ngày ${s.day}.`, starts.get(s.id) as Date, s.minutes)}>
+                    href={gcalLink(`EDU-04 · ${dayLabel(plan.dates, s.day)}: ${noCite(s.title)}`, `Mục tiêu: ${noCite(s.objective)}\nHoạt động: ${noCite(s.activity)}\nÔn tập: mở lộ trình trong EDU-04, bấm "Ôn tập" ngày ${s.day}.`, starts.get(s.id) as Date, s.minutes)}>
                     + Google Calendar
                   </a>
                 )}
@@ -312,9 +333,11 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
         <div className="mt-3 border-t border-dashed border-black/10 dark:border-white/10 pt-3">
           <p className="font-semibold">Đưa lộ trình vào Google Calendar</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]">
-            <label>Bắt đầu <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-2 py-1" /></label>
+            {hasDates
+              ? <span>Theo {plan.dates!.length} ngày đã chọn</span>
+              : <label>Bắt đầu <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-2 py-1" /></label>}
             <label>lúc <input type="time" value={at} onChange={(e) => setAt(e.target.value)} className="rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-2 py-1" /></label>
-            <button type="button" className={btn} disabled={!start || !at} onClick={() => void ics()}>Tải file lịch (.ics)</button>
+            <button type="button" className={btn} disabled={(!start && !hasDates) || !at} onClick={() => void ics()}>Tải file lịch (.ics)</button>
           </div>
           <p className={`mt-2 text-[12px] ${muted}`}>
             Tải file rồi mở <a className="underline" href="https://calendar.google.com/calendar/r/settings/export" target="_blank" rel="noopener noreferrer">Google Calendar → Cài đặt → Nhập</a>, hoặc bấm &quot;+ Google Calendar&quot; ở từng buổi. Mỗi buổi nhắc trước 15 phút.

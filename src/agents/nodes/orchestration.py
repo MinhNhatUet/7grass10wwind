@@ -227,7 +227,8 @@ def learning_node(state: OrchestratorState, config: RunnableConfig) -> dict[str,
             if previous is None or previous.owner_id != user.id:
                 raise not_found()
         goal = opts.get("goal") or route.get("goal") or question
-        days = _int(opts.get("days")) or route.get("days")
+        dates = opts.get("dates") or None  # D-46: ngày cụ thể người học chọn trên lịch (đã chuẩn hoá ở API)
+        days = len(dates) if dates else (_int(opts.get("days")) or route.get("days"))
         minutes = _int(opts.get("minutes_per_day")) or route.get("minutes_per_day")
         result, plan_data = learning.plan(db, user, course_id, goal, days, minutes, previous)
         if plan_data is not None:
@@ -238,6 +239,7 @@ def learning_node(state: OrchestratorState, config: RunnableConfig) -> dict[str,
                 "minutes": minutes,
                 "previous_id": previous.id if previous else None,
                 "previous_version": previous.version if previous else 0,
+                "dates": dates,
             }
     else:
         level = opts.get("level") or route.get("level")

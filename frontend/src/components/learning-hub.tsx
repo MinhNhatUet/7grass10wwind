@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { BookOpen, CalendarDays, ClipboardList, Sparkles, Timer } from "lucide-react";
 import { ApiError, api, json, type ChatMessage, type CourseItem, type Plan } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
-import { FORMAT_LABEL, PlanCard, PracticePicker, type PracticeChoice } from "@/components/learning-cards";
+import { FORMAT_LABEL, PENDING_SEND, PlanCard, PracticePicker, type PracticeChoice } from "@/components/learning-cards";
 
 type PlanRow = { id: string; goal: string; status: string; version: number; done: number; total: number; updated_at: string };
 type SelfCheck = { message_id: string; conversation_id: string; kind: string; topic: string | null; questions: number; answered: number; assessed: boolean; levels: string[]; created_at: string };
@@ -39,7 +39,6 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
   const [quizzes, setQuizzes] = useState<QuizRow[] | null>(null);
   const [taking, setTaking] = useState<Attempt | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [working, setWorking] = useState<string | null>(null);
   const names = new Map(courses.map((c) => [c.id, c.name]));
 
   const load = useCallback(async () => {
@@ -56,17 +55,6 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
-  // Ôn tập từ trang này: tạo hội thoại mới (cố định môn nếu đã chọn), gửi yêu cầu ôn tập rồi mở chat ở hội thoại đó
-  async function practiceInChat(content: string, body: Record<string, unknown>, courseId?: string) {
-    setWorking("Đang tạo bài ôn tập… (có thể mất 10–30 giây)");
-    try {
-      router.push(`/?conv=${encodeURIComponent((await startLearningChat(body, courseId)).conversationId)}`);
-    } catch (e) {
-      setErr(errText(e));
-      setWorking(null);
-    }
-    void content;
-  }
 
   async function startQuiz(id: string) {
     setErr(null);
@@ -82,7 +70,6 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
   return (
     <div className="space-y-6">
       {err && <p className="rounded-xl bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-700 dark:text-red-200">{err}</p>}
-      {working && <p role="status" className="rounded-xl bg-blue-50 dark:bg-blue-950 px-4 py-2 text-sm">{working}</p>}
 
       <section className={card}>
         <h2 className="flex items-center gap-2 font-semibold"><Sparkles size={18} /> Bắt đầu nhanh</h2>
@@ -94,10 +81,10 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
         </div>
       </section>
 
-      <TopicPractice courses={courses} busy={!!working}
+      <TopicPractice courses={courses} busy={false}
         onStart={(courseId, topic, c, label) => {
           const content = `Ôn tập ${label} — ${FORMAT_LABEL[c.action]}, ${c.count} câu`;
-          void practiceInChat(content, { content, assistant: "learning", learning: { action: c.action, count: c.count, topic } }, courseId);
+          goToChat(router, content, { content, assistant: "learning", learning: { action: c.action, count: c.count, topic } }, courseId);
         }} />
 
       <section className={card}>
@@ -165,20 +152,22 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
   );
 }
 
-/** Tạo hội thoại mới (cố định môn nếu có) và gửi yêu cầu học tập; trả về id hội thoại để mở chat. */
-export async function startLearningChat(body: Record<string, unknown>, courseId?: string) {
-  const conv = await api<{ conversation_id: string }>("/conversations", { method: "POST", body: json(courseId ? { course_id: courseId } : {}) });
-  const msg = await api<ChatMessage>(`/conversations/${conv.conversation_id}/messages`, { method: "POST", body: json(body) });
-  return { conversationId: conv.conversation_id, message: msg };
+/** Chuyển sang chat NGAY (D-45): yêu cầu học tập để trong sessionStorage, trang chat tự gửi và hiện "đang trả lời". */
+export function goToChat(router: ReturnType<typeof useRouter>, content: string, body: Record<string, unknown>, courseId?: string) {
+  try {
+    sessionStorage.setItem(PENDING_SEND, JSON.stringify({ content, body, courseId }));
+  } catch {
+    /* trình duyệt chặn storage → chỉ mở chat, người dùng gửi lại */
+  }
+  router.push("/?pending=1");
 }
 
 /** Lộ trình của tôi (trang /learning/plans): danh sách từ server; mở ra là PlanCard (tiến độ, ôn tập theo ngày, Google Calendar). */
-export function MyPlans({ reloadKey = 0, openId }: { reloadKey?: number; openId?: string | null }) {
+export function MyPlans() {
   const router = useRouter();
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [working, setWorking] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
 
@@ -190,10 +179,7 @@ export function MyPlans({ reloadKey = 0, openId }: { reloadKey?: number; openId?
     }
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- setState chỉ sau await
-  useEffect(() => { void load(); }, [load, reloadKey]);
-  useEffect(() => {
-    if (openId) api<Plan>(`/learning/plans/${openId}`).then(setOpenPlan).catch((e) => setErr(errText(e)));
-  }, [openId]);
+  useEffect(() => { void load(); }, [load]);
 
   async function showPlan(id: string) {
     if (openPlan?.id === id) return setOpenPlan(null);
@@ -204,15 +190,6 @@ export function MyPlans({ reloadKey = 0, openId }: { reloadKey?: number; openId?
     }
   }
 
-  async function practice(body: Record<string, unknown>) {
-    setWorking("Đang tạo bài ôn tập… (có thể mất 10–30 giây)");
-    try {
-      router.push(`/?conv=${encodeURIComponent((await startLearningChat(body)).conversationId)}`);
-    } catch (e) {
-      setErr(errText(e));
-      setWorking(null);
-    }
-  }
 
   const shown = (plans ?? []).filter((p) => (!status || p.status === status) && p.goal.toLowerCase().includes(q.trim().toLowerCase()));
   return (
@@ -230,7 +207,6 @@ export function MyPlans({ reloadKey = 0, openId }: { reloadKey?: number; openId?
         </div>
       </div>
       {err && <p className="mt-3 rounded-xl bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-700 dark:text-red-200">{err}</p>}
-      {working && <p role="status" className="mt-3 rounded-xl bg-blue-50 dark:bg-blue-950 px-4 py-2 text-sm">{working}</p>}
       {plans === null ? <p className={`mt-3 text-sm ${muted}`}>Đang tải…</p> : plans.length === 0 ? (
         <p className={`mt-3 text-sm ${muted}`}>Bạn chưa có lộ trình nào. Bấm &quot;Tạo lộ trình mới&quot; để AI lập kế hoạch từ tài liệu môn học.</p>
       ) : shown.length === 0 ? (
@@ -254,7 +230,7 @@ export function MyPlans({ reloadKey = 0, openId }: { reloadKey?: number; openId?
                   meta={{ plan: openPlan } as ChatMessage["metadata"]}
                   onChanged={() => { void load(); void api<Plan>(`/learning/plans/${p.id}`).then(setOpenPlan); }}
                   onDeleted={() => { setOpenPlan(null); void load(); }}
-                  onSend={(_content, body) => void practice(body)}
+                  onSend={(content, body) => goToChat(router, content, body)}
                 />
               )}
             </li>
