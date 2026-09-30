@@ -4,11 +4,17 @@ import Link from "next/link";
 import { Paperclip, ArrowUp, Zap, FileText, Menu, Plus, MessageSquare, X, ChevronRight, BookOpen, User, Compass, MoreHorizontal, Pencil, Pin, Folder, Share, Archive, Trash2, Sun, Moon, ShieldCheck, Check, ThumbsUp, ThumbsDown, Target, LogOut } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { mathDelims, rehypeMathPlugins, remarkMathPlugins } from "../components/math-text";
 import { motion, AnimatePresence } from "framer-motion";
 import * as HoverCard from '@radix-ui/react-hover-card';
 import { useTheme } from "next-themes";
 import SourceReader from "../components/source-reader";
 import { API, responseError } from "../lib/api-errors";
+import { HIDE_SOURCE_KINDS, LearningCards, QuickStart, noCite } from "../components/learning-cards";
+import type { ChatMessage, HubResult } from "../lib/api";
+
+// Router chọn trợ lý (FR-11, D-27): không ép "academic"; nhãn hiển thị theo trợ lý router đã chọn
+const AGENT: Record<string, string> = { academic: "Academic Assistant", learning: "Learning Assistant", hub: "Knowledge Hub", router: "EDU-04" };
 
 // MOCK DATA TYPES
 type Role = 'user' | 'assistant';
@@ -19,6 +25,7 @@ type Message = {
   content: string;
   agentName?: string;
   sources?: Source[];
+  meta?: ChatMessage["metadata"]; // thẻ học: quiz, lộ trình, flashcard… (learning-cards)
 };
 
 const MOCK_HISTORY = [
@@ -29,7 +36,7 @@ const MOCK_HISTORY = [
 ];
 
 export default function UnifiedChat() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -57,6 +64,11 @@ export default function UnifiedChat() {
       const params = new URLSearchParams(window.location.search);
       const doc = params.get("document");
       if (doc) setDocumentScope({ id: doc, title: params.get("title") || "Tài liệu đã chọn" });
+      // Mở từ trang Learning & Quiz: ?conv= mở đúng hội thoại, ?q= điền sẵn câu mẫu
+      const conv = params.get("conv");
+      if (conv) void loadConversation(conv);
+      const q = params.get("q");
+      if (q) setPrompt(q);
       try {
         const stored = localStorage.getItem('user');
         if (stored) setUser(JSON.parse(stored));
@@ -178,7 +190,8 @@ export default function UnifiedChat() {
           id: m.message_id || m.id,
           role: m.role,
           content: m.content,
-          agentName: m.role === 'assistant' ? 'Academic Assistant' : undefined,
+          agentName: m.role === 'assistant' ? AGENT[m.assistant] ?? 'EDU-04' : undefined,
+          meta: m.metadata,
           sources: m.citations?.map((c: any) => ({
             id: c.id,
             citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
@@ -208,14 +221,15 @@ export default function UnifiedChat() {
     fetchHistory();
   }, []);
 
-  const handleSend = async (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent, override?: { content: string; body: Record<string, unknown> }) => {
     if (e) e.preventDefault();
-    if (!prompt.trim() || isLoading || conversationLoading) return;
+    const text = override?.content ?? prompt;
+    if (!text.trim() || isLoading || conversationLoading) return;
 
-    const userMessage: Message = { id: Date.now().toString(), role: "user", content: prompt };
+    const userMessage: Message = { id: Date.now().toString(), role: "user", content: text };
     setMessages(prev => [...prev, userMessage]);
-    const currentPrompt = prompt;
-    setPrompt("");
+    const payload = override?.body ?? { content: text };
+    if (!override) setPrompt("");
     setIsLoading(true);
     setActiveSource(null);
 
@@ -230,7 +244,7 @@ export default function UnifiedChat() {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
           },
-          body: JSON.stringify({ assistant: "academic", document_id: documentScope?.id })
+          body: JSON.stringify({ document_id: documentScope?.id })
         });
         if (convRes.status === 401) {
           localStorage.removeItem("token");
@@ -253,7 +267,7 @@ export default function UnifiedChat() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ content: currentPrompt, assistant: "academic" }),
+        body: JSON.stringify(payload),
       });
       
       if (response.status === 401) {
@@ -270,10 +284,11 @@ export default function UnifiedChat() {
       const data = await response.json();
       
       const assistantMessage: Message = {
-        id: data.id || (Date.now() + 1).toString(),
+        id: data.message_id || data.id || (Date.now() + 1).toString(),
         role: "assistant",
-        agentName: "Academic Assistant",
+        agentName: AGENT[data.assistant] ?? "EDU-04",
         content: data.content,
+        meta: data.metadata,
         sources: data.citations?.map((c: any) => ({
           id: c.id,
           citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
@@ -301,16 +316,6 @@ export default function UnifiedChat() {
   return (
     <div className="flex h-screen bg-white dark:bg-[#081018] text-black dark:text-[#f7f7f8] font-sans overflow-hidden isolate relative">
       
-      {/* BACKGROUND VIDEO */}
-      <motion.div 
-        animate={{ opacity: hasMessages ? 0.1 : 0.8, filter: hasMessages ? 'blur(20px)' : 'blur(0px)' }}
-        transition={{ duration: 1 }}
-        className="fixed inset-[-34px] z-[-3] overflow-hidden pointer-events-none"
-      >
-        <video autoPlay muted loop playsInline className="w-full h-full object-cover object-center saturate-[.72] brightness-[.8] dark:brightness-[.64] scale-[1.055] ambient-zoom">
-          <source src="/assets/fastshot-bg.mp4" type="video/mp4" />
-        </video>
-      </motion.div>
       <div className="hidden dark:block fixed inset-0 z-[-2] pointer-events-none" style={{ background: 'radial-gradient(circle at 72% 47%, rgba(255,180,112,.14), transparent 28%), linear-gradient(180deg, rgba(5,10,16,.34), rgba(3,7,12,.43) 55%, rgba(3,7,12,.63))' }} />
       <div className="block dark:hidden fixed inset-0 z-[-2] pointer-events-none bg-white/20" />
 
@@ -361,6 +366,11 @@ export default function UnifiedChat() {
                     <Target size={18} /> Lộ trình học
                   </Link>
                 </>
+              )}
+              {(user?.role === "lecturer" || user?.role === "reviewer") && (
+                <Link href="/learning" className="flex items-center gap-3 text-black dark:text-black/70 dark:text-white/70 hover:text-black dark:text-white hover:bg-black/5 dark:hover:bg-white/5 dark:bg-black/5 dark:bg-white/5 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline">
+                  <BookOpen size={18} /> Soạn đề trắc nghiệm
+                </Link>
               )}
               {user && ["lecturer", "reviewer", "admin"].includes(user.role || "") && (
                 <Link href={user.role === "reviewer" ? "/hub/review" : "/hub/manage"} className="flex items-center gap-3 text-blue-600 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-2 rounded-lg text-[14px] font-medium transition-colors no-underline mt-1">
@@ -486,10 +496,12 @@ export default function UnifiedChat() {
               </HoverCard.Root>
               
               <button 
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
                 className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg border-0 cursor-pointer bg-transparent transition-colors"
               >
-                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                {/* Chọn icon bằng CSS: server không biết theme → render cả hai để không lệch hydration */}
+                <Sun size={18} className="hidden dark:block" />
+                <Moon size={18} className="block dark:hidden" />
               </button>
             </div>
           </motion.aside>
@@ -590,7 +602,8 @@ export default function UnifiedChat() {
                         ) : (
                           <div className="prose prose dark:prose-invert max-w-none text-[15px] leading-relaxed prose-p:mb-4 prose-a:text-blue-600 dark:prose-a:text-[#60a5fa] prose-a:no-underline hover:prose-a:underline">
                             <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
+                              remarkPlugins={[remarkGfm, ...remarkMathPlugins]}
+                              rehypePlugins={rehypeMathPlugins}
                               components={{
                                 a: ({node, ...props}) => {
                                   return (
@@ -611,11 +624,22 @@ export default function UnifiedChat() {
                                 }
                               }}
                             >
-                              {msg.content}
+                              {mathDelims(HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "") ? noCite(msg.content) : msg.content)}
                             </ReactMarkdown>
                           </div>
                         )}
-                        {msg.role === 'assistant' && !!msg.sources?.length && (
+                        {msg.role === 'assistant' && (
+                          <LearningCards
+                            meta={msg.meta}
+                            messageId={msg.id}
+                            onCite={(n) => { const src = msg.sources?.find((x) => String(x.id) === String(n)); if (src) setActiveSource(src); }}
+                            onChanged={() => { if (activeConversationId) void loadConversation(activeConversationId); }}
+                            onSend={(content, body) => void handleSend(undefined, { content, body })}
+                            onOpenHub={(r: HubResult) => setActiveSource({ id: r.chunk_id, title: r.title, page: r.locator.value, content: r.snippet, documentId: r.document_id, versionId: r.version_id })}
+                            sources={msg.sources}
+                          />
+                        )}
+                        {msg.role === 'assistant' && !!msg.sources?.length && !HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "") && (
                           <section aria-label="Nguồn tham khảo" className="mt-4 border-t border-blue-200 dark:border-blue-800 pt-3">
                             <h3 className="text-sm font-semibold mb-2">Nguồn tham khảo</h3>
                             <ul className="space-y-2">
@@ -729,6 +753,12 @@ export default function UnifiedChat() {
              <motion.div layout className="text-center mt-3 text-[12px] text-black dark:text-black/40 dark:text-white/40">
                EDU-04 AI có thể mắc lỗi. Vui lòng kiểm tra lại thông tin quan trọng.
              </motion.div>
+             {!hasMessages && (
+               <QuickStart
+                 onSend={(t) => void handleSend(undefined, { content: t, body: { content: t } })}
+                 onFill={(t) => setPrompt(t)}
+               />
+             )}
           </motion.div>
 
           <motion.div 
@@ -765,17 +795,6 @@ export default function UnifiedChat() {
           </motion.aside>
         )}
       </AnimatePresence>
-
-      <style jsx global>{`
-        @keyframes ambientZoom { 
-          from { transform: scale(1.055) translate3d(-.4%, 0, 0); } 
-          to { transform: scale(1.095) translate3d(.5%, -.35%, 0); } 
-        } 
-        .ambient-zoom { 
-          animation: ambientZoom 14s ease-in-out infinite alternate; 
-          will-change: transform; 
-        }
-      `}</style>
     </div>
   );
 }

@@ -275,3 +275,36 @@ class UsageEvent(Base):
     latency_ms: Mapped[float | None] = mapped_column(Float)
     request_id: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+# ---------------------------------------------------------------- Đề trắc nghiệm do giảng viên soạn (D-38, ngoài PRD 7.2)
+QUIZ_KINDS = ("practice", "exam", "midterm", "final")  # chỉ "practice" được xem đáp án sau khi nộp (BR-06)
+QUIZ_STATES = ("Draft", "Published", "Closed")
+
+
+class CourseQuiz(Base):
+    __tablename__ = "course_quizzes"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cq"))
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(20), default="practice")
+    time_limit_s: Mapped[int | None] = mapped_column(Integer)  # None = không giới hạn
+    status: Mapped[str] = mapped_column(String(20), default="Draft")
+    # [{"id","text","options":[4 chuỗi],"correct":0..3,"explanation"}] — đáp án KHÔNG bao giờ gửi cho SV trước khi nộp
+    questions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("qa"))
+    quiz_id: Mapped[str] = mapped_column(ForeignKey("course_quizzes.id"), index=True)
+    student_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    answers: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    score: Mapped[int | None] = mapped_column(Integer)
+    total: Mapped[int | None] = mapped_column(Integer)
+    late: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -15,6 +16,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "EDU-04 Knowledge Hub",
   description: "Kho tri thức hỗ trợ học thuật X",
+  // App có chế độ tối riêng — khoá extension Dark Reader để nó không sửa DOM trước khi React hydrate (lỗi hydration)
+  other: { "darkreader-lock": "true" },
 };
 import { ThemeProvider } from "@/components/theme-provider";
 

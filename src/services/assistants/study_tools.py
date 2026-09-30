@@ -77,7 +77,7 @@ def diagnose(
         "Sinh viên chưa biết bắt đầu từ đâu. Tạo ĐÚNG 3 câu hỏi tình huống ngắn, vui, dễ hiểu để kiểm tra KIẾN THỨC NỀN "
         "(khái niệm gốc mà phần sau phụ thuộc) của CHỦ ĐỀ, chỉ dựa trên NGUỒN. Mỗi câu nhắm một khái niệm gốc khác nhau. "
         'Trả về JSON {"questions":[{"topic":"khái niệm gốc","objective":"kiểm tra điều gì","question":"...","source":n}]}. '
-        f"KHÔNG kèm đáp án.\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
+        f"KHÔNG kèm đáp án. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. \n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
         temperature=0.4,
     )
     questions, used = [], set()
@@ -109,29 +109,36 @@ def diagnose(
 
 
 def flashcards(
-    db: Session, user: User, course_id: str, topic: str, mode: str, retrieval_query: str | None = None
+    db: Session,
+    user: User,
+    course_id: str,
+    topic: str,
+    mode: str,
+    retrieval_query: str | None = None,
+    count: int | None = None,
 ) -> AssistantResult:
     """mode: "flashcards" | "cloze". retrieval_query chỉ dùng để truy xuất; topic là chủ đề hiển thị."""
+    max_cards = min(count or MAX_CARDS, 20)
     hits = evidence(db, user, course_id, retrieval_query or topic)
     if not hits:
         return _empty(mode)
     if mode == "cloze":
         instruction = (
-            f"Tạo tối đa {MAX_CARDS} câu ĐIỀN KHUYẾT từ NGUỒN về CHỦ ĐỀ. Mỗi câu thay một thuật ngữ/khái niệm then chốt "
+            f"Tạo {max_cards} câu ĐIỀN KHUYẾT từ NGUỒN về CHỦ ĐỀ. Mỗi câu thay một thuật ngữ/khái niệm then chốt "
             'bằng "____". "answer" phải là cụm từ CHÉP NGUYÊN VĂN từ nguồn n (giữ nguyên ngôn ngữ gốc). '
-            'Trả về JSON {"items":[{"sentence":"câu có ____","answer":"...","hint":"gợi ý ngắn","source":n}]}.'
+            'Trả về JSON {"items":[{"sentence":"câu có ____","answer":"...","hint":"gợi ý ngắn","source":n}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         )
     else:
         instruction = (
-            f"Tạo tối đa {MAX_CARDS} THẺ GHI NHỚ từ NGUỒN về CHỦ ĐỀ: mặt trước là câu hỏi ngắn buộc người học nhớ lại, "
+            f"Tạo {max_cards} THẺ GHI NHỚ từ NGUỒN về CHỦ ĐỀ: mặt trước là câu hỏi ngắn buộc người học nhớ lại, "
             "mặt sau là câu trả lời ngắn gọn đúng theo nguồn n (tiếng Việt, giữ thuật ngữ gốc). "
-            'Trả về JSON {"items":[{"front":"...","back":"...","source":n}]}.'
+            'Trả về JSON {"items":[{"front":"...","back":"...","source":n}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         )
     data = call_json(
         BASE_POLICY, f"{instruction}\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}", temperature=0.3
     )
     items, used = [], set()
-    for it in json_dicts(data, "items")[:MAX_CARDS]:
+    for it in json_dicts(data, "items")[:max_cards]:
         refs = _refs(it.get("source"), hits, db, user)
         if not refs:
             continue
@@ -164,6 +171,54 @@ def flashcards(
         content=f"Đây là {len(items)} {label} về “{topic}”. Tự nhớ lại trước khi xem đáp án — mỗi thẻ có nguồn để đối chiếu.",
         used=_used(hits, used),
         payload={"kind": mode, "topic": topic, "items": items},
+    )
+
+
+def mcq(
+    db: Session, user: User, course_id: str, topic: str, retrieval_query: str | None = None, count: int | None = None
+) -> AssistantResult:
+    """Trắc nghiệm A–D để TỰ ÔN (không phải bài tính điểm): mỗi câu 4 lựa chọn, 1 đáp án, giải thích + nguồn n.
+    Câu thiếu lựa chọn/đáp án/nguồn hợp lệ bị loại (không bịa)."""
+    n = min(count or 10, 20)
+    hits = evidence(db, user, course_id, retrieval_query or topic)
+    if not hits:
+        return _empty("mcq")
+    data = call_json(
+        BASE_POLICY,
+        f"Tạo {n} câu TRẮC NGHIỆM tự ôn về CHỦ ĐỀ, chỉ dựa trên NGUỒN. Mỗi câu 4 lựa chọn, đúng 1 đáp án đúng; các "
+        "lựa chọn sai phải hợp lý (lỗi hiểu nhầm thường gặp), không đánh đố. Giải thích ngắn vì sao đáp án đúng, theo nguồn n. "
+        'Trả về JSON {"items":[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","source":n}]} Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
+        f"(correct là chỉ số 0–3).\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
+        temperature=0.4,
+    )
+    items, used = [], set()
+    for it in json_dicts(data, "items")[:n]:
+        refs = _refs(it.get("source"), hits, db, user)
+        opts = [strip_citations(str(o)).strip()[:300] for o in (it.get("options") or [])]
+        q = strip_citations(str(it.get("question") or "")).strip()
+        try:
+            correct = int(it.get("correct"))
+        except (TypeError, ValueError):
+            continue
+        if not refs or not q or len(opts) != 4 or not all(opts) or len(set(opts)) != 4 or not 0 <= correct <= 3:
+            continue
+        items.append(
+            {
+                "question": q[:600],
+                "options": opts,
+                "correct": correct,
+                "explanation": strip_citations(str(it.get("explanation") or ""))[:600],
+                "sources": refs[:1],
+            }
+        )
+        used.update(refs[:1])
+    if not items:
+        return _empty("mcq")
+    return AssistantResult(
+        status="answered",
+        content=f"Đây là {len(items)} câu trắc nghiệm về “{topic}”. Chọn đáp án để biết đúng/sai ngay — mỗi câu có giải thích và nguồn.",
+        used=_used(hits, used),
+        payload={"kind": "mcq", "topic": topic, "items": items},
     )
 
 

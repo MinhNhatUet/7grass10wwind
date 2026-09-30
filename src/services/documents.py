@@ -197,12 +197,44 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
     version.quality_warnings = ext.warnings
     version.state = NEEDS_REVIEW if ingestion.needs_review(ext) else DRAFT
     job.status, job.stage, job.progress = "succeeded", "extracted", 1.0
+    if ext.chunks and get_settings().embed_on_upload:
+        # D-34: embedding sẵn ngay khi tải lên. Chỉ mục tạm KHÔNG tham gia tìm kiếm (retrieval chỉ lấy bản Published);
+        # duyệt xong, job index chỉ còn phần thiếu nên phát hành gần như ngay (PRD 9.2, FR-08)
+        db.add(IngestionJob(version_id=version.id, kind="embed"))
     document = db.get(Document, version.document_id)
     audit.record(
         db, actor_id=None, action="extract", object_type="version", object_id=version.id,
         course_id=document.course_id if document else None,
         detail={"chunks": len(ext.chunks), "cleaning": ext.cleaning},
     )  # fmt: skip
+
+
+PRE_EMBED_STATES = (DRAFT, NEEDS_REVIEW, PENDING)
+
+
+def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
+    """D-34: embedding trước duyệt. Không bao giờ đổi trạng thái bản/phát hành; lỗi (vd. hết quota) chỉ đánh dấu job —
+    job index sau duyệt làm tiếp. Tự dừng khi bản đã rời trạng thái chờ duyệt."""
+    from src.services.retrieval import embed_texts
+
+    chunks = [c for c in db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal))]
+    todo = [c for c in chunks if c.embedding is None]
+    batch = get_settings().embedding_batch_size
+    try:
+        for i in range(0, len(todo), batch):
+            db.refresh(version)
+            if version.state not in PRE_EMBED_STATES:
+                break
+            part = todo[i : i + batch]
+            for c, blob in zip(part, embed_texts([c.text for c in part]), strict=True):
+                c.embedding = blob
+            job.progress = min(1.0, (len(chunks) - len(todo) + i + len(part)) / max(len(chunks), 1))
+            db.commit()
+    except Exception as e:  # noqa: BLE001 — lỗi provider: ghi lại, không chặn luồng duyệt
+        log.warning("embed job %s lỗi: %s", job.id, type(e).__name__)
+        job.status, job.error_code = "failed", f"EMBEDDING_{type(e).__name__}"[:100]
+        return
+    job.status, job.stage = "succeeded", "embedded"
 
 
 def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
@@ -268,11 +300,19 @@ def _run_job(job_id: str) -> None:
         db.commit()
         if job.kind == "extract":
             _run_extract(db, job, version)
+        elif job.kind == "embed":
+            _run_embed(db, job, version)
         elif job.kind == "index":
             _run_index(db, job, version)
         else:  # loại job không hỗ trợ: KHÔNG được rơi vào index/phát hành (BR-01)
             job.status, job.error_code = "failed", f"UNSUPPORTED_JOB_{job.kind}"[:100]
         db.commit()
+        for pending in db.scalars(
+            select(IngestionJob).where(
+                IngestionJob.version_id == version.id, IngestionJob.kind == "embed", IngestionJob.status == "queued"
+            )
+        ):
+            start_job(pending.id)
     except Exception as e:  # noqa: BLE001 — job không được làm sập tiến trình
         db.rollback()
         log.exception("job %s lỗi", job_id)
