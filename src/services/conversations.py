@@ -380,7 +380,9 @@ def _attach_plan(
     plan = StudyPlan(
         owner_id=user.id, course_id=course_id, conversation_id=conv.id, version=d["previous_version"] + 1,
         previous_id=d["previous_id"], status="Draft", goal=d["goal"][:2000], days=d["days"], minutes_per_day=d["minutes"],
-        data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")} | {"message_id": msg.id},
+        data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")}
+        | {"message_id": msg.id}
+        | ({"dates": d["dates"]} if d.get("dates") else {}),
     )  # fmt: skip
     db.add(plan)
     db.flush()
@@ -408,7 +410,7 @@ def plan_view(db: Session, user: User, plan: StudyPlan) -> dict[str, Any]:
         "id": plan.id, "version": plan.version, "previous_id": plan.previous_id, "status": plan.status, "goal": plan.goal,
         "days": plan.days, "minutes_per_day": plan.minutes_per_day, "sessions": sessions,
         "warnings": plan.data.get("warnings", []), "total_minutes": plan.data.get("total_minutes"),
-        "budget_minutes": plan.data.get("budget_minutes"),
+        "budget_minutes": plan.data.get("budget_minutes"), "dates": plan.data.get("dates"),
     }  # fmt: skip
 
 
@@ -463,6 +465,9 @@ def update_plan(db: Session, user: User, plan_id: str, goal: str, sessions: list
         raise AppError("INVALID_STATE", 409)
     if not sessions:
         raise bad_request("PLAN_EMPTY")
+    dates = plan.data.get("dates") or []
+    if dates and any(s["day"] > len(dates) for s in sessions):
+        raise bad_request("PLAN_DAY_OUT_OF_RANGE")
     old = {s["id"]: s for s in plan.data.get("sessions", [])}
     taken = {int(k[1:]) for k in old if k[1:].isdigit()}
     out = []
@@ -475,7 +480,7 @@ def update_plan(db: Session, user: User, plan_id: str, goal: str, sessions: list
         out.append({**prev, **{k: s[k] for k in ("day", "title", "objective", "activity", "self_check", "minutes")}})
     out.sort(key=lambda s: (s["day"], s["id"]))
     plan.goal = goal
-    plan.days = max(s["day"] for s in out)
+    plan.days = len(dates) if dates else max(s["day"] for s in out)
     total = sum(s["minutes"] for s in out)
     plan.data = {**plan.data, "sessions": out, "total_minutes": total, "edited": True}
     if plan.status in ("Confirmed", "InProgress"):

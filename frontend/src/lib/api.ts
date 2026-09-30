@@ -139,6 +139,7 @@ export interface Plan {
   warnings: string[];
   total_minutes: number;
   budget_minutes: number;
+  dates?: string[] | null; // D-46: ngày học cụ thể; ngày k của lộ trình = dates[k-1]
 }
 
 export interface ChatMessage {

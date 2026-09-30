@@ -2,13 +2,14 @@
 
 // Lộ trình học (bố cục TV4, dữ liệu thật — D-39): tạo lộ trình bằng Learning Assistant theo môn được phép (server kiểm quyền),
 // danh sách/tiến độ lấy từ /learning/plans; mở lộ trình là PlanCard (ôn tập theo ngày, Google Calendar, .ics).
+// Tạo lộ trình / ôn tập → chuyển sang chat ngay, chat gửi yêu cầu và hiện đang trả lời (D-45).
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, Calendar, Clock, Home, Lightbulb, ListTodo, Loader2, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
-import { ApiError, api, type CourseItem } from "@/lib/api";
-import { MSG, errorMessage } from "@/lib/messages";
-import { MyPlans, startLearningChat } from "@/components/learning-hub";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, BookOpen, Calendar, Clock, Home, Lightbulb, ListTodo, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
+import { api, type CourseItem } from "@/lib/api";
+import { MyPlans, goToChat } from "@/components/learning-hub";
 
 const field = "w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-black/30 py-3 pr-4 text-[15px] outline-none focus:border-black focus:ring-2 focus:ring-black/10";
 
@@ -19,17 +20,59 @@ const GUIDE = [
   { icon: TrendingUp, title: "Ôn tập theo ngày", text: "Mỗi buổi có nút Ôn tập — chọn trắc nghiệm, flashcard, điền khuyết…" },
 ];
 
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const MONTH_HEAD = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
+/** Lịch tháng: bấm từng ngày để chọn/bỏ (D-46). Không chọn ngày đã qua; tối đa 60 ngày. */
+function DayPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const today = iso(new Date());
+  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const first = (month.getDay() + 6) % 7; // thứ Hai đứng đầu
+  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells: (string | null)[] = [...Array(first).fill(null), ...Array.from({ length: count }, (_, i) => iso(new Date(month.getFullYear(), month.getMonth(), i + 1)))];
+  const picked = new Set(value);
+  const toggle = (d: string) => {
+    const next = new Set(picked);
+    if (next.has(d)) next.delete(d);
+    else if (next.size < 60) next.add(d);
+    onChange([...next].sort());
+  };
+  const shift = (n: number) => setMonth(new Date(month.getFullYear(), month.getMonth() + n, 1));
+  const canBack = iso(new Date(month.getFullYear(), month.getMonth(), 0)) >= today;
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-white/15 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <button type="button" onClick={() => shift(-1)} disabled={!canBack} aria-label="Tháng trước" className="rounded-lg px-3 py-1 border-0 bg-transparent cursor-pointer hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-30">‹</button>
+        <span className="text-sm font-semibold">Tháng {month.getMonth() + 1}/{month.getFullYear()}</span>
+        <button type="button" onClick={() => shift(1)} aria-label="Tháng sau" className="rounded-lg px-3 py-1 border-0 bg-transparent cursor-pointer hover:bg-slate-100 dark:hover:bg-white/10">›</button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[13px]">
+        {MONTH_HEAD.map((h) => <span key={h} className="py-1 text-[12px] font-medium text-slate-400">{h}</span>)}
+        {cells.map((d, i) => d === null ? <span key={`e${i}`} /> : (
+          <button key={d} type="button" disabled={d < today} onClick={() => toggle(d)} aria-pressed={picked.has(d)} aria-label={`Ngày ${d}`}
+            className={`h-9 rounded-lg border-0 cursor-pointer disabled:cursor-default disabled:opacity-30 ${picked.has(d) ? "bg-black text-white dark:bg-white dark:text-black font-semibold" : "bg-transparent hover:bg-slate-100 dark:hover:bg-white/10"} ${d === today && !picked.has(d) ? "ring-1 ring-slate-400" : ""}`}>
+            {Number(d.slice(8))}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-500">
+        <span>{value.length ? `${value.length} ngày đã chọn: ${value.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(", ")}` : "Bấm vào các ngày bạn muốn học."}</span>
+        {value.length > 0 && <button type="button" onClick={() => onChange([])} className="border-0 bg-transparent underline cursor-pointer text-slate-500">Bỏ chọn hết</button>}
+      </div>
+    </div>
+  );
+}
+
 export default function LearningPlansPage() {
+  const router = useRouter();
   const [courses, setCourses] = useState<CourseItem[] | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [courseId, setCourseId] = useState("");
   const [goal, setGoal] = useState("");
   const [days, setDays] = useState(7);
+  const [mode, setMode] = useState<"count" | "dates">("count");
+  const [dates, setDates] = useState<string[]>([]);
   const [minutes, setMinutes] = useState(45);
-  const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; conv?: string } | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     api<{ items: CourseItem[] }>("/me/courses")
@@ -37,30 +80,16 @@ export default function LearningPlansPage() {
       .catch(() => window.location.replace("/login"));
   }, []);
 
-  async function create(e: FormEvent) {
+  function create(e: FormEvent) {
     e.preventDefault();
-    if (!goal.trim() || !courseId) return;
-    setCreating(true);
-    setNotice(null);
-    try {
-      const content = `Lập lộ trình học: ${goal.trim()} trong ${days} ngày, mỗi ngày ${minutes} phút`;
-      const { conversationId, message } = await startLearningChat(
-        { content, assistant: "learning", learning: { action: "plan", goal: goal.trim(), days, minutes_per_day: minutes } }, courseId);
-      const planId = message.metadata?.plan?.id;
-      if (planId) {
-        setOpenId(planId);
-        setReloadKey((k) => k + 1);
-        setShowForm(false);
-        setGoal("");
-      } else {
-        // Trợ lý hỏi lại / từ chối (vd. tài liệu chưa đủ) — hiện nguyên văn, cho mở hội thoại để trả lời tiếp
-        setNotice({ text: message.content, conv: conversationId });
-      }
-    } catch (err) {
-      setNotice({ text: err instanceof ApiError ? err.detail || errorMessage(err.code) : MSG.serviceError });
-    } finally {
-      setCreating(false);
-    }
+    if (!goal.trim() || !courseId || (mode === "dates" && dates.length === 0)) return;
+    const chosen = mode === "dates" ? dates : null;
+    const when = chosen ? `vào ${chosen.length} ngày đã chọn (${chosen.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(", ")})` : `trong ${days} ngày`;
+    const content = `Lập lộ trình học: ${goal.trim()} ${when}, mỗi ngày ${minutes} phút`;
+    goToChat(router, content, {
+      content, assistant: "learning",
+      learning: { action: "plan", goal: goal.trim(), days: chosen ? chosen.length : days, minutes_per_day: minutes, ...(chosen ? { dates: chosen } : {}) },
+    }, courseId);
   }
 
   return (
@@ -124,14 +153,23 @@ export default function LearningPlansPage() {
                   <span className="block text-sm font-semibold mb-2">Nội dung muốn học</span>
                   <input autoFocus required value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Vd: Đồ thị Euler và Hamilton, cây khung…" className={`${field} pl-4`} />
                 </label>
-                <div className="grid grid-cols-2 gap-5">
-                  <label className="block">
-                    <span className="block text-sm font-semibold mb-2">Số ngày</span>
-                    <span className="relative block">
-                      <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                      <input type="number" min={1} max={30} value={days} onChange={(e) => setDays(Math.min(30, Math.max(1, Number(e.target.value) || 1)))} className={`${field} pl-11`} />
-                    </span>
-                  </label>
+                <div role="radiogroup" aria-label="Cách chọn ngày học" className="flex rounded-xl bg-slate-100 dark:bg-white/10 p-1 text-sm">
+                  {([["count", "Số ngày liên tiếp"], ["dates", "Chọn ngày trên lịch"]] as const).map(([k, v]) => (
+                    <button key={k} type="button" role="radio" aria-checked={mode === k} onClick={() => setMode(k)}
+                      className={`flex-1 rounded-lg py-2 border-0 cursor-pointer ${mode === k ? "bg-white dark:bg-black/40 font-semibold shadow-sm" : "bg-transparent text-slate-500"}`}>{v}</button>
+                  ))}
+                </div>
+                {mode === "dates" && <DayPicker value={dates} onChange={setDates} />}
+                <div className={`grid gap-5 ${mode === "count" ? "grid-cols-2" : "grid-cols-1"}`}>
+                  {mode === "count" && (
+                    <label className="block">
+                      <span className="block text-sm font-semibold mb-2">Số ngày</span>
+                      <span className="relative block">
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input type="number" min={1} max={30} value={days} onChange={(e) => setDays(Math.min(30, Math.max(1, Number(e.target.value) || 1)))} className={`${field} pl-11`} />
+                      </span>
+                    </label>
+                  )}
                   <label className="block">
                     <span className="block text-sm font-semibold mb-2">Phút mỗi ngày</span>
                     <span className="relative block">
@@ -142,21 +180,15 @@ export default function LearningPlansPage() {
                 </div>
                 <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-white/10">
                   <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2.5 rounded-xl font-medium text-slate-600 dark:text-slate-300 bg-transparent border-0 cursor-pointer hover:bg-slate-100 dark:hover:bg-white/10">Hủy</button>
-                  <button type="submit" disabled={creating || !courseId}
+                  <button type="submit" disabled={!courseId || (mode === "dates" && dates.length === 0)}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium bg-black text-white dark:bg-white dark:text-black border-0 cursor-pointer hover:opacity-80 disabled:opacity-50">
-                    {creating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                    {creating ? "Đang lập lộ trình… (10–30 giây)" : "Tạo lộ trình bằng AI"}
+                    <Sparkles size={18} />
+                    Tạo lộ trình bằng AI
                   </button>
                 </div>
               </form>
             )}
-            {notice && (
-              <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900 px-4 py-3 text-sm">
-                <p className="whitespace-pre-wrap">{notice.text}</p>
-                {notice.conv && <Link href={`/?conv=${encodeURIComponent(notice.conv)}`} className="mt-2 inline-block underline">Mở hội thoại để trả lời trợ lý →</Link>}
-              </div>
-            )}
-            <MyPlans reloadKey={reloadKey} openId={openId} />
+            <MyPlans />
           </div>
         </div>
       </div>

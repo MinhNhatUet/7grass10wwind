@@ -6,7 +6,7 @@ from datetime import date, time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key
@@ -110,6 +110,17 @@ class LearningOptions(BaseModel):
     count: int | None = Field(
         None, ge=3, le=20
     )  # số câu/thẻ người học chọn khi ôn tập  # D-37: ôn tập một buổi của lộ trình → server lấy môn từ lộ trình
+    dates: list[str] | None = Field(None, max_length=60)  # D-46: ngày học cụ thể (YYYY-MM-DD) do người học chọn
+
+    @field_validator("dates")
+    @classmethod
+    def _dates(cls, v: list[str] | None) -> list[str] | None:
+        if not v:
+            return None
+        try:
+            return sorted({date.fromisoformat(d).isoformat() for d in v})
+        except ValueError as e:
+            raise ValueError("dates phải có dạng YYYY-MM-DD") from e
 
 
 class SendMessage(BaseModel):
@@ -153,7 +164,7 @@ def quiz_answers(
 @router.get("/learning/plans/{plan_id}/calendar.ics")
 def plan_calendar(
     plan_id: str,
-    start: date,
+    start: date | None = None,  # bắt buộc trừ khi lộ trình có ngày cụ thể (D-46)
     at: time = time(19, 0),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -162,6 +173,8 @@ def plan_calendar(
     plan = svc.get_plan(db, user, plan_id)
     if plan.status not in ("Confirmed", "InProgress", "Paused"):
         raise AppError("PLAN_NOT_ACTIVE", 409)
+    if start is None and not plan.data.get("dates"):
+        raise AppError("VALIDATION_ERROR", 422, message="Thiếu ngày bắt đầu (start).")
     return Response(
         plan_ics(plan, start, at),
         media_type="text/calendar; charset=utf-8",
