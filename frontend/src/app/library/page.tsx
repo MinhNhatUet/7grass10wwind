@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import SourceReader from "../../components/source-reader";
+import SourceReader, { SourceReference } from "../../components/source-reader";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { API, authHeaders, responseError } from "../../lib/api-errors";
 import { Search, X, BookOpen, FileText } from "lucide-react";
@@ -143,7 +144,7 @@ export default function Library() {
                   <div className="flex flex-col gap-2 mt-auto">
                     <button 
                       className="w-full bg-secondary hover:bg-secondary/80 text-foreground text-[14px] font-medium py-2 px-4 rounded-xl border border-border transition-colors cursor-pointer" 
-                      onClick={() => setSource({ documentId: d.document_id, versionId: d.version_id, page: 1, title: d.title, content: "" })}
+                      onClick={() => setSource({ documentId: d.document_id, versionId: d.version_id, page: 1 })}
                     >
                       Đọc tài liệu
                     </button>
