@@ -1,0 +1,8 @@
+formula_fallback:
+  enabled: true
+  provider: paddleocr
+  model_name: PP-FormulaNet_plus-M
+  native_corruption_threshold: 0.05
+  render_dpi: 300
+  bbox_padding_x: 12
+  bbox_padding_y: 8

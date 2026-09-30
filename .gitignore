@@ -41,6 +41,11 @@ logs/
 htmlcov/
 .coverage
 coverage.xml
+.pytest_cache/
+pytest_tmp/
+pytest-cache-files-*/
+test_artifacts/
+tmp/
 
 # Docker
 docker-compose.override.yml
@@ -59,17 +64,7 @@ out/
 .ai-log/*.jsonl
 .ai-log/archive/
 
-# Ghi chú công việc cá nhân — không push
-docs/documentions/cong_viec_TV1_edu04.md
-docs/rules/
-docs/plans/
-# Large media files (>100MB - use CDN or Git LFS instead)
-*.mp4
-*.mov
-*.avi
-*.mkv
-frontend/public/assets/*.mp4
+# Ingestion runtime artifacts
+artifacts/
 
-# Scratch & temporary
-scratch/
-output.json
+src/data.zip

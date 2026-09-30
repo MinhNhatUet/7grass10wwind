@@ -4,7 +4,7 @@ Template chính thức cho học viên VinUni AI20K Build Phase: cấu trúc d�
 mẫu và hướng dẫn kỹ thuật để xây dựng một AI Agent hoàn chỉnh — từ kiến trúc,
 code, test cho đến deploy và nộp bài Demo Day.
 
-Technical Guidebook: <https://phoenix.note.transformerlabs.ai/technical-book>
+Technical Guidebook: [https://phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
 
 ## Template có sẵn những gì
 
@@ -80,22 +80,90 @@ Codex CLI, Gemini CLI, Antigravity hoặc GitHub Copilot, và cài pre-push hook
 uvicorn src.main:app --reload --port 8000
 ```
 
-Swagger UI ở <http://localhost:8000/docs>. Hoặc dùng `make run`, `make test`,
-`make lint` — xem `Makefile`.
+## Document Ingestion CPU/GPU
 
-Để chạy cả frontend và backend trên Windows:
+Chạy toàn bộ corpus từ `src/data` đến `artifacts/chunks`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+.\.venv\Scripts\python.exe scripts\scan_corpus.py src\data --output artifacts\inventory.jsonl
+.\.venv\Scripts\python.exe scripts\generate_metadata.py artifacts\inventory.jsonl
+.\.venv\Scripts\python.exe scripts\ingest_corpus.py --root src\data --all --device cpu
 ```
 
-Hoặc nếu đã cài `make`:
+Nếu có GPU/CUDA và MinerU được cài đúng backend:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\ingest_corpus.py --root src\data --all --device cuda --mineru-timeout-seconds 7200
+```
+
+Chạy nhanh theo parser native, bỏ MinerU:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\ingest_corpus.py --root src\data --all --no-mineru --device cpu
+```
+
+Chạy một file:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\ingest_corpus.py --root src\data --path "src\data\Giải tích\LyThuyet_Slide_GT2_11V.pdf" --device cuda --mineru-timeout-seconds 7200
+```
+
+## Colab GPU Run
+
+1. Push code và data lên GitHub hoặc lưu data trên Google Drive.
 
 ```bash
-make dev
+git status
+git add .
+git commit -m "Add MinerU device support"
+git push origin main
 ```
 
-Frontend ở <http://localhost:3000>, backend ở <http://localhost:8000>.
+2. Trong Colab chọn `Runtime -> Change runtime type -> T4 GPU`.
+
+3. Clone repo và cài dependency:
+
+```bash
+!git clone https://github.com/<ORG>/<REPO>.git
+%cd <REPO>
+!python -m pip install -U pip setuptools wheel
+!pip install -r requirements.txt
+```
+
+4. Kiểm tra GPU:
+
+```bash
+!nvidia-smi
+```
+
+5. Nếu data nằm trong Google Drive:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+Copy hoặc symlink data vào `src/data` trước khi chạy.
+
+6. Chạy ingestion bằng GPU:
+
+```bash
+!python scripts/scan_corpus.py src/data --output artifacts/inventory.jsonl
+!python scripts/generate_metadata.py artifacts/inventory.jsonl
+!python scripts/ingest_corpus.py --root src/data --all --device cuda --mineru-timeout-seconds 7200
+```
+
+Kết quả nằm trong:
+
+```text
+artifacts/pages/
+artifacts/chunks/
+artifacts/quality_reports/
+artifacts/mineru/
+```
+
+Swagger UI ở [http://localhost:8000/docs](http://localhost:8000/docs). Hoặc dùng `make run`, `make test`,
+`make lint` — xem `Makefile`.
 
 ## Cấu trúc thư mục
 
@@ -128,63 +196,63 @@ README_boilerplate.md  Khung README cho dự án của đội
 
 ## Technical Guidebook
 
-| Chương | Nội dung | Thời gian |
-|---|---|---|
-| 1 | Lời mở đầu — mục tiêu, cách sử dụng | 15 phút |
-| 2 | Khởi tạo dự án — clone, setup, git workflow | 4 giờ |
-| 3 | Thiết kế kiến trúc — 3-tier, diagram, ADR | 6 giờ |
-| 4 | LangGraph Agent — state, node, edge, tool, RAG | 8 giờ |
-| 5 | FastAPI — routes, validation, error handling, streaming | 6 giờ |
-| 6 | Giao diện — Next.js và Streamlit | 6 giờ |
-| 7 | DevOps — Docker, CI/CD, deploy, logging | 6 giờ |
-| 8 | Kiểm thử — unit test, integration test, RAGAS | 4 giờ |
-| 9 | Demo Day — 10 deliverables, checklist | 2 giờ |
-| 10 | Tài nguyên — khoá học, tài liệu, BMAD method | tham khảo |
+| Chương | Nội dung                                                | Thời gian |
+| -------- | -------------------------------------------------------- | ---------- |
+| 1        | Lời mở đầu — mục tiêu, cách sử dụng            | 15 phút   |
+| 2        | Khởi tạo dự án — clone, setup, git workflow         | 4 giờ     |
+| 3        | Thiết kế kiến trúc — 3-tier, diagram, ADR           | 6 giờ     |
+| 4        | LangGraph Agent — state, node, edge, tool, RAG          | 8 giờ     |
+| 5        | FastAPI — routes, validation, error handling, streaming | 6 giờ     |
+| 6        | Giao diện — Next.js và Streamlit                      | 6 giờ     |
+| 7        | DevOps — Docker, CI/CD, deploy, logging                 | 6 giờ     |
+| 8        | Kiểm thử — unit test, integration test, RAGAS         | 4 giờ     |
+| 9        | Demo Day — 10 deliverables, checklist                   | 2 giờ     |
+| 10       | Tài nguyên — khoá học, tài liệu, BMAD method      | tham khảo |
 
-Đọc online tại <https://phoenix.note.transformerlabs.ai/technical-book>: đăng
+Đọc online tại [https://phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book): đăng
 nhập bằng GitHub (đúng account đã được BTC mời vào org của khoá), chọn tab
 **Technical Book** ở sidebar trái. Bản offline nằm trong `docs/guide/`, mở được
 bằng bất kỳ markdown viewer nào.
 
 ## 10 deliverables cho Demo Day
 
-| # | Deliverable | Vị trí | Template lo tới đâu |
-|---|---|---|---|
-| 1 | Source code | `src/` | Khung sẵn |
-| 2 | README | copy `README_boilerplate.md` thành `README.md` | Khung sẵn |
-| 3 | Architecture diagram | `docs/architecture_diagram.md` | Khung sẵn |
-| 4 | AI logs | LangSmith (3 biến môi trường) + auto AI usage logging | Cấu hình sẵn |
-| 5 | Live URL | deploy lên Render/Vercel | CI/CD sẵn |
-| 6 | Video demo | `presentation/` | Đội tự làm |
-| 7 | Pitch deck | `presentation/` | Đội tự làm |
-| 8 | Development journal | `JOURNAL.md` | Khung sẵn |
-| 9 | Worklog | `WORKLOG.md` | Khung sẵn |
-| 10 | Evaluation evidence | `eval/` | Đội tự làm |
+| #  | Deliverable          | Vị trí                                                  | Template lo tới đâu |
+| -- | -------------------- | --------------------------------------------------------- | ---------------------- |
+| 1  | Source code          | `src/`                                                  | Khung sẵn             |
+| 2  | README               | copy`README_boilerplate.md` thành `README.md`        | Khung sẵn             |
+| 3  | Architecture diagram | `docs/architecture_diagram.md`                          | Khung sẵn             |
+| 4  | AI logs              | LangSmith (3 biến môi trường) + auto AI usage logging | Cấu hình sẵn        |
+| 5  | Live URL             | deploy lên Render/Vercel                                 | CI/CD sẵn             |
+| 6  | Video demo           | `presentation/`                                         | Đội tự làm         |
+| 7  | Pitch deck           | `presentation/`                                         | Đội tự làm         |
+| 8  | Development journal  | `JOURNAL.md`                                            | Khung sẵn             |
+| 9  | Worklog              | `WORKLOG.md`                                            | Khung sẵn             |
+| 10 | Evaluation evidence  | `eval/`                                                 | Đội tự làm         |
 
 ## Tech stack
 
-| Lớp | Công nghệ |
-|---|---|
-| Agent | LangGraph + LangChain 0.3 |
-| Backend | FastAPI 0.115 + Uvicorn |
-| LLM | OpenAI, mặc định `gpt-4o-mini` (đổi trong `src/config.py`) |
-| Giao diện | Next.js hoặc Streamlit (đội tự chọn, hướng dẫn ở chương 6) |
-| Lint / test | ruff + pytest 8 |
-| DevOps | Docker + GitHub Actions |
+| Lớp        | Công nghệ                                                           |
+| ----------- | --------------------------------------------------------------------- |
+| Agent       | LangGraph + LangChain 0.3                                             |
+| Backend     | FastAPI 0.115 + Uvicorn                                               |
+| LLM         | OpenAI, mặc định`gpt-4o-mini` (đổi trong `src/config.py`)    |
+| Giao diện  | Next.js hoặc Streamlit (đội tự chọn, hướng dẫn ở chương 6) |
+| Lint / test | ruff + pytest 8                                                       |
+| DevOps      | Docker + GitHub Actions                                               |
 
 ## AI usage logging
 
 Mọi prompt được ghi vào `.ai-log/session.jsonl` và tự động gửi lên grading server
 ở bước pre-push.
 
-| Công cụ | Cấu hình | Thời điểm ghi |
-|---|---|---|
-| Claude Code | `.claude/settings.json` | mỗi prompt (`UserPromptSubmit`) |
-| Cursor | `.cursor/hooks.json` | mỗi prompt và khi dừng |
-| OpenAI Codex CLI | `.codex/hooks.json` | mỗi prompt và khi dừng |
-| Gemini CLI | `.gemini/settings.json` | mỗi lượt agent chạy |
-| GitHub Copilot | `.github/hooks/hooks.json` | mỗi prompt và cuối session |
-| Antigravity IDE | `.agents/hooks.json` | mỗi prompt, kèm lần quét lại lúc `git push` |
+| Công cụ        | Cấu hình                   | Thời điểm ghi                                   |
+| ---------------- | ---------------------------- | -------------------------------------------------- |
+| Claude Code      | `.claude/settings.json`    | mỗi prompt (`UserPromptSubmit`)                 |
+| Cursor           | `.cursor/hooks.json`       | mỗi prompt và khi dừng                          |
+| OpenAI Codex CLI | `.codex/hooks.json`        | mỗi prompt và khi dừng                          |
+| Gemini CLI       | `.gemini/settings.json`    | mỗi lượt agent chạy                            |
+| GitHub Copilot   | `.github/hooks/hooks.json` | mỗi prompt và cuối session                      |
+| Antigravity IDE  | `.agents/hooks.json`       | mỗi prompt, kèm lần quét lại lúc`git push` |
 
 Dùng ChatGPT hay công cụ web khác thì log thủ công:
 
