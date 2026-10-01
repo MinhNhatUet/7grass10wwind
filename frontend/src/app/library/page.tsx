@@ -5,7 +5,7 @@ import SourceReader, { SourceReference } from "../../components/source-reader";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { API, authHeaders, responseError } from "../../lib/api-errors";
-import { Search, X, BookOpen, FileText } from "lucide-react";
+import { Search, X, BookOpen, FileText, Sparkles, Layers, ArrowLeft, ArrowRight, BookMarked } from "lucide-react";
 import gsap from "gsap";
 
 type Course = { id: string; name: string; can_read: boolean };
@@ -26,7 +26,11 @@ export default function Library() {
     const controller = new AbortController();
     fetch(`${API}/me/courses`, { headers: authHeaders(), signal: controller.signal })
       .then(async r => { if (!r.ok) throw await responseError(r); return r.json(); })
-      .then(d => { const rows = (d.items as Course[]).filter(c => c.can_read); setCourses(rows); setCourse(rows[0]?.id || ""); })
+      .then(d => { 
+        const rows = (d.items as Course[]).filter(c => c.can_read); 
+        setCourses(rows); 
+        setCourse(rows[0]?.id || ""); 
+      })
       .catch(e => { if (!controller.signal.aborted) setError(e.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -51,20 +55,29 @@ export default function Library() {
     if (!loading && documents.length > 0) {
       gsap.fromTo(
         ".doc-card",
-        { opacity: 0, y: 20 },
-        { opacity: 1, y: 0, duration: 0.5, stagger: 0.08, ease: "power3.out" }
+        { opacity: 0, y: 15, scale: 0.98 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.45, stagger: 0.05, ease: "power2.out" }
       );
     }
   }, [loading, documents]);
+
+  const selectedCourseName = courses.find(c => c.id === course)?.name;
 
   return (
     <AppShell
       rightPanel={
         source ? (
           <div className="w-full flex flex-col h-full bg-card">
-            <header className="h-[60px] shrink-0 border-b border-border flex items-center justify-between px-4">
-              <span className="font-semibold text-[14px] text-foreground">Xem trước tài liệu</span>
-              <button onClick={() => setSource(null)} className="p-1 text-muted-foreground hover:text-foreground bg-transparent border-0 cursor-pointer rounded-lg hover:bg-secondary">
+            <header className="h-[56px] shrink-0 border-b border-border/80 flex items-center justify-between px-4 bg-secondary/30 backdrop-blur-md">
+              <div className="flex items-center gap-2">
+                <BookOpen size={16} className="text-primary" />
+                <span className="font-semibold text-[13.5px] text-foreground">Xem trực tiếp tài liệu</span>
+              </div>
+              <button 
+                onClick={() => setSource(null)} 
+                aria-label="Đóng bảng xem trước"
+                className="p-1.5 text-muted-foreground hover:text-foreground bg-transparent border-0 cursor-pointer rounded-lg hover:bg-secondary transition-colors"
+              >
                 <X size={18} />
               </button>
             </header>
@@ -76,123 +89,212 @@ export default function Library() {
       }
     >
       <div className="flex flex-col h-full bg-background text-foreground overflow-hidden">
-        {/* TOP TOGGLE HEADER */}
-        <header className="h-[60px] shrink-0 flex items-center px-4 w-full relative z-10">
+        {/* TOP SEGMENTED NAV */}
+        <header className="h-[54px] shrink-0 flex items-center px-4 w-full relative z-10 border-b border-border/40">
           <div className="flex-1 flex justify-center w-full">
-            <div className="flex bg-white/80 dark:bg-[#151619]/80 backdrop-blur-md rounded-xl p-1 border border-black/5 dark:border-white/5 shadow-sm">
-              <Link href="/" className="px-4 py-1.5 text-[14px] font-medium text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent rounded-lg cursor-pointer border-0 transition-colors no-underline">Chat</Link>
-              <button className="px-4 py-1.5 text-[14px] font-medium bg-black/10 dark:bg-white/10 text-black dark:text-white rounded-lg cursor-pointer border-0 shadow-sm">Tài liệu</button>
-            </div>
+            <nav className="flex items-center bg-secondary/50 p-1 rounded-xl border border-border/60 shadow-xs" aria-label="Chuyển chế độ">
+              <Link 
+                href="/" 
+                className="px-3.5 py-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground rounded-lg transition-colors no-underline"
+              >
+                Hội thoại AI
+              </Link>
+              <button 
+                type="button"
+                className="px-3.5 py-1.5 text-[13px] font-semibold bg-background text-foreground shadow-xs rounded-lg cursor-default border-0"
+              >
+                Thư viện tài liệu
+              </button>
+            </nav>
           </div>
         </header>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1000px] p-6 lg:p-10 space-y-8">
+          <div className="mx-auto max-w-[1100px] p-6 lg:p-10 space-y-8">
             
-            <header className="space-y-2">
-              <h1 className="text-3xl font-bold tracking-tight">Thư viện tài liệu</h1>
-              <p className="text-muted-foreground">Khám phá nguồn học liệu, tài liệu tham khảo theo môn học.</p>
-            </header>
-
-          <div className="flex flex-col sm:flex-row gap-4 bg-card p-2 rounded-2xl border border-border shadow-sm">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <Search size={18} className="text-muted-foreground" />
+            {/* HERO HEADER */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
+                  <BookMarked size={13} />
+                  <span>Kho tri thức học tập</span>
+                </div>
+                <h1 className="text-3xl font-extrabold tracking-tight">Thư viện tài liệu</h1>
+                <p className="text-muted-foreground text-sm max-w-xl">
+                  Truy cập giáo trình, slide bài giảng và tài liệu học tập chính thống. Nhấp để đọc trực tiếp hoặc đặt câu hỏi cùng AI.
+                </p>
               </div>
-              <input 
-                aria-label="Tìm tài liệu" 
-                placeholder="Tìm theo tên tài liệu…" 
-                value={query} 
-                onChange={e => { setQuery(e.target.value); setPage(1); }} 
-                className="w-full bg-transparent border-0 outline-none text-foreground py-3 pl-11 pr-4 focus:ring-0 placeholder:text-muted-foreground" 
-              />
+
+              {total > 0 && !loading && (
+                <div className="text-xs font-medium text-muted-foreground bg-secondary/60 px-3.5 py-1.5 rounded-full border border-border/60 self-start md:self-auto">
+                  Tổng cộng: <strong className="text-foreground">{total}</strong> tài liệu
+                </div>
+              )}
             </div>
-            <div className="h-px sm:h-auto sm:w-px bg-border my-2 sm:my-0 mx-2" />
-            <select 
-              aria-label="Môn học" 
-              value={course} 
-              onChange={e => { setCourse(e.target.value); setPage(1); }} 
-              className="bg-secondary/50 text-foreground py-3 px-4 rounded-xl border-0 outline-none hover:bg-secondary cursor-pointer min-w-[200px]"
-            >
-              {!courses.length && <option value="">Đang tải...</option>}
-              {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+
+            {/* SEARCH & FILTER CONTROLS */}
+            <div className="glass-card p-2 rounded-2xl flex flex-col sm:flex-row gap-2.5 transition-all focus-within:ring-2 focus-within:ring-primary/20">
+              <div className="relative flex-1 flex items-center">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Search size={18} className="text-muted-foreground" />
+                </div>
+                <input 
+                  aria-label="Tìm kiếm tài liệu" 
+                  placeholder="Nhập tên giáo trình, tài liệu, chủ đề…" 
+                  value={query} 
+                  onChange={e => { setQuery(e.target.value); setPage(1); }} 
+                  className="w-full bg-transparent border-0 outline-none text-foreground py-2.5 pl-10 pr-9 text-sm focus:ring-0 placeholder:text-muted-foreground" 
+                />
+                {query && (
+                  <button
+                    onClick={() => { setQuery(""); setPage(1); }}
+                    aria-label="Xoá tìm kiếm"
+                    className="absolute right-3 p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-secondary cursor-pointer"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+
+              <div className="h-px sm:h-auto sm:w-px bg-border/60 my-1 sm:my-0" />
+
+              <div className="relative min-w-[220px]">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
+                  <Layers size={16} />
+                </div>
+                <select 
+                  aria-label="Lọc theo môn học" 
+                  value={course} 
+                  onChange={e => { setCourse(e.target.value); setPage(1); }} 
+                  className="w-full bg-secondary/50 text-foreground py-2.5 pl-9 pr-8 rounded-xl border border-border/60 outline-none hover:bg-secondary cursor-pointer text-sm font-medium transition-colors"
+                >
+                  {!courses.length && <option value="">Đang tải môn học...</option>}
+                  {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-xl text-sm border border-destructive/20 flex items-center gap-2">
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* DOCUMENT GRID */}
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {[1, 2, 3, 4, 5, 6].map(i => (
+                  <div key={i} className="animate-pulse glass-card rounded-2xl p-5 border border-border/60 flex flex-col justify-between h-[210px]">
+                    <div className="space-y-3">
+                      <div className="w-10 h-10 rounded-xl bg-secondary/80" />
+                      <div className="h-4 bg-secondary/80 rounded-md w-3/4" />
+                      <div className="h-3 bg-secondary/60 rounded-md w-1/2" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-border/40">
+                      <div className="h-9 bg-secondary/80 rounded-xl" />
+                      <div className="h-9 bg-secondary/80 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : !documents.length && !error ? (
+              <div className="text-center py-16 px-4 glass-card rounded-3xl border border-border/60 border-dashed max-w-lg mx-auto">
+                <div className="w-14 h-14 rounded-2xl bg-secondary/60 flex items-center justify-center mx-auto mb-4 text-muted-foreground">
+                  <BookOpen size={28} className="opacity-60" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground mb-1">Không tìm thấy tài liệu phù hợp</h3>
+                <p className="text-muted-foreground text-sm mb-5">
+                  {query 
+                    ? `Không có kết quả nào cho "${query}" trong môn ${selectedCourseName ?? ""}.` 
+                    : "Môn học này hiện chưa có tài liệu công khai hoặc bạn chưa được cấp quyền đọc."}
+                </p>
+                {query && (
+                  <button
+                    onClick={() => { setQuery(""); setPage(1); }}
+                    className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold rounded-xl border border-border transition-colors cursor-pointer"
+                  >
+                    Xoá từ khoá tìm kiếm
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {documents.map(d => (
+                  <article 
+                    key={d.version_id} 
+                    className="doc-card group relative flex flex-col justify-between rounded-2xl border border-border/80 bg-card hover:bg-card/90 hover:border-primary/40 hover:shadow-md p-5 transition-all duration-200"
+                  >
+                    <div className="space-y-3 mb-5">
+                      <div className="flex items-center justify-between">
+                        <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                          <FileText size={18} />
+                        </div>
+                        <span className="text-[11px] font-semibold bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md border border-border/60">
+                          v{d.version_label}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h2 className="font-semibold text-[15px] leading-snug line-clamp-2 text-foreground group-hover:text-primary transition-colors" title={d.title}>
+                          {d.title}
+                        </h2>
+                        <span className="text-xs text-muted-foreground mt-1 inline-block">
+                          {d.page_count ? `${d.page_count} trang` : "Chưa rõ số trang"}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* ACCESSIBLE DUAL ACTIONS: Clearly visible and friendly on both touch and desktop */}
+                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-border/50">
+                      <button 
+                        type="button"
+                        className="w-full bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium py-2 px-3 rounded-xl border border-border/70 flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer" 
+                        onClick={() => setSource({ documentId: d.document_id, versionId: d.version_id, page: 1 })}
+                        aria-label={`Đọc tài liệu ${d.title}`}
+                      >
+                        <BookOpen size={14} className="text-muted-foreground" />
+                        <span>Đọc sách</span>
+                      </button>
+
+                      <Link 
+                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold py-2 px-3 rounded-xl text-center flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-[0.98] no-underline" 
+                        href={`/?document=${encodeURIComponent(d.document_id)}&title=${encodeURIComponent(d.title)}`}
+                        aria-label={`Hỏi AI về tài liệu ${d.title}`}
+                      >
+                        <Sparkles size={14} />
+                        <span>Hỏi AI</span>
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {/* PAGINATION */}
+            {!!total && !loading && Math.ceil(total / 20) > 1 && (
+              <div className="flex items-center justify-center gap-3 pt-6 border-t border-border/40">
+                <button 
+                  disabled={page <= 1} 
+                  onClick={() => setPage(p => p - 1)}
+                  className="px-3.5 py-2 glass-panel rounded-xl disabled:opacity-40 text-xs font-medium hover:bg-secondary cursor-pointer flex items-center gap-1.5 transition-colors"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Trang trước</span>
+                </button>
+                <span className="text-xs font-semibold text-muted-foreground px-2">
+                  Trang {page} / {Math.ceil(total / 20)}
+                </span>
+                <button 
+                  disabled={page * 20 >= total} 
+                  onClick={() => setPage(p => p + 1)}
+                  className="px-3.5 py-2 glass-panel rounded-xl disabled:opacity-40 text-xs font-medium hover:bg-secondary cursor-pointer flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Trang sau</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
-
-          {error && (
-            <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-lg text-sm border border-destructive/20">
-              {error}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="animate-pulse bg-secondary/50 rounded-2xl h-[160px] border border-border/50" />
-              ))}
-            </div>
-          ) : !documents.length && !error ? (
-            <div className="text-center py-20 bg-secondary/20 rounded-3xl border border-border/50 border-dashed">
-              <BookOpen size={48} className="mx-auto text-muted-foreground mb-4 opacity-20" />
-              <h3 className="text-lg font-medium text-foreground mb-1">Không tìm thấy tài liệu</h3>
-              <p className="text-muted-foreground">Chưa có tài liệu phù hợp hoặc bạn chưa được cấp quyền đọc.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {documents.map(d => (
-                <article key={d.version_id} className="doc-card group relative flex flex-col justify-between rounded-2xl border border-border bg-card hover:bg-secondary/30 p-5 transition-all hover:shadow-md hover:border-primary/30">
-                  <div className="space-y-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-2 group-hover:scale-105 transition-transform">
-                      <FileText size={20} />
-                    </div>
-                    <h2 className="font-semibold text-[16px] leading-snug line-clamp-2">{d.title}</h2>
-                    <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
-                      <span className="bg-secondary px-2 py-0.5 rounded-full border border-border">v{d.version_label}</span>
-                      <span>{d.page_count || 0} trang</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-col gap-2 mt-auto">
-                    <button 
-                      className="w-full bg-secondary hover:bg-secondary/80 text-foreground text-[14px] font-medium py-2 px-4 rounded-xl border border-border transition-colors cursor-pointer" 
-                      onClick={() => setSource({ documentId: d.document_id, versionId: d.version_id, page: 1 })}
-                    >
-                      Đọc tài liệu
-                    </button>
-                    <Link 
-                      className="w-full bg-primary hover:opacity-90 text-primary-foreground text-[14px] font-medium py-2 px-4 rounded-xl text-center transition-colors no-underline" 
-                      href={`/?document=${encodeURIComponent(d.document_id)}&title=${encodeURIComponent(d.title)}`}
-                    >
-                      Hỏi AI
-                    </Link>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-
-          {!!total && !loading && (
-            <div className="flex items-center justify-center gap-4 pt-8">
-              <button 
-                disabled={page <= 1} 
-                onClick={() => setPage(p => p - 1)}
-                className="px-4 py-2 bg-card border border-border rounded-lg disabled:opacity-50 text-sm font-medium hover:bg-secondary cursor-pointer"
-              >
-                Trang trước
-              </button>
-              <span className="text-sm font-medium text-muted-foreground">
-                Trang {page} / {Math.ceil(total / 20) || 1}
-              </span>
-              <button 
-                disabled={page * 20 >= total} 
-                onClick={() => setPage(p => p + 1)}
-                className="px-4 py-2 bg-card border border-border rounded-lg disabled:opacity-50 text-sm font-medium hover:bg-secondary cursor-pointer"
-              >
-                Trang sau
-              </button>
-            </div>
-          )}
-        </div>
         </div>
       </div>
     </AppShell>

@@ -2,9 +2,18 @@
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Zap, User, Compass, BookOpen, ShieldCheck, Sun, Moon } from "lucide-react";
+import { Menu, Zap, Compass, BookOpen, Sun, Moon, Sparkles } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+const emptySubscribe = () => () => {};
+function useMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+}
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,78 +23,118 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useMounted();
 
   // mock user for now
-  const user = { display_name: "Ngụy Quang Hùng", role: "student" };
+  const user = { display_name: "Ngụy Quang Hùng", role: "Sinh viên" };
 
   return (
     <AnimatePresence initial={false}>
       {isOpen && (
         <motion.aside 
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 260, opacity: 1 }}
+          animate={{ width: 268, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
-          transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-          className="h-full bg-sidebar/95 backdrop-blur-2xl border-r border-sidebar-border flex flex-col shrink-0 z-20 overflow-visible"
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+          className="h-full bg-sidebar/95 backdrop-blur-2xl border-r border-sidebar-border/80 flex flex-col shrink-0 z-20 overflow-hidden shadow-sm"
+          aria-label="Thanh điều hướng bên"
         >
-          <div className="p-3 w-[260px] flex justify-between items-center shrink-0">
-            <button onClick={onToggle} className="p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground bg-transparent border-0 cursor-pointer rounded-lg hover:bg-sidebar-accent transition-colors">
-              <Menu size={20} />
-            </button>
-            <Link href="/profile" className="p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground bg-transparent border-0 cursor-pointer rounded-lg hover:bg-sidebar-accent transition-colors">
-              <User size={20} />
-            </Link>
+          {/* Top Brand & Actions */}
+          <div className="p-3.5 w-[268px] flex justify-between items-center shrink-0 border-b border-sidebar-border/40">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+                <Sparkles size={16} className="text-primary" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-bold text-[14px] leading-tight tracking-tight text-sidebar-foreground">EDU-04</span>
+                <span className="text-[10.5px] font-medium text-sidebar-foreground/50">Knowledge Hub</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-0.5">
+              <button 
+                onClick={onToggle} 
+                aria-label="Thu gọn thanh bên"
+                title="Thu gọn"
+                className="p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/80 rounded-lg transition-colors cursor-pointer"
+              >
+                <Menu size={18} />
+              </button>
+            </div>
           </div>
 
-          <div className="px-3 pb-3 w-[260px] shrink-0">
-            <Link href="/" className="w-full flex items-center justify-between bg-sidebar-accent/50 hover:bg-sidebar-accent border border-sidebar-border text-sidebar-foreground px-3 py-2.5 rounded-lg transition-colors cursor-pointer text-[14px] font-medium no-underline">
-              <span className="flex items-center gap-2">
-                <div className="w-[20px] h-[20px] rounded-full bg-primary flex items-center justify-center shadow-sm">
+          {/* New Chat Action */}
+          <div className="p-3 w-[268px] shrink-0">
+            <Link 
+              href="/" 
+              className="w-full flex items-center justify-between bg-primary text-primary-foreground hover:bg-primary/90 px-3.5 py-2.5 rounded-xl shadow-xs transition-all active:scale-[0.98] text-[13.5px] font-semibold no-underline group"
+            >
+              <span className="flex items-center gap-2.5">
+                <div className="w-[20px] h-[20px] rounded-lg bg-primary-foreground/20 flex items-center justify-center">
                   <Zap size={12} className="text-primary-foreground" />
                 </div>
-                Chat mới
+                <span>Hội thoại mới</span>
               </span>
+              <span className="text-[11px] font-medium opacity-70 group-hover:opacity-100 transition-opacity">⌘K</span>
             </Link>
           </div>
 
-          <div className="px-3 py-1 flex flex-col gap-1 w-[260px] shrink-0">
-            <Link href="/library" className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline ${pathname === '/library' ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent'}`}>
-              <Compass size={18} /> Thư viện tài liệu
+          {/* Main Navigation */}
+          <nav className="px-3 py-1 flex flex-col gap-1 w-[268px] shrink-0">
+            <div className="px-3 py-1.5 text-[10.5px] font-semibold text-sidebar-foreground/45 uppercase tracking-wider">
+              Khám phá
+            </div>
+            <Link 
+              href="/library" 
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13.5px] transition-all no-underline ${
+                pathname === '/library' 
+                  ? 'bg-sidebar-accent text-sidebar-foreground font-semibold shadow-xs' 
+                  : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+              }`}
+            >
+              <Compass size={17} className={pathname === '/library' ? 'text-primary' : ''} /> 
+              <span>Thư viện tài liệu</span>
             </Link>
-            <Link href="/learning" className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline ${pathname === '/learning' ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent'}`}>
-              <BookOpen size={18} /> Học tập
+            <Link 
+              href="/learning" 
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13.5px] transition-all no-underline ${
+                pathname === '/learning' 
+                  ? 'bg-sidebar-accent text-sidebar-foreground font-semibold shadow-xs' 
+                  : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+              }`}
+            >
+              <BookOpen size={17} className={pathname === '/learning' ? 'text-primary' : ''} /> 
+              <span>Học tập & Ôn luyện</span>
             </Link>
+          </nav>
+
+          <div className="flex-1 overflow-y-auto px-3 py-2 w-[268px]">
+             {/* Space for dynamic history or quick tags */}
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-4 w-[260px]">
-             {/* History list could go here */}
-          </div>
-
-          <div className="p-3 border-t border-sidebar-border mt-auto flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3 rounded-lg overflow-hidden">
-               <div className="w-8 h-8 rounded-full bg-primary shrink-0 flex items-center justify-center text-primary-foreground text-xs font-medium">
+          {/* User profile & Settings */}
+          <div className="p-3 border-t border-sidebar-border/60 mt-auto flex items-center justify-between shrink-0 bg-sidebar/50 backdrop-blur-md">
+            <Link href="/profile" className="flex items-center gap-2.5 rounded-xl p-1.5 -ml-1 hover:bg-sidebar-accent/70 transition-colors no-underline min-w-0 flex-1">
+               <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 shrink-0 flex items-center justify-center text-primary text-xs font-bold">
                  {user.display_name.charAt(0)}
                </div>
                <div className="flex flex-col min-w-0">
-                  <span className="text-sm font-medium text-sidebar-foreground truncate max-w-[120px]">
+                  <span className="text-[13px] font-semibold text-sidebar-foreground truncate max-w-[120px]">
                     {user.display_name}
                   </span>
-                  <span className="text-[11px] text-sidebar-foreground/60 capitalize">
+                  <span className="text-[11px] text-sidebar-foreground/50">
                     {user.role}
                   </span>
                </div>
-            </div>
+            </Link>
             {mounted && (
               <button 
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-lg border-0 cursor-pointer bg-transparent transition-colors"
+                aria-label={theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
+                title={theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối'}
+                className="p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/80 rounded-xl transition-colors cursor-pointer"
               >
-                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               </button>
             )}
           </div>

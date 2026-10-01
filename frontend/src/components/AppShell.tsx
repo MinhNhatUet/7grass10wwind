@@ -57,13 +57,11 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
   const q = courseId ? `?course=${encodeURIComponent(courseId)}` : "";
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>(readTheme);
 
-  useEffect(() => setTheme(readTheme()), []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
-  useEffect(() => setOpen(false), [pathname]);
 
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark";
@@ -77,30 +75,38 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
   const initials = (name || "?").slice(0, 1).toUpperCase();
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans bg-mesh-radial">
       
       {/* SIDEBAR */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-card border-r border-border/60 flex flex-col transition-transform duration-300 md:translate-x-0 ${open ? "translate-x-0 shadow-2xl" : "-translate-x-full"} md:static`} 
-        aria-label="Điều hướng"
+        className={`fixed inset-y-0 left-0 z-50 w-[268px] bg-sidebar/95 backdrop-blur-2xl border-r border-sidebar-border/80 flex flex-col transition-transform duration-300 md:translate-x-0 ${open ? "translate-x-0 shadow-2xl" : "-translate-x-full"} md:static`} 
+        aria-label="Điều hướng hệ thống"
       >
-        <div className="p-5 flex items-center justify-between shrink-0 border-b border-border/40">
-          <Link href={role === "admin" ? "/admin" : "/"} className="flex items-center gap-3 font-extrabold text-xl no-underline group">
-            <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground flex items-center justify-center shadow-lg group-hover:shadow-primary/20 transition-all duration-300">
+        <div className="p-4 flex items-center justify-between shrink-0 border-b border-sidebar-border/40">
+          <Link href={role === "admin" ? "/admin" : "/"} className="flex items-center gap-2.5 no-underline group">
+            <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform">
               X
-            </span>
-            <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">EDU-04</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="font-extrabold text-[15px] leading-tight tracking-tight text-sidebar-foreground">EDU-04</span>
+              <span className="text-[10.5px] font-medium text-sidebar-foreground/50">Cổng Giảng viên & Quản trị</span>
+            </div>
           </Link>
-          <button type="button" className="md:hidden p-2 text-muted-foreground hover:bg-secondary rounded-lg transition-colors" onClick={() => setOpen(false)} aria-label="Đóng menu">
-            <Icon name="menu" size={20} />
+          <button 
+            type="button" 
+            className="md:hidden p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-xl transition-colors cursor-pointer" 
+            onClick={() => setOpen(false)} 
+            aria-label="Đóng menu"
+          >
+            <Icon name="menu" size={18} />
           </button>
         </div>
 
         {role !== "admin" && (
-          <div className="p-4 pb-2">
+          <div className="p-3">
             <Link
               href="/"
-              className="group flex items-center justify-between w-full bg-primary text-primary-foreground px-4 py-3 rounded-xl font-semibold shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5 no-underline"
+              className="flex items-center justify-between w-full bg-primary text-primary-foreground hover:bg-primary/90 px-3.5 py-2.5 rounded-xl text-[13.5px] font-semibold shadow-xs transition-all active:scale-[0.98] no-underline group"
               onClick={(e) => {
                 if (onNewChat) {
                   e.preventDefault();
@@ -110,57 +116,59 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
               }}
             >
               <div className="flex items-center gap-2">
-                <Icon name="chat" size={18} />
-                <span>{onNewChat ? "Chat mới" : "Về Hội thoại"}</span>
+                <Icon name="chat" size={16} />
+                <span>{onNewChat ? "Hội thoại mới" : "Về Hội thoại"}</span>
               </div>
-              <div className="bg-primary-foreground/20 rounded-full p-1 group-hover:rotate-90 transition-transform duration-300">
-                <Icon name="plus" size={14} />
+              <div className="bg-primary-foreground/20 rounded-lg p-1 group-hover:rotate-90 transition-transform">
+                <Icon name="plus" size={12} />
               </div>
             </Link>
           </div>
         )}
 
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1.5">
-          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-3">
-            Menu Chính
+        <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+          <div className="text-[10.5px] font-semibold text-sidebar-foreground/45 uppercase tracking-wider mb-2 px-3">
+            Chức năng chính
           </div>
           {[
             ...(role !== "admin" ? [{ href: `/`, label: "Hội thoại (Chat)", icon: "chat" as const }] : []),
             ...(role !== "admin" ? [{ href: `/library${q}`, label: "Thư viện tài liệu", icon: "library" as const }] : []),
             ...(canManage ? [{ href: `/lecturer/documents${q}`, label: "Quản lý tài liệu", icon: "docs" as const }] : []),
             ...(courses?.some((c) => c.can_review) ? [{ href: `/lecturer/review${q}`, label: "Duyệt tài liệu", icon: "review" as const }] : []),
-            ...(canManage ? [{ href: `/lecturer/dashboard${q}`, label: "Thống kê", icon: "chart" as const }] : []),
-            ...(role === "admin" ? [{ href: "/admin", label: "Quản trị", icon: "admin" as const }] : [])
+            ...(canManage ? [{ href: `/lecturer/dashboard${q}`, label: "Báo cáo thống kê", icon: "chart" as const }] : []),
+            ...(role === "admin" ? [{ href: "/admin", label: "Quản trị hệ thống", icon: "admin" as const }] : [])
           ].map((item) => {
             const isActive = pathname === item.href.split("?")[0];
             return (
               <Link 
                 key={item.href}
                 href={item.href} 
-                className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 no-underline ${
+                onClick={() => setOpen(false)}
+                className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-[13.5px] font-medium transition-all no-underline ${
                   isActive 
-                  ? "bg-primary/10 text-primary" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary hover:translate-x-1"
+                  ? "bg-sidebar-accent text-sidebar-foreground font-semibold shadow-xs" 
+                  : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
                 }`}
               >
-                <div className={`${isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"} transition-colors`}>
-                  <Icon name={item.icon} size={18} />
+                <div className={`${isActive ? "text-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"} transition-colors`}>
+                  <Icon name={item.icon} size={17} />
                 </div>
-                {item.label}
+                <span>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {courses && courses.length > 0 && onCourseChange && (
-          <div className="p-4 border-t border-border/40 shrink-0 bg-secondary/10">
-            <label className="flex flex-col gap-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Môn đang chọn</span>
+          <div className="p-3 border-t border-sidebar-border/40 shrink-0 bg-sidebar-accent/20">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10.5px] font-semibold text-sidebar-foreground/50 uppercase tracking-wider">Môn đang chọn</span>
               <div className="relative">
                 <select 
                   value={courseId ?? ""} 
                   onChange={(e) => onCourseChange(e.target.value)}
-                  className="w-full appearance-none bg-background border border-border/60 hover:border-border rounded-xl px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm cursor-pointer"
+                  aria-label="Chọn môn phụ trách"
+                  className="w-full appearance-none bg-background text-foreground border border-sidebar-border/80 hover:border-sidebar-border rounded-xl px-3.5 py-2 text-[13px] font-medium outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-xs cursor-pointer"
                 >
                   {!course && <option value="">— Chọn môn —</option>}
                   {courses.map((c) => (
@@ -168,43 +176,45 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
                   ))}
                 </select>
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
-                  <Icon name="menu" size={14} />
+                  <Icon name="menu" size={13} />
                 </div>
               </div>
             </label>
           </div>
         )}
 
-        {side && <div className="px-4 py-2 bg-secondary/5">{side}</div>}
+        {side && <div className="px-3 py-2 bg-sidebar-accent/10">{side}</div>}
 
-        <div className="p-4 border-t border-border/40 flex items-center justify-between shrink-0 bg-card/50 backdrop-blur-sm">
+        <div className="p-3 border-t border-sidebar-border/50 flex items-center justify-between shrink-0 bg-sidebar/50 backdrop-blur-md">
           {profile && (
-            <Link href="/profile" className="flex items-center gap-3 no-underline group min-w-0 flex-1 hover:bg-secondary/50 p-1.5 -ml-1.5 rounded-xl transition-colors" title="Hồ sơ cá nhân">
-              <span className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center font-bold text-primary shrink-0 border border-primary/20 group-hover:border-primary/50 transition-colors shadow-sm">
+            <Link href="/profile" className="flex items-center gap-2.5 no-underline group min-w-0 flex-1 hover:bg-sidebar-accent/70 p-1.5 -ml-1 rounded-xl transition-colors" title="Hồ sơ cá nhân">
+              <span className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-primary text-xs shrink-0 shadow-xs">
                 {initials}
               </span>
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">{profile.user.display_name}</span>
-                <span className="text-[11px] font-medium text-muted-foreground truncate">{ROLE_LABEL[profile.user.role] ?? profile.user.role}</span>
+                <span className="text-[13px] font-semibold text-sidebar-foreground truncate">{profile.user.display_name}</span>
+                <span className="text-[11px] font-medium text-sidebar-foreground/50 truncate">{ROLE_LABEL[profile.user.role] ?? profile.user.role}</span>
               </div>
             </Link>
           )}
-          <div className="flex items-center gap-0.5 shrink-0 ml-2">
+          <div className="flex items-center gap-0.5 shrink-0 ml-1">
             <button
               type="button"
-              className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200"
+              className="p-2 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/80 rounded-xl transition-colors cursor-pointer"
               onClick={toggleTheme}
-              aria-label={theme === "dark" ? "Chuyển sáng" : "Chuyển tối"}
+              aria-label={theme === "dark" ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"}
+              title={theme === "dark" ? "Chế độ sáng" : "Chế độ tối"}
             >
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
+              <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
             </button>
             <button 
               type="button" 
-              className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all duration-200" 
+              className="p-2 text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors cursor-pointer" 
               onClick={onSignOut} 
+              aria-label="Đăng xuất"
               title="Đăng xuất"
             >
-              <Icon name="logout" size={18} />
+              <Icon name="logout" size={17} />
             </button>
           </div>
         </div>
@@ -220,15 +230,20 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
 
       {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col h-screen min-w-0 bg-background relative">
-        <header className="h-[60px] flex items-center justify-between px-4 border-b border-border/40 md:hidden shrink-0 bg-card/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex items-center gap-3">
-            <button type="button" className="p-2 text-muted-foreground hover:bg-secondary rounded-lg transition-colors" onClick={() => setOpen(true)}>
-              <Icon name="menu" size={20} />
+        <header className="h-[54px] flex items-center justify-between px-4 border-b border-border/40 md:hidden shrink-0 glass-panel sticky top-0 z-30">
+          <div className="flex items-center gap-2.5">
+            <button 
+              type="button" 
+              className="p-2 text-muted-foreground hover:bg-secondary rounded-xl transition-colors" 
+              onClick={() => setOpen(true)}
+              aria-label="Mở menu"
+            >
+              <Icon name="menu" size={18} />
             </button>
-            <span className="font-extrabold text-lg bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">EDU-04</span>
+            <span className="font-extrabold text-base bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">EDU-04</span>
           </div>
           {profile && (
-            <Link href="/profile" className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary border border-primary/20">
+            <Link href="/profile" className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs border border-primary/20">
               {initials}
             </Link>
           )}

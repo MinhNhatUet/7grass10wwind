@@ -308,19 +308,38 @@ export default function UnifiedChat() {
     >
       <div className="flex-1 flex flex-col relative w-full h-full overflow-hidden">
         {/* HEADER */}
-        <header className="h-[60px] shrink-0 flex items-center px-4 w-full relative z-10">
-          
-          {/* Center Model Toggle (Chat / Work) */}
+        <header className="h-[54px] shrink-0 flex items-center px-4 w-full relative z-10 border-b border-border/40">
           <div className="flex-1 flex justify-center w-full">
-            <div className="flex bg-white/80 dark:bg-[#151619]/80 backdrop-blur-md rounded-xl p-1 border border-black/5 dark:border-white/5 shadow-sm">
-              <button className="px-4 py-1.5 text-[14px] font-medium bg-black/10 dark:bg-white/10 text-black dark:text-white rounded-lg cursor-pointer border-0 shadow-sm">Chat</button>
-              <Link href="/library" className="px-4 py-1.5 text-[14px] font-medium text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent rounded-lg cursor-pointer border-0 transition-colors">Tài liệu</Link>
-            </div>
+            <nav className="flex items-center bg-secondary/50 p-1 rounded-xl border border-border/60 shadow-xs" aria-label="Chuyển chế độ">
+              <button 
+                type="button"
+                className="px-3.5 py-1.5 text-[13px] font-semibold bg-background text-foreground shadow-xs rounded-lg cursor-default border-0"
+              >
+                Hội thoại AI
+              </button>
+              <Link 
+                href="/library" 
+                className="px-3.5 py-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground rounded-lg transition-colors no-underline"
+              >
+                Thư viện tài liệu
+              </Link>
+            </nav>
           </div>
         </header>
 
-        {documentScope && <div className="mx-4 flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900"><span className="truncate">Chỉ hỏi trong: <strong>{documentScope.title}</strong></span><button disabled={isLoading || conversationLoading} className="shrink-0 underline" onClick={() => { setDocumentScope(null); setMessages([]); setActiveConversationId(null); setActiveSource(null); window.history.replaceState(null, "", "/"); }}>Chat tất cả tài liệu</button></div>}
-        {conversationLoading && <p role="status" className="px-4 text-sm">Đang tải hội thoại…</p>}
+        {documentScope && (
+          <div className="mx-4 my-2 flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-medium text-primary shadow-xs">
+            <span className="truncate">Đang hội thoại trong phạm vi: <strong>{documentScope.title}</strong></span>
+            <button 
+              disabled={isLoading || conversationLoading} 
+              className="shrink-0 underline hover:opacity-80 cursor-pointer font-semibold" 
+              onClick={() => { setDocumentScope(null); setMessages([]); setActiveConversationId(null); setActiveSource(null); window.history.replaceState(null, "", "/"); }}
+            >
+              Hỏi tất cả tài liệu
+            </button>
+          </div>
+        )}
+        {conversationLoading && <p role="status" className="px-4 py-2 text-xs text-muted-foreground">Đang tải hội thoại…</p>}
         {/* BODY - Morphing Layout */}
         <div className="flex-1 flex flex-col relative w-full h-full overflow-hidden">
           
