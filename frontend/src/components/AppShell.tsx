@@ -6,17 +6,14 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { CourseItem, MeResponse } from "@/lib/api";
 import { ROLE_LABEL } from "@/lib/messages";
 
-// Khung chung theo giao diện nhánh TV4 (integration/frontend-backend): sidebar trái kiểu ChatGPT — điều hướng theo
-// quyền server trả về, vùng riêng của trang (vd. lịch sử chat), tài khoản + sáng/tối ở đáy. Logic quyền giữ nguyên.
-
 interface Props {
   profile: MeResponse | null;
   courses: CourseItem[] | null;
   courseId?: string | null;
   onCourseChange?: (id: string) => void;
   onSignOut: () => void;
-  side?: ReactNode; // nội dung riêng của trang trong sidebar (lịch sử hội thoại…)
-  onNewChat?: () => void; // trang chat tự reset; trang khác: link về /chat
+  side?: ReactNode;
+  onNewChat?: () => void;
   children: ReactNode;
 }
 
@@ -49,9 +46,7 @@ function readTheme(): Theme {
   try {
     const t = localStorage.getItem("edu04.theme");
     if (t === "light" || t === "dark") return t;
-  } catch {
-    /* trình duyệt chặn storage: theo hệ thống */
-  }
+  } catch {}
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -61,7 +56,7 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
   const canManage = courses?.some((c) => c.can_upload || c.can_review);
   const q = courseId ? `?course=${encodeURIComponent(courseId)}` : "";
   const pathname = usePathname();
-  const [open, setOpen] = useState(false); // sidebar trên màn hẹp
+  const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => setTheme(readTheme()), []);
@@ -75,17 +70,9 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
     setTheme(next);
     try {
       localStorage.setItem("edu04.theme", next);
-    } catch {
-      /* chỉ là tiện ích giao diện */
-    }
+    } catch {}
   }
 
-  const nav = (href: string, label: string, icon: keyof typeof ICON) => (
-    <Link href={href} className={`side-link${pathname === href.split("?")[0] ? " active" : ""}`}>
-      <Icon name={icon} />
-      {label}
-    </Link>
-  );
   const name = profile?.user.display_name ?? "";
   const initials = (name || "?").slice(0, 1).toUpperCase();
 
@@ -94,26 +81,26 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
       
       {/* SIDEBAR */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-card border-r border-border flex flex-col transition-transform duration-300 md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"} md:static`} 
+        className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-card border-r border-border/60 flex flex-col transition-transform duration-300 md:translate-x-0 ${open ? "translate-x-0 shadow-2xl" : "-translate-x-full"} md:static`} 
         aria-label="Điều hướng"
       >
-        <div className="p-4 flex items-center justify-between shrink-0 border-b border-border/50">
-          <Link href={role === "admin" ? "/admin" : "/"} className="flex items-center gap-2 font-bold text-lg text-primary no-underline">
-            <span className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
+        <div className="p-5 flex items-center justify-between shrink-0 border-b border-border/40">
+          <Link href={role === "admin" ? "/admin" : "/"} className="flex items-center gap-3 font-extrabold text-xl no-underline group">
+            <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground flex items-center justify-center shadow-lg group-hover:shadow-primary/20 transition-all duration-300">
               X
             </span>
-            <span>EDU-04</span>
+            <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">EDU-04</span>
           </Link>
-          <button type="button" className="md:hidden p-2 text-muted-foreground hover:bg-secondary rounded-lg" onClick={() => setOpen(false)} aria-label="Đóng menu">
+          <button type="button" className="md:hidden p-2 text-muted-foreground hover:bg-secondary rounded-lg transition-colors" onClick={() => setOpen(false)} aria-label="Đóng menu">
             <Icon name="menu" size={20} />
           </button>
         </div>
 
         {role !== "admin" && (
-          <div className="p-3 pb-0">
+          <div className="p-4 pb-2">
             <Link
               href="/"
-              className="flex items-center justify-between w-full bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2.5 rounded-xl font-medium transition-colors no-underline"
+              className="group flex items-center justify-between w-full bg-primary text-primary-foreground px-4 py-3 rounded-xl font-semibold shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 hover:-translate-y-0.5 no-underline"
               onClick={(e) => {
                 if (onNewChat) {
                   e.preventDefault();
@@ -124,68 +111,88 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
             >
               <div className="flex items-center gap-2">
                 <Icon name="chat" size={18} />
-                Chat mới
+                <span>{onNewChat ? "Chat mới" : "Về Hội thoại"}</span>
               </div>
-              <Icon name="plus" size={16} />
+              <div className="bg-primary-foreground/20 rounded-full p-1 group-hover:rotate-90 transition-transform duration-300">
+                <Icon name="plus" size={14} />
+              </div>
             </Link>
           </div>
         )}
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-4 space-y-1.5">
+          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-3">
+            Menu Chính
+          </div>
           {[
+            ...(role !== "admin" ? [{ href: `/`, label: "Hội thoại (Chat)", icon: "chat" as const }] : []),
             ...(role !== "admin" ? [{ href: `/library${q}`, label: "Thư viện tài liệu", icon: "library" as const }] : []),
             ...(canManage ? [{ href: `/lecturer/documents${q}`, label: "Quản lý tài liệu", icon: "docs" as const }] : []),
             ...(courses?.some((c) => c.can_review) ? [{ href: `/lecturer/review${q}`, label: "Duyệt tài liệu", icon: "review" as const }] : []),
             ...(canManage ? [{ href: `/lecturer/dashboard${q}`, label: "Thống kê", icon: "chart" as const }] : []),
             ...(role === "admin" ? [{ href: "/admin", label: "Quản trị", icon: "admin" as const }] : [])
-          ].map((item) => (
-            <Link 
-              key={item.href}
-              href={item.href} 
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors no-underline ${pathname === item.href.split("?")[0] ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"}`}
-            >
-              <Icon name={item.icon} size={18} />
-              {item.label}
-            </Link>
-          ))}
+          ].map((item) => {
+            const isActive = pathname === item.href.split("?")[0];
+            return (
+              <Link 
+                key={item.href}
+                href={item.href} 
+                className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 no-underline ${
+                  isActive 
+                  ? "bg-primary/10 text-primary" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary hover:translate-x-1"
+                }`}
+              >
+                <div className={`${isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"} transition-colors`}>
+                  <Icon name={item.icon} size={18} />
+                </div>
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {courses && courses.length > 0 && onCourseChange && (
-          <div className="p-4 border-t border-border/50 shrink-0">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-muted-foreground uppercase">Môn đang chọn</span>
-              <select 
-                value={courseId ?? ""} 
-                onChange={(e) => onCourseChange(e.target.value)}
-                className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary"
-              >
-                {!course && <option value="">— Chọn môn —</option>}
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+          <div className="p-4 border-t border-border/40 shrink-0 bg-secondary/10">
+            <label className="flex flex-col gap-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Môn đang chọn</span>
+              <div className="relative">
+                <select 
+                  value={courseId ?? ""} 
+                  onChange={(e) => onCourseChange(e.target.value)}
+                  className="w-full appearance-none bg-background border border-border/60 hover:border-border rounded-xl px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm cursor-pointer"
+                >
+                  {!course && <option value="">— Chọn môn —</option>}
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
+                  <Icon name="menu" size={14} />
+                </div>
+              </div>
             </label>
           </div>
         )}
 
-        {side && <div className="px-4 py-2">{side}</div>}
+        {side && <div className="px-4 py-2 bg-secondary/5">{side}</div>}
 
-        <div className="p-4 border-t border-border flex items-center justify-between shrink-0 bg-card">
+        <div className="p-4 border-t border-border/40 flex items-center justify-between shrink-0 bg-card/50 backdrop-blur-sm">
           {profile && (
-            <Link href="/profile" className="flex items-center gap-3 no-underline group min-w-0" title="Hồ sơ cá nhân">
-              <span className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center font-bold text-foreground shrink-0 border border-border group-hover:border-primary/50 transition-colors">
+            <Link href="/profile" className="flex items-center gap-3 no-underline group min-w-0 flex-1 hover:bg-secondary/50 p-1.5 -ml-1.5 rounded-xl transition-colors" title="Hồ sơ cá nhân">
+              <span className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center font-bold text-primary shrink-0 border border-primary/20 group-hover:border-primary/50 transition-colors shadow-sm">
                 {initials}
               </span>
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-medium text-foreground truncate">{profile.user.display_name}</span>
-                <span className="text-[11px] text-muted-foreground truncate">{ROLE_LABEL[profile.user.role] ?? profile.user.role}</span>
+                <span className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">{profile.user.display_name}</span>
+                <span className="text-[11px] font-medium text-muted-foreground truncate">{ROLE_LABEL[profile.user.role] ?? profile.user.role}</span>
               </div>
             </Link>
           )}
-          <div className="flex items-center gap-1 shrink-0 ml-2">
+          <div className="flex items-center gap-0.5 shrink-0 ml-2">
             <button
               type="button"
-              className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors"
+              className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200"
               onClick={toggleTheme}
               aria-label={theme === "dark" ? "Chuyển sáng" : "Chuyển tối"}
             >
@@ -193,7 +200,7 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
             </button>
             <button 
               type="button" 
-              className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors" 
+              className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all duration-200" 
               onClick={onSignOut} 
               title="Đăng xuất"
             >
@@ -206,20 +213,27 @@ export function AppShell({ profile, courses, courseId, onCourseChange, onSignOut
       {/* SCRIM for mobile */}
       {open && (
         <div 
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden" 
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden transition-opacity" 
           onClick={() => setOpen(false)} 
         />
       )}
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 flex flex-col h-screen min-w-0 bg-background">
-        <header className="h-[60px] flex items-center px-4 border-b border-border md:hidden shrink-0">
-          <button type="button" className="p-2 text-muted-foreground hover:bg-secondary rounded-lg" onClick={() => setOpen(true)}>
-            <Icon name="menu" size={20} />
-          </button>
-          <span className="font-semibold ml-2">EDU-04</span>
+      <main className="flex-1 flex flex-col h-screen min-w-0 bg-background relative">
+        <header className="h-[60px] flex items-center justify-between px-4 border-b border-border/40 md:hidden shrink-0 bg-card/80 backdrop-blur-md sticky top-0 z-30">
+          <div className="flex items-center gap-3">
+            <button type="button" className="p-2 text-muted-foreground hover:bg-secondary rounded-lg transition-colors" onClick={() => setOpen(true)}>
+              <Icon name="menu" size={20} />
+            </button>
+            <span className="font-extrabold text-lg bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">EDU-04</span>
+          </div>
+          {profile && (
+            <Link href="/profile" className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary border border-primary/20">
+              {initials}
+            </Link>
+          )}
         </header>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto relative">
           {children}
         </div>
       </main>
