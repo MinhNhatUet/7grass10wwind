@@ -452,8 +452,18 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          {/* Right Header: Notification & User Profile dropdown */}
-          <div className="flex items-center gap-5 sm:gap-7">
+          {/* Right Header: Theme, Notification & User Profile dropdown */}
+          <div className="flex items-center gap-3 sm:gap-7">
+            <button
+              type="button"
+              aria-label="Chuyển giao diện sáng/tối"
+              title="Chuyển giao diện sáng/tối"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:border-slate-700 dark:bg-[#121c27] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <Moon size={18} className="dark:hidden" aria-hidden="true" />
+              <Sun size={18} className="hidden dark:block" aria-hidden="true" />
+            </button>
             <button className="relative text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
               <Bell size={20} />
               <span className="absolute -top-1 -right-0.5 h-2 w-2 rounded-full bg-black dark:bg-white ring-2 ring-white dark:ring-[#121c27]" />
