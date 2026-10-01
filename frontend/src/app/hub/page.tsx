@@ -42,14 +42,6 @@ interface DocMeta {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MOCK_DOCS: DocMeta[] = [
-  { id:"d1", title:"Slide_Chuong_1_AI.pdf",  subject:"Tri tue nhan tao",   author:"GS. Nguyen Van A", pages:48,  size:"4.2 MB",  uploadedAt:"2026-09-20", status:"active",     tags:["AI","ML","Chuong 1"],       starred:true,  description:"Bai giang chuong 1 gioi thieu tong quan ve Tri tue nhan tao va Machine Learning." },
-  { id:"d2", title:"GiaoTrinh_KienTrucMayTinh.pdf", subject:"Kien truc may tinh", author:"TS. Tran Thi B",  pages:312, size:"18.7 MB", uploadedAt:"2026-09-18", status:"active",  tags:["CPU","Memory","I/O"],         starred:false, description:"Giao trinh day du ve kien truc may tinh tu co ban den nang cao." },
-  { id:"d3", title:"Bai_tap_CTDL_va_GT.pdf", subject:"CTDL va Giai thuat", author:"ThS. Le Van C",  pages:64,  size:"2.1 MB",  uploadedAt:"2026-09-22", status:"pending",    tags:["Bai tap","Sorting","Graph"], starred:false, description:"Tap bai tap thuc hanh ve cau truc du lieu va giai thuat." },
-  { id:"d4", title:"Slide_Mang_May_Tinh_C3.pdf", subject:"Mang may tinh", author:"GS. Pham Van D",  pages:72,  size:"5.8 MB",  uploadedAt:"2026-09-15", status:"processing", tags:["TCP/IP","Routing","Chuong 3"], starred:true,  description:"Slide chuong 3 ve giao thuc mang va dinh tuyen." },
-  { id:"d5", title:"Trac_nghiem_CSDL.pdf",   subject:"Co so du lieu",      author:"TS. Hoang Thi E", pages:28,  size:"1.4 MB",  uploadedAt:"2026-09-23", status:"rejected",   tags:["SQL","NoSQL","De thi"],      starred:false, description:"Bo cau hoi trac nghiem on tap mon co so du lieu." },
-];
-
 const OUTLINE = [
   { id:"o1", level:0, title:"1. Gioi thieu", page:3 },
   { id:"o2", level:1, title:"1.1 Lich su phat trien", page:4 },
@@ -156,7 +148,7 @@ export default function KnowledgeHub() {
 
   // ── Left sidebar state
   const [query, setQuery] = useState("");
-  const [selectedDoc, setSelectedDoc] = useState<DocMeta | null>(MOCK_DOCS[0]);
+  const [selectedDoc, setSelectedDoc] = useState<DocMeta | null>(null);
   const [leftPanel, setLeftPanel] = useState<PanelSection>("pages");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchHl, setSearchHl] = useState("");
@@ -264,7 +256,7 @@ export default function KnowledgeHub() {
   });
   const handleZoom = (d: number) => setZoom(z => Math.max(0.4, Math.min(2.5, z + d)));
 
-  const [docs, setDocs] = useState<DocMeta[]>(MOCK_DOCS);
+  const [docs, setDocs] = useState<DocMeta[]>([]);
 
   useEffect(() => {
     const loadHubDocs = async () => {
@@ -299,7 +291,7 @@ export default function KnowledgeHub() {
               starred: false,
               description: item.version_label || ''
             }));
-            setDocs(mappedDocs.length > 0 ? mappedDocs : MOCK_DOCS);
+            setDocs(mappedDocs.length > 0 ? mappedDocs : []);
           }
         }
       } catch (err) {

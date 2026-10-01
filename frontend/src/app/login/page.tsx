@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { setToken } from "@/lib/session";
 
 export default function LoginPage() {
   const [isLoginView, setIsLoginView] = useState(true);
@@ -25,9 +26,8 @@ export default function LoginPage() {
       return;
     }
 
-    // login_id là định danh bất kỳ (PRD 9.1, D-17) — không bắt buộc email; server tự kiểm tra tài khoản
-    if (!email.trim()) {
-      setError("Vui lòng nhập định danh đăng nhập.");
+    if (!email || !email.includes("@")) {
+      setError("Vui lòng nhập địa chỉ email hợp lệ.");
       return;
     }
 
@@ -45,7 +45,7 @@ export default function LoginPage() {
 
     try {
       const endpoint = isLoginView ? "/api/v1/auth/login" : "/api/v1/auth/register";
-      const payload: any = { login_id: email.trim(), password };
+      const payload: any = { login_id: email, password };
       if (!isLoginView) {
         payload.display_name = name;
       }
@@ -69,10 +69,10 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
-      localStorage.setItem("token", data.access_token);
+      setToken(data.access_token);
       localStorage.setItem("user", JSON.stringify(data.user));
       
-      router.push("/");
+      router.push(data.user?.role === "admin" ? "/admin/management" : "/chat");
     } catch (err) {
       setError(err instanceof Error ? err.message : (isLoginView ? "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin." : "Đăng ký thất bại. Vui lòng thử lại."));
     } finally {
@@ -84,10 +84,18 @@ export default function LoginPage() {
     <div className="h-screen w-full bg-white overflow-hidden">
       <main className="w-full h-full md:grid md:grid-cols-[57.2%_42.8%] overflow-hidden bg-white flex flex-col">
         
-        {/* LEFT: logo (video login-left.mp4 của TV4 bị .gitignore nên không có trong repo) */}
-        <section className="relative overflow-hidden bg-white h-[34vh] min-h-[210px] md:h-full md:min-h-0 flex items-center justify-center" aria-label="EDU-04 product visual">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/vedu-logo.png" alt="Vedu" className="max-w-[40%] max-h-[40%] object-contain" />
+        {/* LEFT: actual moving video */}
+        <section className="relative overflow-hidden bg-[#e7e8e9] h-[34vh] min-h-[210px] md:h-full md:min-h-0" aria-label="EDU-04 product visual">
+          <video 
+            autoPlay 
+            muted 
+            loop 
+            playsInline 
+            preload="auto" 
+            className="absolute inset-0 w-full h-full object-cover object-center"
+          >
+            <source src="/assets/login-left.mp4" type="video/mp4" />
+          </video>
         </section>
 
         {/* RIGHT: clean HTML form */}
@@ -120,13 +128,13 @@ export default function LoginPage() {
               )}
 
               <div className="mb-[12px]">
-                <label className="sr-only" htmlFor="email">Định danh đăng nhập</label>
+                <label className="sr-only" htmlFor="email">Email</label>
                 <Input 
                   id="email" 
                   name="email" 
-                  type="text"
-                  autoComplete="username"
-                  placeholder="Định danh đăng nhập (vd. sinhvien01)"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="Eg. sinhvien@school.edu.vn"
                   className="w-full h-[48px] md:h-[54px] border-[#d3d3d3] rounded-[14px] px-[18px] text-[#24272b] bg-white text-[15px] md:text-[16px] placeholder:text-[#747474] focus-visible:border-[#a8a8a8] focus-visible:ring-4 focus-visible:ring-[#27323d]/5 focus-visible:ring-offset-0"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
