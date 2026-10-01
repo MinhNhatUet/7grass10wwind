@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useTheme } from "next-themes";
-import { ArrowLeft, ArrowUpRight, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, FileText, GraduationCap, Home, LayoutGrid, LibraryBig, List, Loader2, MessageSquare, Moon, RefreshCw, Search, ShieldCheck, Sparkles, Sun, UserRound, X } from "lucide-react";
-import type { SourceReference } from "../../components/source-reader";
-import ScrollDocumentReader from "../../components/scroll-document-reader";
-import { API, authHeaders, responseError } from "../../lib/api-errors";
+import { ArrowUpRight, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, FileText, LayoutGrid, LibraryBig, List, Loader2, RefreshCw, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import type { SourceReference } from "@/components/source-reader";
+import ScrollDocumentReader from "@/components/scroll-document-reader";
+import { API, authHeaders, responseError } from "@/lib/api-errors";
 import "./library.css";
 
 // /me/courses already returns only courses readable by the current user.
@@ -15,7 +14,6 @@ type Document = { document_id: string; version_id: string; title: string; versio
 const button = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function Library() {
-  const { resolvedTheme, setTheme } = useTheme();
   const [courses, setCourses] = useState<Course[]>([]);
   const [course, setCourse] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -73,34 +71,10 @@ export default function Library() {
   function changeQuery(value: string) { setQuery(value); setPage(1); setError(""); setSource(null); setDocuments([]); setTotal(0); }
   function refresh() { setSource(null); setDocuments([]); setTotal(0); setDocumentsLoading(false); setAttempt(n => n + 1); }
 
-  return <main className="library-page min-h-screen bg-[#f8f9fa] text-slate-900">
-    <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <Link href="/" className="flex h-20 items-center gap-3 border-b border-slate-100 px-7 text-2xl font-extrabold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white"><BookOpen size={21} /></span>Vedu</Link>
-        <nav aria-label="Điều hướng chính" className="space-y-2 p-4 text-sm font-medium">
-          <Link href="/" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"><MessageSquare size={19} />Chat AI</Link>
-          <Link href="/profile" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"><UserRound size={19} />Hồ sơ</Link>
-          <div className="my-4 border-t border-slate-100" />
-          <p className="px-4 pb-2 text-[11px] font-semibold tracking-widest text-slate-400">KHÔNG GIAN HỌC TẬP</p>
-          <Link href="/library" aria-current="page" className="flex items-center gap-3 rounded-xl bg-slate-100 px-4 py-3 font-semibold"><LibraryBig size={19} />Tài liệu học tập</Link>
-          <Link href="/learning" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"><GraduationCap size={20} />Lộ trình học tập</Link>
-        </nav>
-        <div className="mx-5 mb-6 mt-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <ShieldCheck size={22} className="mb-3 text-emerald-600" /><p className="text-sm font-semibold">Nguồn học liệu tin cậy</p><p className="mt-2 text-xs leading-5 text-slate-500">Chỉ hiển thị tài liệu đã phát hành và được cấp quyền truy cập.</p>
-        </div>
-      </aside>
+  return <div className="library-page h-full overflow-y-auto bg-[#f8f9fa] text-slate-900">
+    <div className="flex">
 
       <section className="min-w-0 flex-1">
-        <header className="flex h-20 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-8">
-          <div className="flex items-center gap-3 text-sm"><Link href="/" aria-label="Trang chủ" className="text-slate-500 hover:text-slate-900"><Home size={18} /></Link><ChevronRight size={15} className="text-slate-300" /><span className="font-semibold">Thư viện tài liệu</span></div>
-          <div className="flex shrink-0 items-center gap-3 sm:gap-4">
-            <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-black"><ArrowLeft size={16} /><span className="hidden sm:inline">Về Chat AI</span></Link>
-            <button type="button" aria-label="Chuyển giao diện sáng/tối" title="Chuyển giao diện sáng/tối" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
-              <Moon size={18} className="dark:hidden" aria-hidden="true" />
-              <Sun size={18} className="hidden dark:block" aria-hidden="true" />
-            </button>
-          </div>
-        </header>
 
         <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -149,5 +123,5 @@ export default function Library() {
         </div>
       </section>
     </div>
-  </main>;
+  </div>;
 }

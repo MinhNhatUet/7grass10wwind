@@ -5,9 +5,8 @@
 // Tạo lộ trình / ôn tập → chuyển sang chat ngay, chat gửi yêu cầu và hiện đang trả lời (D-45).
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Calendar, Clock, Home, Lightbulb, ListTodo, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
+import { BookOpen, Calendar, Clock, Lightbulb, ListTodo, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
 import { api, type CourseItem } from "@/lib/api";
 import { LessonPicker, MyPlans, describeLesson, goToChat, lessonLabel, type Chapter } from "@/components/learning-hub";
 
@@ -97,20 +96,10 @@ export default function LearningPlansPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] dark:bg-[#081018] text-slate-800 dark:text-slate-100 font-sans">
-      <header className="h-[64px] bg-white dark:bg-[#12181f] border-b border-slate-200 dark:border-white/10 flex items-center px-6 sticky top-0 z-20">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[14px] text-slate-500 font-medium">
-          <Link href="/" aria-label="Trang chat" className="text-black dark:text-white"><Home size={18} /></Link>
-          <span className="text-slate-300">/</span>
-          <Link href="/learning" className="text-slate-500 no-underline hover:text-black dark:hover:text-white">Học tập</Link>
-          <span className="text-slate-300">/</span>
-          <span className="text-black dark:text-white">Lộ trình học tập</span>
-        </nav>
-      </header>
+    <div className="h-full overflow-y-auto bg-[#f8f9fa] dark:bg-[#081018] text-slate-800 dark:text-slate-100 font-sans">
 
       <div className="max-w-[1400px] mx-auto p-6 md:p-8">
         <div className="flex items-center gap-5 mb-8">
-          <Link href="/" aria-label="Quay lại chat" className="w-12 h-12 flex items-center justify-center rounded-full bg-white dark:bg-white/10 shadow-sm border border-slate-100 dark:border-white/10 text-black dark:text-white"><ArrowLeft size={24} /></Link>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Lộ trình học tập</h1>
             <p className="text-slate-500 text-[15px] mt-1.5">Xây dựng và theo dõi lộ trình học cá nhân hóa từ tài liệu môn học</p>

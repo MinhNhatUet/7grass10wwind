@@ -23,11 +23,28 @@ interface ChatMessageProps {
   onSend: (content: string, body: Record<string, unknown>) => void;
 }
 
-const pages = (s: Source) => `${s.page}${s.pageEnd && s.pageEnd !== s.page ? `–${s.pageEnd}` : ""}`;
+
+// [n] / [1, 3] trong câu trả lời → link "#cite-n" để render thành badge có đoạn trích (D-55).
+// Không đụng chỉ số mảng dính liền tên biến/ngoặc tròn (a[1], f(x)[2]).
+const CITE_RE = /(?<![\w)])\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]/g; // cho phép chuỗi [1][2]
+// href "#cite-n-k": lần xuất hiện thứ k của [n] — khớp thứ tự với payload.evidence do backend tính (D-56)
+function linkCites(text: string, ids: Set<string>): string {
+  const seen: Record<string, number> = {};
+  return text.replace(CITE_RE, (all, list: string) => {
+    const ns = list.split(",").map((x) => x.trim());
+    if (!ns.every((n) => ids.has(n))) return all;
+    return ns.map((n) => { const k = seen[n] ?? 0; seen[n] = k + 1; return `[${n}](#cite-${n}-${k})`; }).join("");
+  });
+}
+
+type Evidence = Record<string, { quote: string; page: number }[]>;
 
 export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, onSend }: ChatMessageProps) {
   const [feedbackSent, setFeedbackSent] = useState<string | null>(null);
   const hideSources = HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "");
+  const sourceIds = new Set((msg.sources ?? []).map((x) => String(x.id)));
+  // Có nguồn nhưng câu trả lời không gắn [n] nào → vẫn cho xem nguồn bằng hàng chip nhỏ (không mất nguồn)
+  const unlinked = !hideSources && !!msg.sources?.length && !linkCites(msg.content, sourceIds).includes("](#cite-");
 
   const handleFeedback = (type: string) => {
     setFeedbackSent(type);
@@ -69,9 +86,13 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
                 rehypePlugins={rehypeMathPlugins}
                 components={{
                   a: ({node, ...props}) => {
-                    const matchedSource = msg.sources?.find(s => s.url === props.href);
-                    if (matchedSource) {
-                      return <CitationBadge source={matchedSource} onClick={onSourceClick} />;
+                    const m = props.href?.match(/^#cite-(\d+)-(\d+)$/);
+                    const cite = m ? msg.sources?.find((s) => String(s.id) === m[1]) : undefined;
+                    if (m && cite) {
+                      // đoạn trích riêng của câu này (nếu có), không thì đoạn trích chung của nguồn
+                      const ev = (msg.meta as { evidence?: Evidence } | undefined)?.evidence?.[m[1]]?.[Number(m[2])];
+                      const shown = ev ? { ...cite, content: ev.quote, page: ev.page, pageEnd: null } : cite;
+                      return <CitationBadge source={shown} onClick={onSourceClick} />;
                     }
                     return (
                       <a
@@ -87,7 +108,7 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
                   }
                 }}
               >
-                {mathDelims(hideSources ? noCite(msg.content) : msg.content)}
+                {mathDelims(hideSources ? noCite(msg.content) : linkCites(msg.content, sourceIds))}
               </ReactMarkdown>
             </div>
           )}
@@ -112,21 +133,11 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
             />
           )}
 
-          {/* Đề / lộ trình vừa tạo: KHÔNG hiện nguồn; dẫn chứng hiện trong thẻ sau khi người học trả lời */}
-          {msg.role === 'assistant' && !!msg.sources?.length && !hideSources && (
-            <section aria-label="Nguồn tham khảo" className="mt-4 border-t border-border/50 pt-3">
-              <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">Nguồn tham khảo</h3>
-              <ul className="space-y-1.5 list-none pl-0">
-                {msg.sources.map((source) => (
-                  <li key={source.id} className="m-0">
-                    <button type="button" onClick={() => onSourceClick(source)} className="w-full text-left rounded-lg p-2.5 bg-secondary/30 hover:bg-secondary/80 border border-transparent hover:border-border transition-all cursor-pointer">
-                      <span className="block text-[13px] font-medium text-foreground">[{source.id}] {source.title} — Trang {pages(source)}</span>
-                      {source.content && <span className="block text-[12px] mt-1 text-muted-foreground whitespace-pre-wrap line-clamp-2">“{source.content}”</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
+          {/* Nguồn nằm ngay tại [n] trong câu trả lời (D-55); đề / lộ trình vừa tạo không hiện nguồn (dẫn chứng hiện sau khi trả lời) */}
+          {msg.role === 'assistant' && unlinked && (
+            <div aria-label="Nguồn" className="mt-3 flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">
+              Nguồn: {msg.sources!.map((source) => <CitationBadge key={source.id} source={source} onClick={onSourceClick} />)}
+            </div>
           )}
 
           {msg.role === 'assistant' && (

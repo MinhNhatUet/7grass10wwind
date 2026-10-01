@@ -4,8 +4,6 @@
 // Quiz Builder (soạn, phát hành, xem kết quả). Vai trò và môn lấy từ server (/me, /me/courses — BR-02).
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { api, type CourseItem, type MeResponse } from "@/lib/api";
 import { LearningHub } from "@/components/learning-hub";
 import { QuizBuilder } from "@/components/quiz-builder";
@@ -23,12 +21,11 @@ export default function LearningPage() {
 
   const staff = me?.user.role === "lecturer" || me?.user.role === "reviewer";
   return (
-    <main className="min-h-screen bg-[#f3f4f6] dark:bg-[#081018] text-slate-800 dark:text-slate-100 font-sans p-4 md:p-6">
+    <div className="h-full overflow-y-auto bg-[#f3f4f6] dark:bg-[#081018] text-slate-800 dark:text-slate-100 font-sans p-4 md:p-6">
       <div className="max-w-[1400px] mx-auto space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <Link href="/" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-[#4f2b96] no-underline"><ArrowLeft size={16} /> Quay lại chat</Link>
-            <h1 className="mt-1 text-2xl font-bold">Learning &amp; Quiz</h1>
+            <h1 className="mt-1 text-2xl font-bold">{staff ? "Soạn đề & học tập" : "Ôn tập & đề kiểm tra"}</h1>
           </div>
           {staff && (
             <div className="flex rounded-xl bg-white dark:bg-white/5 p-1 border border-black/5 dark:border-white/10">
@@ -49,6 +46,6 @@ export default function LearningPage() {
           <LearningHub courses={courses} />
         )}
       </div>
-    </main>
+    </div>
   );
 }
