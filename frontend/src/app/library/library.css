@@ -1,0 +1,57 @@
+.library-page {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color-scheme: light;
+}
+
+.library-page button:not(:disabled),
+.library-page select:not(:disabled) {
+  cursor: pointer;
+}
+
+.library-page :is(a, button, select, input):focus-visible {
+  outline: 2px solid #64748b;
+  outline-offset: 3px;
+}
+
+.library-page .scroll-reader-viewport {
+  position: relative;
+  height: calc(100dvh - 200px);
+  min-height: 360px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 20px 12px;
+  background: #e8ecf0;
+}
+
+.library-page .scroll-reader-pages {
+  margin-inline: auto;
+}
+
+.library-page .scroll-reader-sheet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1.4142;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 2px 10px #0f172a15;
+}
+
+@media (max-width: 640px) {
+  .library-page .scroll-reader-viewport {
+    height: 70dvh;
+    padding: 12px 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-page *,
+  .library-page *::before,
+  .library-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
