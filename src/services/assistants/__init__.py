@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,8 @@ from sqlalchemy.orm import Session
 from src.models.orm import User
 from src.services.retrieval import Hit, still_servable
 
+logger = logging.getLogger(__name__)
+
 BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc bắt buộc:
 1. Chỉ dùng thông tin trong các NGUỒN được cung cấp. Không bổ sung kiến thức bên ngoài như thể đã có nguồn (BR-05).
 2. Mỗi khẳng định học thuật phải kèm số nguồn dạng [n] ngay sau ý đó; n phải là số của một NGUỒN bên dưới (BR-04).
@@ -22,7 +25,10 @@ BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc
    và cách tiếp cận (BR-06).
 5. Nếu nguồn mâu thuẫn, nêu rõ cả hai và nguồn của từng bên, không tự chọn (BR-08).
 6. Phân biệt rõ phần có trong nguồn và phần suy luận từ nguồn ("Suy luận từ [n]: ...").
-7. Trả lời bằng tiếng Việt, giữ thuật ngữ gốc khi giúp hiểu. Không nêu điểm similarity như xác suất đúng."""
+7. Trả lời bằng tiếng Việt, giữ thuật ngữ gốc khi giúp hiểu. Không nêu điểm similarity như xác suất đúng.
+8. Viết MỌI công thức/ký hiệu toán bằng LaTeX: trong dòng $...$, riêng dòng $$...$$ (không dùng \\( \\) hay \\[ \\]).
+   Văn bản NGUỒN trích từ PDF có thể vỡ ký hiệu (vd. "∑n i=1 mi" là $\\sum_{i=1}^{n} m_i$, "n 1 edges" là "$n-1$ edges"):
+   khôi phục đúng ký hiệu theo ngữ cảnh nguồn, KHÔNG thêm nội dung mới. Trong chuỗi JSON, viết backslash đôi (\\\\frac)."""
 
 CITATION_RE = re.compile(r"\[(\d{1,2})\]")
 # Không khớp chỉ số mảng dính liền tên biến ("A[1, 2]", "a[0]" — rất hay gặp trong sách CTDL & GT)
@@ -105,21 +111,40 @@ def format_history(history: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+# Lệnh LaTeX mà JSON sẽ hiểu nhầm thành escape hợp lệ (\\f, \\b, \\n, \\r, \\t, \\u) → làm hỏng công thức âm thầm
+_LATEX_CMD = re.compile(
+    r"(?<!\\)\\(?=(?:frac|binom|beta|bar|bmod|begin|bigcup|bigcap|bot|nabla|neq|ne|nu|not|notin|nmid|neg|rho|right|"
+    r"rightarrow|rfloor|rceil|theta|tau|times|text|textbf|top|to|triangle|tilde|underline|uparrow|cup|forall)(?![a-zA-Z]))"
+)
+_BAD_ESCAPE = re.compile(r'(?<!\\)\\(?![\\"/bfnrt]|u[0-9a-fA-F]{4})')  # \\sum, \\cdot… → JSON lỗi
+
+
+def _latex_safe(text: str) -> str:
+    """Nhân đôi backslash của lệnh LaTeX trong JSON model trả về (model hay quên escape)."""
+    return _BAD_ESCAPE.sub(r"\\\\", _LATEX_CMD.sub(r"\\\\", text))
+
+
 def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any]:
+    """Gọi LLM, lấy JSON. Lỗi provider → LlmError ngay; JSON hỏng/thiếu → thử lại ĐÚNG 1 lần rồi mới LlmError."""
     from src.services.llm import get_llm
 
-    try:
-        resp = get_llm(temperature=temperature).invoke([SystemMessage(content=system), HumanMessage(content=user)])
-    except Exception as e:  # noqa: BLE001 — timeout/401/5xx của provider
-        raise LlmError(type(e).__name__) from e
-    text = resp.content if isinstance(resp.content, str) else str(resp.content)
-    match = re.search(r"\{.*\}", text, re.S)
-    if not match:
-        raise LlmError("INVALID_JSON")
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError as e:
-        raise LlmError("INVALID_JSON") from e
+    for attempt in range(2):
+        try:
+            resp = get_llm(temperature=temperature).invoke([SystemMessage(content=system), HumanMessage(content=user)])
+        except Exception as e:  # noqa: BLE001 — timeout/401/5xx của provider
+            logger.warning("LLM provider lỗi: %s: %s", type(e).__name__, str(e)[:300])
+            raise LlmError(type(e).__name__) from e
+        text = resp.content if isinstance(resp.content, str) else str(resp.content)
+        match = re.search(r"\{.*\}", text, re.S)
+        if match:
+            try:
+                return json.loads(_latex_safe(match.group(0)))
+            except json.JSONDecodeError:
+                pass
+        logger.warning("LLM trả JSON không hợp lệ (lần %d): %r", attempt + 1, text[:200])
+        if attempt == 1:
+            raise LlmError("INVALID_JSON")
+    raise LlmError("INVALID_JSON")  # không tới được; giữ cho kiểu trả về rõ ràng
 
 
 def json_list(data: dict[str, Any], key: str) -> list[Any]:

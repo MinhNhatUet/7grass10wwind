@@ -30,7 +30,7 @@ from src.models.orm import (
     User,
     new_id,
 )
-from src.services import acl
+from src.services import acl, audit
 from src.services.assistants import AssistantResult, LlmError, learning
 from src.services.errors import AppError, bad_request, forbidden, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
@@ -384,7 +384,9 @@ def _attach_plan(
     plan = StudyPlan(
         owner_id=user.id, course_id=course_id, conversation_id=conv.id, version=d["previous_version"] + 1,
         previous_id=d["previous_id"], status="Draft", goal=d["goal"][:2000], days=d["days"], minutes_per_day=d["minutes"],
-        data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")} | {"message_id": msg.id},
+        data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")}
+        | {"message_id": msg.id}
+        | ({"dates": d["dates"]} if d.get("dates") else {}),
     )  # fmt: skip
     db.add(plan)
     db.flush()
@@ -412,7 +414,7 @@ def plan_view(db: Session, user: User, plan: StudyPlan) -> dict[str, Any]:
         "id": plan.id, "version": plan.version, "previous_id": plan.previous_id, "status": plan.status, "goal": plan.goal,
         "days": plan.days, "minutes_per_day": plan.minutes_per_day, "sessions": sessions,
         "warnings": plan.data.get("warnings", []), "total_minutes": plan.data.get("total_minutes"),
-        "budget_minutes": plan.data.get("budget_minutes"),
+        "budget_minutes": plan.data.get("budget_minutes"), "dates": plan.data.get("dates"),
     }  # fmt: skip
 
 
@@ -455,6 +457,51 @@ def set_plan_status(db: Session, user: User, plan_id: str, status: str) -> Study
     plan.status = status
     db.commit()
     return plan
+
+
+EDITABLE_PLAN = ("Draft", "Confirmed", "InProgress", "Paused")
+
+
+def update_plan(db: Session, user: User, plan_id: str, goal: str, sessions: list[dict[str, Any]]) -> StudyPlan:
+    """Người học tự sửa lộ trình của mình (D-43): mục tiêu, thêm/bớt/sửa buổi. Giữ trạng thái + nguồn của buổi cũ."""
+    plan = get_plan(db, user, plan_id)
+    if plan.status not in EDITABLE_PLAN:
+        raise AppError("INVALID_STATE", 409)
+    if not sessions:
+        raise bad_request("PLAN_EMPTY")
+    dates = plan.data.get("dates") or []
+    if dates and any(s["day"] > len(dates) for s in sessions):
+        raise bad_request("PLAN_DAY_OUT_OF_RANGE")
+    old = {s["id"]: s for s in plan.data.get("sessions", [])}
+    taken = {int(k[1:]) for k in old if k[1:].isdigit()}
+    out = []
+    for s in sessions:
+        prev = old.get(s.get("id") or "")
+        if prev is None:  # buổi mới do người học thêm: id mới, chưa có nguồn
+            n = max(taken, default=0) + 1
+            taken.add(n)
+            prev = {"id": f"s{n}", "sources": [], "missing_source": True, "status": "not_started"}
+        out.append({**prev, **{k: s[k] for k in ("day", "title", "objective", "activity", "self_check", "minutes")}})
+    out.sort(key=lambda s: (s["day"], s["id"]))
+    plan.goal = goal
+    plan.days = len(dates) if dates else max(s["day"] for s in out)
+    total = sum(s["minutes"] for s in out)
+    plan.data = {**plan.data, "sessions": out, "total_minutes": total, "edited": True}
+    if plan.status in ("Confirmed", "InProgress"):
+        plan.status = "Completed" if all(s["status"] == "done" for s in out) else plan.status
+    audit.record(db, actor_id=user.id, action="plan_edit", object_type="study_plan", object_id=plan.id,
+                 course_id=plan.course_id, detail={"sessions": len(out)})  # fmt: skip
+    db.commit()
+    return plan
+
+
+def delete_plan(db: Session, user: User, plan_id: str) -> None:
+    """Xoá lộ trình của chính mình (D-43). Tin nhắn chat từng tạo nó chỉ còn nội dung, thẻ lộ trình biến mất."""
+    plan = get_plan(db, user, plan_id)
+    audit.record(db, actor_id=user.id, action="plan_delete", object_type="study_plan", object_id=plan.id,
+                 course_id=plan.course_id, detail={"goal": plan.goal[:200], "status": plan.status})  # fmt: skip
+    db.delete(plan)
+    db.commit()
 
 
 # ---------------------------------------------------------------- tự kiểm tra (FR-03.3–03.4)

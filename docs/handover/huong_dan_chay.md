@@ -83,7 +83,7 @@ copy .env.example .env.local      # macOS/Linux: cp .env.example .env.local
 npm run dev                       # phát triển, có hot reload
 ```
 
-Mở <http://localhost:3000>. `BACKEND_URL` trong `.env.local` mặc định là `http://localhost:8000`.
+Mở <http://localhost:3000>. `NEXT_PUBLIC_API_URL` trong `.env.local` mặc định là `http://localhost:8000` (frontend gọi thẳng `${NEXT_PUBLIC_API_URL}/api/v1`, gắn lúc build — đổi thì chạy lại `npm run dev`/`build`).
 
 Chạy bản build (giống môi trường demo):
 
@@ -136,9 +136,9 @@ Xem [van_hanh.md](van_hanh.md): kiểm kê nguồn, kiểm tra dataset, runner a
 | Hiện tượng | Cách xử lý |
 |---|---|
 | `pip install` lỗi build `scikit-network` | Dùng Python 3.11/3.12 (mục 1) |
-| Frontend báo "Chưa thể kết nối hệ thống lúc này" | Backend chưa chạy, hoặc `BACKEND_URL` trong `frontend/.env.local` sai |
+| Frontend báo "Chưa thể kết nối hệ thống lúc này" | Backend chưa chạy, hoặc `NEXT_PUBLIC_API_URL` trong `frontend/.env.local` sai |
 | Đăng nhập đúng vẫn báo sai | Chưa chạy `python scripts/seed_users.py` sau khi sửa `.env` |
 | Tài liệu kẹt "Lỗi" với `EMBEDDING_RateLimitError` | Vượt giới hạn Gemini; bấm "Thử lại" ở trang Tài liệu (hoặc giảm `EMBEDDING_BATCH_SIZE`) |
 | `ModuleNotFoundError: psycopg` | `DATABASE_URL` trong `.env` còn là giá trị mẫu Postgres → đổi thành `sqlite:///./data/app.db` |
 | "Bạn đã nhập sai quá nhiều lần" | Chờ khoảng 5 phút, hoặc restart backend |
-| Cổng 8000/3000 đã bị dùng | Đổi `--port`; nếu đổi cổng backend thì sửa `BACKEND_URL` tương ứng |
+| Cổng 8000/3000 đã bị dùng | Đổi `--port`; nếu đổi cổng backend thì sửa `NEXT_PUBLIC_API_URL` tương ứng rồi chạy lại frontend |

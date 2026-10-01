@@ -30,8 +30,17 @@ def _fold(line: str) -> str:
     return "\r\n".join(out)
 
 
-def plan_ics(plan: StudyPlan, start: date, at: time, app_url: str | None = None) -> str:
-    """Ngày 1 của lộ trình = `start`; các buổi cùng ngày xếp liền nhau từ giờ `at`."""
+def day_date(plan: StudyPlan, day: int, start: date | None) -> date:
+    """Ngày thật của "ngày k": theo danh sách ngày người học chọn (D-46), nếu không thì start + k − 1."""
+    dates = plan.data.get("dates") or []
+    if dates and 1 <= day <= len(dates):
+        return date.fromisoformat(dates[day - 1])
+    assert start is not None
+    return start + timedelta(days=day - 1)
+
+
+def plan_ics(plan: StudyPlan, start: date | None, at: time, app_url: str | None = None) -> str:
+    """Ngày 1 của lộ trình = `start` (hoặc ngày đã chọn); các buổi cùng ngày xếp liền nhau từ giờ `at`."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     lines = [
         "BEGIN:VCALENDAR",
@@ -45,7 +54,7 @@ def plan_ics(plan: StudyPlan, start: date, at: time, app_url: str | None = None)
     offset: dict[int, int] = {}  # phút đã dùng trong mỗi ngày
     for s in sorted(plan.data.get("sessions", []), key=lambda x: (x.get("day", 0), x.get("id", ""))):
         day, minutes = int(s["day"]), int(s["minutes"])
-        begin = datetime.combine(start + timedelta(days=day - 1), at) + timedelta(minutes=offset.get(day, 0))
+        begin = datetime.combine(day_date(plan, day, start), at) + timedelta(minutes=offset.get(day, 0))
         offset[day] = offset.get(day, 0) + minutes
         end = begin + timedelta(minutes=minutes)
         desc = [f"Mục tiêu: {s.get('objective', '')}", f"Hoạt động: {s.get('activity', '')}"]

@@ -1,4 +1,5 @@
 // Client gọi API FastAPI (PRD 11.2) qua rewrite /api/* của Next. Role và quyền chỉ lấy từ server (BR-02).
+import { API } from "./api-errors";
 import { clearToken, getToken } from "./session";
 
 export type Role = "student" | "lecturer" | "reviewer" | "admin";
@@ -113,6 +114,10 @@ export interface StudyItem {
   sentence?: string;
   answer?: string;
   hint?: string;
+  question?: string; // trắc nghiệm (mcq)
+  options?: string[];
+  correct?: number;
+  explanation?: string;
   sources: number[];
 }
 
@@ -134,6 +139,7 @@ export interface Plan {
   warnings: string[];
   total_minutes: number;
   budget_minutes: number;
+  dates?: string[] | null; // D-46: ngày học cụ thể; ngày k của lộ trình = dates[k-1]
 }
 
 export interface ChatMessage {
@@ -149,7 +155,7 @@ export interface ChatMessage {
   created_at: string;
   metadata: {
     course_id: string;
-    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage";
+    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage" | "mcq";
     items?: StudyItem[];
     sections?: TriageSections;
     notes?: string[];
@@ -213,7 +219,8 @@ export class ApiError extends Error {
   }
 }
 
-const BASE = "/api/v1";
+// Cùng địa chỉ backend với các trang TV4 (NEXT_PUBLIC_API_URL) — next.config của TV4 không còn rewrite /api/*
+const BASE = API;
 
 export function newRequestId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
