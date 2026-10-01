@@ -1,6 +1,6 @@
 type StatusInfo = { label: string; hint: string; color: string; step: number };
 const statuses: Record<string, StatusInfo> = {
-  Processing: { label: "Đang trích xuất", hint: "Đang đọc file và tách nội dung. Chưa thể gửi duyệt hoặc dùng trong Chat AI.", color: "bg-slate-200 text-slate-800", step: 0 },
+  Processing: { label: "Đang trích xuất", hint: "Đang đọc file và tách nội dung. Chưa thể gửi duyệt hoặc dùng trong Chat AI.", color: "bg-blue-100 text-blue-800", step: 0 },
   Draft: { label: "Bản nháp", hint: "Đã trích xuất. Kiểm tra nội dung, lưu metadata rồi gửi duyệt.", color: "bg-slate-200 text-slate-800", step: 1 },
   NeedsReview: { label: "Cần kiểm tra chất lượng", hint: "Có cảnh báo trích xuất. Kiểm tra các trang được đánh dấu trước khi gửi duyệt.", color: "bg-amber-100 text-amber-900", step: 1 },
   PendingApproval: { label: "Chờ người duyệt", hint: "Đang chờ người được phân công duyệt. Người tải lên không được tự duyệt.", color: "bg-amber-100 text-amber-900", step: 2 },
@@ -22,7 +22,7 @@ export function DocumentStatus({ state, current, locked }: { state: string; curr
   return <section aria-label="Trạng thái tài liệu" className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-950 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><StatusBadge state={state} /><strong className={available ? "text-emerald-600 text-sm" : "text-amber-600 text-sm"}>{available ? "✓ Sẵn sàng cho Chat AI (theo quyền đọc)" : "Chưa phục vụ Chat AI từ phiên bản này"}</strong></div>
     <p className="text-sm text-slate-600 dark:text-slate-300">{locked ? "Tài liệu đang bị khóa khẩn cấp, không phục vụ dù đã phát hành." : available ? "Phiên bản hiện hành đã phát hành. Người có quyền đọc có thể tra cứu trong Hub và Chat AI." : info?.hint || "Trạng thái chưa xác định; hãy tải lại dữ liệu."}</p>
-    <ol className="grid grid-cols-2 sm:grid-cols-5 gap-2">{["Trích xuất", "Kiểm tra nháp", "Chờ duyệt", "Lập chỉ mục", "Phát hành"].map((label, i) => <li key={label} aria-current={info?.step === i ? "step" : undefined} className={`rounded-xl p-3 text-xs border ${info && info.step === i ? "border-slate-800 bg-slate-100 text-slate-900 font-semibold" : info && info.step > i ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-500 dark:border-slate-700"}`}><span className="block mb-1 font-bold">{info && info.step > i ? "✓" : i + 1}</span>{label}{info?.step === i && <span className="block mt-1">Hiện tại</span>}</li>)}</ol>
+    <ol className="grid grid-cols-2 sm:grid-cols-5 gap-2">{["Trích xuất", "Kiểm tra nháp", "Chờ duyệt", "Lập chỉ mục", "Phát hành"].map((label, i) => <li key={label} aria-current={info?.step === i ? "step" : undefined} className={`rounded-xl p-3 text-xs border ${info && info.step === i ? "border-blue-500 bg-blue-50 text-blue-800 font-semibold" : info && info.step > i ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-500 dark:border-slate-700"}`}><span className="block mb-1 font-bold">{info && info.step > i ? "✓" : i + 1}</span>{label}{info?.step === i && <span className="block mt-1">Hiện tại</span>}</li>)}</ol>
     <p className="text-xs text-slate-500">Trạng thái do máy chủ xác nhận. Đã duyệt ≠ Đã phát hành. Các bước không biểu thị phần trăm xử lý.</p>
   </section>;
 }

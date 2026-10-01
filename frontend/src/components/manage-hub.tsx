@@ -182,17 +182,15 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
     if (query.trim()) setListOpen(true);
   }, [query]);
 
-  const softInput = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-black focus:ring-4 focus:ring-slate-100 disabled:bg-slate-50 disabled:text-slate-400";
-  const ghostButton = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40";
+  const softInput = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-400";
+  const ghostButton = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 disabled:opacity-40";
 
-  return <main style={{ fontFamily: 'Arial, Helvetica, sans-serif' }} className="lecturer-hub min-h-screen bg-[#f8f9fa] text-slate-950">
+  return <main style={{ fontFamily: 'Arial, Helvetica, sans-serif' }} className="lecturer-hub min-h-screen bg-[#f6f9fd] text-slate-950">
     <div className="flex min-h-screen">
-      <aside className="hidden w-[260px] shrink-0 border-r border-slate-200 bg-white/70 backdrop-blur-xl lg:flex lg:flex-col">
-        <div className="flex h-20 items-center gap-3 px-7 border-b border-slate-100">
-          <Link href="/" className="flex items-center gap-2.5">
-            <img src="/vedu-logo.png" alt="Vedu Logo" className="h-7 w-7 object-contain" />
-            <span className="text-2xl font-extrabold tracking-tight text-black dark:text-white">Vedu</span>
-          </Link>
+      <aside className="hidden w-[244px] shrink-0 border-r border-slate-200 bg-white/70 backdrop-blur-xl lg:flex lg:flex-col">
+        <div className="flex h-16 items-center gap-3 px-8">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50 text-blue-600"><BookOpen size={25} /></div>
+          <strong className="text-xl">Hub</strong>
         </div>
         <nav className="mt-4 space-y-2 px-4 text-[15px] font-medium text-slate-600">
           {[{ name: "Chat AI", href: "/", icon: "✧" }, { name: "Hồ sơ", href: "/profile", icon: "♙" }].map((item) => (
@@ -216,12 +214,12 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
               <button
                 key={item.label}
                 onClick={() => { setActiveMenu(item.label); setFilterState(item.filter); setListOpen(true); }}
-                className={cn("w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors", active ? "bg-black/5 text-black font-semibold" : "hover:bg-slate-100 text-slate-600")}
+                className={cn("w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors", active ? "bg-blue-50 text-blue-700 font-semibold" : "hover:bg-slate-100 text-slate-600")}
               >
-                <item.icon size={20} className={cn("shrink-0", active ? "text-black" : "")} />
+                <item.icon size={20} className="shrink-0" />
                 <span className="min-w-0 flex-1">{item.label}</span>
                 {item.label !== "Dashboard" && (
-                  <span className={cn("min-w-6 shrink-0 rounded-lg px-1.5 py-0.5 text-center text-xs font-bold tabular-nums", active ? "bg-black text-white" : "bg-slate-100 text-slate-600")}>{item.count}</span>
+                  <span className={cn("min-w-6 shrink-0 rounded-lg px-1.5 py-0.5 text-center text-xs font-bold tabular-nums", active ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")}>{item.count}</span>
                 )}
               </button>
             );
@@ -232,9 +230,9 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
 
       <section className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/80 px-6 backdrop-blur-xl">
-          <div className="flex items-center gap-3 text-sm font-semibold text-slate-800"><Home size={18} className="text-slate-600" /><ChevronRight size={16} className="text-slate-300" />{viewer ? "Xem và duyệt tài liệu" : "Thêm tài liệu mới"}</div>
+          <div className="flex items-center gap-3 text-sm font-semibold text-blue-600"><Home size={18} className="text-slate-600" /><ChevronRight size={16} className="text-slate-300" />{viewer ? "Xem và duyệt tài liệu" : "Thêm tài liệu mới"}</div>
           <div className="hidden w-full max-w-[490px] items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-slate-400 xl:flex"><Search size={18} /><input className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Tìm kiếm tài liệu, phiên bản..." value={query} onChange={e => setQuery(e.target.value)} /><kbd className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Ctrl K</kbd></div>
-          <div className="flex items-center gap-3"><button className="grid h-11 w-11 place-items-center rounded-2xl border border-slate-200 bg-white"><Bell size={19} /></button><div className="grid h-11 w-11 place-items-center rounded-full bg-slate-900 font-bold text-white">B</div></div>
+          <div className="flex items-center gap-3"><button className="grid h-11 w-11 place-items-center rounded-2xl border border-slate-200 bg-white"><Bell size={19} /></button><div className="grid h-11 w-11 place-items-center rounded-full bg-blue-600 font-bold text-white">B</div></div>
         </header>
 
         <div className="mx-auto max-w-[1900px] space-y-4 p-4 xl:px-9 xl:py-5">
@@ -249,17 +247,17 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
                   : "Quản lý các phiên bản, xem trước, duyệt và theo dõi trạng thái tài liệu trong Hub."}
               </p>
             </div>
-            {canUpload && activeMenu !== "Dashboard" && <button onClick={() => { if (viewer) window.location.assign(`/hub/manage?course=${encodeURIComponent(course)}`); else { setPreview(null); setMeta({ ...empty }); setFile(null); setNewDocument(null); setListOpen(false); } }} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-6 py-4 font-semibold text-white shadow-lg shadow-slate-900/20 hover:bg-black"><Upload size={18} />Tải tài liệu mới</button>}
+            {canUpload && activeMenu !== "Dashboard" && <button onClick={() => { if (viewer) window.location.assign(`/hub/manage?course=${encodeURIComponent(course)}`); else { setPreview(null); setMeta({ ...empty }); setFile(null); setNewDocument(null); setListOpen(false); } }} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700"><Upload size={18} />Tải tài liệu mới</button>}
           </div>
 
           {activeMenu !== "Dashboard" && (
             <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
-              {flow.map((s, i) => <div key={s.label} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold", i === currentStep ? "bg-slate-200 text-slate-900" : i < currentStep ? "text-slate-700" : "text-slate-500")}>{i < currentStep ? <Check size={17} /> : <s.icon size={17} className={s.icon === Loader2 && i === currentStep ? "animate-spin" : ""} />}{s.label}{i < flow.length - 1 && <ChevronRight size={16} className="ml-2 text-slate-300" />}</div>)}
+              {flow.map((s, i) => <div key={s.label} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold", i === currentStep ? "bg-blue-50 text-blue-700" : i < currentStep ? "text-slate-700" : "text-slate-500")}>{i < currentStep ? <Check size={17} /> : <s.icon size={17} className={s.icon === Loader2 && i === currentStep ? "animate-spin" : ""} />}{s.label}{i < flow.length - 1 && <ChevronRight size={16} className="ml-2 text-slate-300" />}</div>)}
             </div>
           )}
 
           {error && <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 font-medium text-red-700">{error}</p>}
-          {notice && <p role="status" className="rounded-2xl border border-slate-200 bg-slate-100 p-4 font-medium text-slate-800">{notice}</p>}
+          {notice && <p role="status" className="rounded-2xl border border-blue-200 bg-blue-50 p-4 font-medium text-blue-800">{notice}</p>}
           {loading ? <p className="rounded-2xl bg-white p-6">Đang tải quyền truy cập…</p> : !courses.length ? <p className="rounded-2xl bg-white p-6">Bạn chưa được cấp quyền quản lý hoặc duyệt môn học.</p> : <>
             <div className="flex flex-wrap items-center gap-3 text-xs"><select aria-label="Môn quản lý" className={cn(softInput, "max-w-[240px] !py-1 !text-xs")} value={course} disabled={busy} onChange={e => setCourse(e.target.value)}>{courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><button className={cn(ghostButton, "!py-1 !text-xs")} disabled={busy} onClick={() => run(async () => { await refresh(); if (preview) await open(preview.version.version_id, page); })}><RefreshCw size={16} className={busy ? "animate-spin" : ""} />Tải lại trạng thái</button></div>
 
@@ -271,12 +269,12 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
               <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
                   <h2 className="text-[17px] font-bold">Danh sách tài liệu</h2>
-                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-400 focus-within:border-black focus-within:bg-white focus-within:ring-4 focus-within:ring-slate-100 transition-all"><Search size={16} /><input className="w-56 bg-transparent text-sm outline-none" placeholder="Tìm tài liệu..." value={query} onChange={e => setQuery(e.target.value)} /></div>
+                  <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-400 focus-within:border-blue-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-100 transition-all"><Search size={16} /><input className="w-56 bg-transparent text-sm outline-none" placeholder="Tìm tài liệu..." value={query} onChange={e => setQuery(e.target.value)} /></div>
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 overflow-y-auto pr-2 pb-2">
                   {!filteredVersions.length && <p className="col-span-full py-8 text-center text-sm text-slate-500">Chưa có tài liệu.</p>}
-                  {filteredVersions.map((v, idx) => <button key={v.version_id} disabled={busy} onClick={() => run(() => open(v.version_id))} className={cn("flex w-full items-start gap-3 rounded-2xl border p-4 text-left transition", preview?.version.version_id === v.version_id ? "border-black shadow-sm bg-slate-50/80" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50")}>
-                    <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl font-bold", preview?.version.version_id === v.version_id ? "bg-black text-white" : "bg-slate-100 text-slate-600")}>{idx + 1}</span>
+                  {filteredVersions.map((v, idx) => <button key={v.version_id} disabled={busy} onClick={() => run(() => open(v.version_id))} className={cn("flex w-full items-start gap-3 rounded-2xl border p-4 text-left transition", preview?.version.version_id === v.version_id ? "border-blue-400 bg-blue-50 shadow-sm" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50")}>
+                    <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl font-bold", preview?.version.version_id === v.version_id ? "bg-blue-200/50 text-blue-700" : "bg-slate-100 text-slate-600")}>{idx + 1}</span>
                     <div className="min-w-0 flex-1">
                       <strong className="line-clamp-2 text-sm font-semibold">{v.title || "Chưa có tiêu đề"}</strong>
                       <p className="mt-1 text-xs text-slate-500">Phiên bản {v.version_label} · {shortDate((v as unknown as { published_at?: string }).published_at)}</p>
@@ -293,7 +291,7 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
                   {originalError && <p role="alert" className="p-6 text-red-600">{originalError}</p>}
                   {selectedVersion && !originalUrl && !originalError && <p className="p-6" role="status">Đang tải bản gốc…</p>}
                   {originalUrl && preview?.version.file_type === "pdf" && <iframe title="Bản PDF gốc" src={`${originalUrl}#page=${page}`} className="min-h-0 w-full flex-1 border-0 bg-white" />}
-                  {originalUrl && preview?.version.file_type !== "pdf" && <div className="p-8"><p>Trình duyệt không xem trực tiếp PPTX. Xem text theo slide ở bên phải hoặc tải file để mở bằng PowerPoint.</p><a className="mt-3 inline-block text-slate-900 font-semibold underline" href={originalUrl} download>Tải bản gốc để kiểm tra</a></div>}
+                  {originalUrl && preview?.version.file_type !== "pdf" && <div className="p-8"><p>Trình duyệt không xem trực tiếp PPTX. Xem text theo slide ở bên phải hoặc tải file để mở bằng PowerPoint.</p><a className="mt-3 inline-block text-blue-600 underline" href={originalUrl} download>Tải bản gốc để kiểm tra</a></div>}
                 </section>}
 
                 <section aria-label="Chi tiết và quản lý phiên bản" tabIndex={viewer ? 0 : undefined} className="hub-details min-w-0 rounded-xl border border-slate-200 bg-white p-4">
@@ -302,9 +300,9 @@ export default function ManageHub({ viewer = false, defaultTab }: { viewer?: boo
                   {preview && <DocumentStatus state={preview.version.state} current={preview.version.is_current} locked={preview.version.emergency_locked} />}
                   {preview && <ProcessingStatus version={preview.version} />}
                   {preview?.version.state === "Failed" && <button className={ghostButton} disabled={busy} onClick={() => run(() => action("retry", {}))}><RefreshCw size={16} />Thử lại xử lý</button>}
-                  {preview?.version.state === "Published" && preview.version.is_current && !preview.version.emergency_locked && <Link href={`/?document=${encodeURIComponent(preview.version.document_id)}&title=${encodeURIComponent(preview.version.title)}`} className="my-3 inline-flex rounded-lg bg-slate-900 hover:bg-black px-4 py-2 text-sm font-semibold text-white transition-colors">Hỏi AI về tài liệu này</Link>}
+                  {preview?.version.state === "Published" && preview.version.is_current && !preview.version.emergency_locked && <Link href={`/?document=${encodeURIComponent(preview.version.document_id)}&title=${encodeURIComponent(preview.version.title)}`} className="my-3 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Hỏi AI về tài liệu này</Link>}
                   {preview?.version.reject_reason && <p className="mt-4 rounded-xl bg-red-50 p-3 text-red-700">Lý do từ chối: {preview.version.reject_reason}</p>}
-                  {!preview && canUpload && <label className="mt-4 block rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors"><Upload className="mx-auto mb-2 text-slate-500" />Chọn file PDF/PPTX<input key={`${course}-${newDocument}`} type="file" accept=".pdf,.pptx" disabled={busy} className="sr-only" onChange={e => { const f = e.target.files?.[0] || null; setFile(f); if (f && !meta.title) field("title", f.name); }} />{file && <span className="mt-2 block text-slate-700">{file.name}</span>}</label>}
+                  {!preview && canUpload && <label className="mt-4 block rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-6 text-center text-sm font-semibold text-blue-700"><Upload className="mx-auto mb-2" />Chọn file PDF/PPTX<input key={`${course}-${newDocument}`} type="file" accept=".pdf,.pptx" disabled={busy} className="sr-only" onChange={e => { const f = e.target.files?.[0] || null; setFile(f); if (f && !meta.title) field("title", f.name); }} />{file && <span className="mt-2 block text-slate-700">{file.name}</span>}</label>}
                   {preview && !editable && <p className="my-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Thông tin bên dưới chỉ đọc ở trạng thái này. Để thay nội dung bản phát hành, hãy tạo phiên bản mới.</p>}
 
                   {preview && <div className="my-5 space-y-3 text-sm"><h3 className="font-bold">Thông tin tài liệu</h3><p className="flex justify-between text-slate-600"><span>Số trang</span><span>{preview.version.page_count}</span></p><p className="flex justify-between text-slate-600"><span>Định dạng</span><span>{preview.version.file_type.toUpperCase()}</span></p><p className="flex justify-between text-slate-600"><span>Phiên bản</span><span>{preview.version.version_label}</span></p></div>}

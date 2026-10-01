@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, FileText, GraduationCap, Home, LayoutGrid, LibraryBig, List, Loader2, MessageSquare, RefreshCw, Search, ShieldCheck, Sparkles, UserRound, X } from "lucide-react";
+import { useTheme } from "next-themes";
+import { ArrowLeft, ArrowUpRight, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, FileText, GraduationCap, Home, LayoutGrid, LibraryBig, List, Loader2, MessageSquare, Moon, RefreshCw, Search, ShieldCheck, Sparkles, Sun, UserRound, X } from "lucide-react";
 import type { SourceReference } from "../../components/source-reader";
 import ScrollDocumentReader from "../../components/scroll-document-reader";
 import { API, authHeaders, responseError } from "../../lib/api-errors";
@@ -14,6 +15,7 @@ type Document = { document_id: string; version_id: string; title: string; versio
 const button = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function Library() {
+  const { resolvedTheme, setTheme } = useTheme();
   const [courses, setCourses] = useState<Course[]>([]);
   const [course, setCourse] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -43,7 +45,8 @@ export default function Library() {
       .then(d => {
         if (controller.signal.aborted) return;
         const rows = d.items as Course[];
-        setCourses(rows); setCourse(current => rows.some(c => c.id === current) ? current : rows[0]?.id || "");
+        const requested = new URLSearchParams(window.location.search).get("course");
+        setCourses(rows); setCourse(current => rows.some(c => c.id === current) ? current : rows.find(c => c.id === requested)?.id || rows[0]?.id || "");
       })
       .catch(e => { if (!controller.signal.aborted) setError(e.message); })
       .finally(() => { if (!controller.signal.aborted) setCoursesLoading(false); });
@@ -73,15 +76,16 @@ export default function Library() {
 
   return <main className="library-page min-h-screen bg-[#f8f9fa] text-slate-900">
     <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <Link href="/" className="flex h-20 items-center gap-3 border-b border-slate-100 px-7 text-2xl font-extrabold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white"><BookOpen size={21} /></span>Vedu</Link>
+      <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white dark:border-white/10 dark:bg-[#151619] lg:flex">
+        <Link href="/chat" className="flex h-20 items-center gap-3 border-b border-slate-100 dark:border-white/5 px-7 text-2xl font-extrabold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900"><BookOpen size={21} /></span>Vedu</Link>
         <nav aria-label="Điều hướng chính" className="space-y-2 p-4 text-sm font-medium">
-          <Link href="/" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"><MessageSquare size={19} />Chat AI</Link>
-          <Link href="/profile" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"><UserRound size={19} />Hồ sơ</Link>
-          <div className="my-4 border-t border-slate-100" />
+          <Link href="/chat" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"><MessageSquare size={19} />Chat AI</Link>
+          <Link href="/profile" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"><UserRound size={19} />Hồ sơ</Link>
+          <div className="my-4 border-t border-slate-100 dark:border-white/5" />
           <p className="px-4 pb-2 text-[11px] font-semibold tracking-widest text-slate-400">KHÔNG GIAN HỌC TẬP</p>
-          <Link href="/library" aria-current="page" className="flex items-center gap-3 rounded-xl bg-slate-100 px-4 py-3 font-semibold"><LibraryBig size={19} />Tài liệu học tập</Link>
-          <Link href="/learning" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50"><GraduationCap size={20} />Lộ trình học tập</Link>
+          <Link href="/library" aria-current="page" className="flex items-center gap-3 rounded-xl bg-slate-100 dark:bg-white/10 px-4 py-3 font-semibold"><LibraryBig size={19} />Tài liệu học tập</Link>
+          <Link href="/learning" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"><CheckCircle2 size={19} />Bài tự kiểm tra</Link>
+          <Link href="/learning/plans" className="flex items-center gap-3 rounded-xl px-4 py-3 text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"><GraduationCap size={20} />Lộ trình học tập</Link>
         </nav>
         <div className="mx-5 mb-6 mt-auto rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <ShieldCheck size={22} className="mb-3 text-emerald-600" /><p className="text-sm font-semibold">Nguồn học liệu tin cậy</p><p className="mt-2 text-xs leading-5 text-slate-500">Chỉ hiển thị tài liệu đã phát hành và được cấp quyền truy cập.</p>
@@ -90,8 +94,14 @@ export default function Library() {
 
       <section className="min-w-0 flex-1">
         <header className="flex h-20 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-8">
-          <div className="flex items-center gap-3 text-sm"><Link href="/" aria-label="Trang chủ" className="text-slate-500 hover:text-slate-900"><Home size={18} /></Link><ChevronRight size={15} className="text-slate-300" /><span className="font-semibold">Thư viện tài liệu</span></div>
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-black"><ArrowLeft size={16} /><span className="hidden sm:inline">Về Chat AI</span></Link>
+          <div className="flex items-center gap-3 text-sm"><Link href="/chat" aria-label="Trang chủ" className="text-slate-500 hover:text-slate-900 dark:hover:text-white"><Home size={18} /></Link><ChevronRight size={15} className="text-slate-300" /><span className="font-semibold">Thư viện tài liệu</span></div>
+          <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+            <Link href="/chat" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white"><ArrowLeft size={16} /><span className="hidden sm:inline">Về Chat AI</span></Link>
+            <button type="button" aria-label="Chuyển giao diện sáng/tối" title="Chuyển giao diện sáng/tối" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
+              <Moon size={18} className="dark:hidden" aria-hidden="true" />
+              <Sun size={18} className="hidden dark:block" aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-8">
@@ -116,21 +126,21 @@ export default function Library() {
 
             {error && <div role="alert" className="mx-5 mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><p>{error}</p><button onClick={refresh} className="mt-2 font-semibold underline">Thử lại</button></div>}
             {loading && <div role="status" className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-slate-500"><Loader2 size={28} className="animate-spin" />Đang tải tài liệu…</div>}
-            {!loading && !error && !documents.length && <div className="flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center"><div className="mb-5 grid h-20 w-20 place-items-center rounded-3xl border border-slate-100 bg-slate-50 text-slate-400">{query ? <Search size={34} strokeWidth={1.4} /> : <BookOpen size={34} strokeWidth={1.4} />}</div><h3 className="text-lg font-semibold">{!courses.length ? "Thư viện đang chờ bạn khám phá" : query ? "Không tìm thấy tài liệu phù hợp" : "Chưa có tài liệu trong môn học này"}</h3><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{!courses.length ? "Bạn chưa được cấp quyền đọc môn học. Hãy liên hệ giảng viên để được truy cập tài liệu học tập." : query ? "Thử từ khóa khác hoặc xóa tìm kiếm để xem các tài liệu đã phát hành." : "Tài liệu sẽ xuất hiện tại đây sau khi được giảng viên phát hành và cấp quyền đọc."}</p>{query ? <button onClick={() => changeQuery("")} className={`${button} mt-5`}>Xóa tìm kiếm</button> : <Link href="/" className={`${button} mt-5`}><Sparkles size={16} />Khám phá Chat AI<ArrowUpRight size={15} /></Link>}</div>}
+            {!loading && !error && !documents.length && <div className="flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center"><div className="mb-5 grid h-20 w-20 place-items-center rounded-3xl border border-slate-100 bg-slate-50 text-slate-400">{query ? <Search size={34} strokeWidth={1.4} /> : <BookOpen size={34} strokeWidth={1.4} />}</div><h3 className="text-lg font-semibold">{!courses.length ? "Thư viện đang chờ bạn khám phá" : query ? "Không tìm thấy tài liệu phù hợp" : "Chưa có tài liệu trong môn học này"}</h3><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">{!courses.length ? "Bạn chưa được cấp quyền đọc môn học. Hãy liên hệ giảng viên để được truy cập tài liệu học tập." : query ? "Thử từ khóa khác hoặc xóa tìm kiếm để xem các tài liệu đã phát hành." : "Tài liệu sẽ xuất hiện tại đây sau khi được giảng viên phát hành và cấp quyền đọc."}</p>{query ? <button onClick={() => changeQuery("")} className={`${button} mt-5`}>Xóa tìm kiếm</button> : <Link href="/chat" className={`${button} mt-5`}><Sparkles size={16} />Khám phá Chat AI<ArrowUpRight size={15} /></Link>}</div>}
 
             {!loading && !error && documents.length > 0 && <div className="space-y-4 px-3 pb-5 sm:px-5">
               {!source && <div className={`grid gap-4 ${view === "grid" ? "md:grid-cols-2 2xl:grid-cols-3" : ""}`}>
                 {documents.map(d => <article key={d.version_id} className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-slate-400">
                   <div className="mb-4 flex items-center justify-between gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-slate-100 text-slate-600"><FileText size={22} /></span><span className="text-xs font-medium text-emerald-600">Đã phát hành</span></div>
                   <h3 className="break-words font-semibold leading-6">{d.title}</h3><p className="mt-2 text-xs text-slate-500">Phiên bản {d.version_label} <span className="px-1">·</span> {d.page_count || 0} trang</p>
-                  <div className="mt-auto flex flex-wrap gap-2 pt-5"><button className={`${button} flex-1 whitespace-nowrap`} onClick={() => setSource({ documentId: d.document_id, versionId: d.version_id, page: 1 })}><BookOpen size={15} />Xem tài liệu</button><Link className="inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white hover:bg-slate-700" href={`/?document=${encodeURIComponent(d.document_id)}&title=${encodeURIComponent(d.title)}`}><Sparkles size={15} />Hỏi AI</Link></div>
+                  <div className="mt-auto flex flex-wrap gap-2 pt-5"><button className={`${button} flex-1 whitespace-nowrap`} onClick={() => setSource({ documentId: d.document_id, versionId: d.version_id, page: 1 })}><BookOpen size={15} />Xem tài liệu</button><Link className="inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white hover:bg-slate-700" href={`/chat?document=${encodeURIComponent(d.document_id)}&title=${encodeURIComponent(d.title)}`}><Sparkles size={15} />Hỏi AI</Link></div>
                 </article>)}
               </div>}
               {source && selectedDocument && <section id="library-reader" className="min-w-0 scroll-mt-4 space-y-3" aria-label="Xem tài liệu">
                 <header className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white text-slate-600"><FileText size={20} /></span>
                   <div className="min-w-0 flex-1"><h3 className="break-words text-sm font-semibold">{selectedDocument.title}</h3><p className="mt-1 text-xs text-slate-500">Phiên bản {selectedDocument.version_label} · {selectedDocument.page_count || 0} trang <span className="ml-2 text-emerald-600">Đã phát hành</span></p></div>
-                  <div className="flex items-center gap-2"><Link className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700" href={`/?document=${encodeURIComponent(selectedDocument.document_id)}&title=${encodeURIComponent(selectedDocument.title)}`}><Sparkles size={14} />Hỏi AI</Link><button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={() => setSource(null)}><List size={14} />Danh sách</button></div>
+                  <div className="flex items-center gap-2"><Link className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700" href={`/chat?document=${encodeURIComponent(selectedDocument.document_id)}&title=${encodeURIComponent(selectedDocument.title)}`}><Sparkles size={14} />Hỏi AI</Link><button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={() => setSource(null)}><List size={14} />Danh sách</button></div>
                 </header>
                 <ScrollDocumentReader key={source.versionId} source={source} />
               </section>}
