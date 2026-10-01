@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, FileText, GraduationCap, Home, LayoutGrid, LibraryBig, List, Loader2, MessageSquare, RefreshCw, Search, ShieldCheck, Sparkles, UserRound, X } from "lucide-react";
+import { useTheme } from "next-themes";
+import { ArrowLeft, ArrowUpRight, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, FileText, GraduationCap, Home, LayoutGrid, LibraryBig, List, Loader2, MessageSquare, Moon, RefreshCw, Search, ShieldCheck, Sparkles, Sun, UserRound, X } from "lucide-react";
 import type { SourceReference } from "../../components/source-reader";
 import ScrollDocumentReader from "../../components/scroll-document-reader";
 import { API, authHeaders, responseError } from "../../lib/api-errors";
@@ -14,6 +15,7 @@ type Document = { document_id: string; version_id: string; title: string; versio
 const button = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function Library() {
+  const { resolvedTheme, setTheme } = useTheme();
   const [courses, setCourses] = useState<Course[]>([]);
   const [course, setCourse] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -91,7 +93,13 @@ export default function Library() {
       <section className="min-w-0 flex-1">
         <header className="flex h-20 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 sm:px-8">
           <div className="flex items-center gap-3 text-sm"><Link href="/" aria-label="Trang chủ" className="text-slate-500 hover:text-slate-900"><Home size={18} /></Link><ChevronRight size={15} className="text-slate-300" /><span className="font-semibold">Thư viện tài liệu</span></div>
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-black"><ArrowLeft size={16} /><span className="hidden sm:inline">Về Chat AI</span></Link>
+          <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+            <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-black"><ArrowLeft size={16} /><span className="hidden sm:inline">Về Chat AI</span></Link>
+            <button type="button" aria-label="Chuyển giao diện sáng/tối" title="Chuyển giao diện sáng/tối" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
+              <Moon size={18} className="dark:hidden" aria-hidden="true" />
+              <Sun size={18} className="hidden dark:block" aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-8">
