@@ -91,48 +91,37 @@ interface HeaderInfo {
   email: string;
 }
 
-const DEFAULT_HEADER: HeaderInfo = {
-  name: "Nguyễn Minh Hằng",
-  title: "Kỹ sư phần mềm",
-  department: "Phòng Phát triển Sản phẩm",
-  staffId: "SJ53862",
-  staffAccount: "hangntm1",
-  phone: "0913 854 235",
-  email: "hangntm@sjlabel.com",
+const EMPTY_HEADER: HeaderInfo = {
+  name: "—",
+  title: "—",
+  department: "—",
+  staffId: "—",
+  staffAccount: "—",
+  phone: "—",
+  email: "—",
 };
 
-const DEFAULT_PERSONAL: PersonalInfo = {
-  gender: "Nữ",
-  dob: "05/03/1996",
-  identifyCode: "3234611342",
-  hometown: "TP. Hải Dương",
-  nationality: "Việt Nam",
-  religion: "Không",
-  language: "Tiếng Việt, Tiếng Anh",
-  maritalStatus: "Độc thân",
-  permanentAddress: "5 Nguyễn Chí Thanh, Tân Bình, Hải Dương",
-  currentAddress: "29 Nguyễn Ngọc Doãn, Đống Đa, Hà Nội",
+const EMPTY_PERSONAL: PersonalInfo = {
+  gender: "—",
+  dob: "—",
+  identifyCode: "—",
+  hometown: "—",
+  nationality: "—",
+  religion: "—",
+  language: "—",
+  maritalStatus: "—",
+  permanentAddress: "—",
+  currentAddress: "—",
 };
 
-const DEFAULT_EDUCATION: EducationItem[] = [
-  {
-    degree: "Cử nhân Hệ thống Thông tin Quản lý",
-    period: "2014-2018",
-    school: "Đại học Kinh tế Quốc dân",
-  },
-  {
-    degree: "Chứng chỉ Thiết kế Đồ họa",
-    period: "2018-2019",
-    school: "Đại học FPT Arena",
-  },
-];
+const EMPTY_EDUCATION: EducationItem[] = [];
 
-const DEFAULT_ACCOUNT: AccountInfo = {
-  bankAccount: "02520613401",
-  accountName: "NGUYỄN THỊ MINH HẰNG",
-  bank: "TPBank Duy Tân",
-  taxCode: "8456120546",
-  insuranceCode: "8456120546",
+const EMPTY_ACCOUNT: AccountInfo = {
+  bankAccount: "—",
+  accountName: "—",
+  bank: "—",
+  taxCode: "—",
+  insuranceCode: "—",
 };
 
 const TABS_DEFAULT = [
@@ -142,10 +131,10 @@ const TABS_DEFAULT = [
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState("Hồ sơ cá nhân");
-  const [headerInfo, setHeaderInfo] = useState<HeaderInfo>(DEFAULT_HEADER);
-  const [personalInfo, setPersonalInfo] = useState<PersonalInfo>(DEFAULT_PERSONAL);
-  const [educationList, setEducationList] = useState<EducationItem[]>(DEFAULT_EDUCATION);
-  const [accountInfo, setAccountInfo] = useState<AccountInfo>(DEFAULT_ACCOUNT);
+  const [headerInfo, setHeaderInfo] = useState<HeaderInfo>(EMPTY_HEADER);
+  const [personalInfo, setPersonalInfo] = useState<PersonalInfo>(EMPTY_PERSONAL);
+  const [educationList, setEducationList] = useState<EducationItem[]>(EMPTY_EDUCATION);
+  const [accountInfo, setAccountInfo] = useState<AccountInfo>(EMPTY_ACCOUNT);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [sessionExpiry, setSessionExpiry] = useState<string | null>(null);
@@ -156,10 +145,10 @@ export default function ProfilePage() {
 
   // Edit Modals state
   const [editingModal, setEditingModal] = useState<"personal" | "education" | "account" | "header" | null>(null);
-  const [editPersonalForm, setEditPersonalForm] = useState<PersonalInfo>(DEFAULT_PERSONAL);
-  const [editEducationForm, setEditEducationForm] = useState<EducationItem[]>(DEFAULT_EDUCATION);
-  const [editAccountForm, setEditAccountForm] = useState<AccountInfo>(DEFAULT_ACCOUNT);
-  const [editHeaderForm, setEditHeaderForm] = useState<HeaderInfo>(DEFAULT_HEADER);
+  const [editPersonalForm, setEditPersonalForm] = useState<PersonalInfo>(EMPTY_PERSONAL);
+  const [editEducationForm, setEditEducationForm] = useState<EducationItem[]>(EMPTY_EDUCATION);
+  const [editAccountForm, setEditAccountForm] = useState<AccountInfo>(EMPTY_ACCOUNT);
+  const [editHeaderForm, setEditHeaderForm] = useState<HeaderInfo>(EMPTY_HEADER);
 
   const { resolvedTheme: theme, setTheme } = useTheme();
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -300,6 +289,7 @@ export default function ProfilePage() {
     }
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("custom_user_profile");
     window.location.replace("/login");
   };
 
@@ -321,7 +311,7 @@ export default function ProfilePage() {
       >
         {/* Sidebar Brand / Logo */}
         <div className="flex h-20 items-center justify-between px-7">
-          <Link href="/" className="flex items-center gap-2.5">
+          <Link href={userRole === "admin" ? "/admin" : "/chat"} className="flex items-center gap-2.5">
             <img
               src="/vedu-logo.png"
               alt="Vedu Logo"
@@ -342,7 +332,7 @@ export default function ProfilePage() {
         {/* Navigation Items */}
         <nav className="flex-1 space-y-1 px-3 py-4 text-[14px] font-medium text-slate-500 dark:text-slate-400">
           <Link
-            href="/"
+            href={userRole === "admin" ? "/admin" : "/chat"}
             className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <LayoutDashboard size={19} className="text-slate-400" />
@@ -423,7 +413,7 @@ export default function ProfilePage() {
           </button>
 
           <Link
-            href="/"
+            href={userRole === "admin" ? "/admin" : "/chat"}
             className="flex items-center gap-3.5 rounded-xl px-4 py-3 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
           >
             <HelpCircle size={19} className="text-slate-400" />
@@ -438,7 +428,7 @@ export default function ProfilePage() {
         <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#121c27] px-6 sm:px-10">
           <div className="flex items-center gap-4">
             <Link
-              href="/"
+              href={userRole === "admin" ? "/admin" : "/chat"}
               title="Quay lại trang chính"
               className="flex items-center justify-center w-10 h-10 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
             >
@@ -498,7 +488,7 @@ export default function ProfilePage() {
                     <p className="text-xs text-slate-400 break-all">{headerInfo.email}</p>
                   </div>
                   <Link
-                    href="/"
+                    href={userRole === "admin" ? "/admin" : "/chat"}
                     className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                     onClick={() => setUserDropdownOpen(false)}
                   >
@@ -530,7 +520,7 @@ export default function ProfilePage() {
         <main className="p-6 sm:p-10 space-y-6 max-w-7xl w-full mx-auto">
           {/* Breadcrumb Navigation */}
           <div className="flex items-center gap-2 text-[13px] text-slate-500 dark:text-slate-400 font-medium">
-            <Link href="/" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+            <Link href={userRole === "admin" ? "/admin" : "/chat"} className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
               {roleFields.breadcrumb[0]}
             </Link>
             <span>/</span>
@@ -583,6 +573,9 @@ export default function ProfilePage() {
                         src="/profile-avatar.png"
                         alt={headerInfo.name}
                         className="h-full w-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = "none";
+                        }}
                       />
                     </div>
                     <div>

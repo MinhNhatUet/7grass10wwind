@@ -64,7 +64,7 @@ export default function SourceReader({ source }: { source: SourceReference }) {
       {imageError && <p role="status" className="text-sm text-amber-700">{imageError}</p>}
       {image && <a href={image} target="_blank" rel="noopener noreferrer" title="Phóng to trang"><img src={image} alt={`${data.title} — trang ${page}`} className="w-full rounded-lg border bg-white" /></a>}
       <details open={!image}><summary className="cursor-pointer text-sm">Nội dung trích xuất của trang</summary><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{data.pages.map(p => p.text).join("\n\n") || "Trang này chưa có nội dung văn bản trích xuất."}</p></details>
-      <a className="block rounded-lg bg-blue-600 px-4 py-2 text-center text-sm text-white" href={`/?document=${encodeURIComponent(source.documentId)}&title=${encodeURIComponent(data.title)}`}>Hỏi AI về tài liệu này</a>
+      <a className="block rounded-lg bg-blue-600 px-4 py-2 text-center text-sm text-white" href={`/chat?document=${encodeURIComponent(source.documentId)}&title=${encodeURIComponent(data.title)}`}>Hỏi AI về tài liệu này</a>
     </>}
   </section>;
 }
