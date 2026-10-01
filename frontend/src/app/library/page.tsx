@@ -75,13 +75,24 @@ export default function Library() {
         ) : undefined
       }
     >
-      <div className="h-full overflow-y-auto bg-background text-foreground">
-        <div className="mx-auto max-w-[1000px] p-6 lg:p-10 space-y-8">
-          
-          <header className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">Thư viện tài liệu</h1>
-            <p className="text-muted-foreground">Khám phá nguồn học liệu, tài liệu tham khảo theo môn học.</p>
-          </header>
+      <div className="flex flex-col h-full bg-background text-foreground overflow-hidden">
+        {/* TOP TOGGLE HEADER */}
+        <header className="h-[60px] shrink-0 flex items-center px-4 w-full relative z-10">
+          <div className="flex-1 flex justify-center w-full">
+            <div className="flex bg-white/80 dark:bg-[#151619]/80 backdrop-blur-md rounded-xl p-1 border border-black/5 dark:border-white/5 shadow-sm">
+              <Link href="/" className="px-4 py-1.5 text-[14px] font-medium text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent rounded-lg cursor-pointer border-0 transition-colors no-underline">Chat</Link>
+              <button className="px-4 py-1.5 text-[14px] font-medium bg-black/10 dark:bg-white/10 text-black dark:text-white rounded-lg cursor-pointer border-0 shadow-sm">Tài liệu</button>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1000px] p-6 lg:p-10 space-y-8">
+            
+            <header className="space-y-2">
+              <h1 className="text-3xl font-bold tracking-tight">Thư viện tài liệu</h1>
+              <p className="text-muted-foreground">Khám phá nguồn học liệu, tài liệu tham khảo theo môn học.</p>
+            </header>
 
           <div className="flex flex-col sm:flex-row gap-4 bg-card p-2 rounded-2xl border border-border shadow-sm">
             <div className="relative flex-1">
@@ -181,6 +192,7 @@ export default function Library() {
               </button>
             </div>
           )}
+        </div>
         </div>
       </div>
     </AppShell>

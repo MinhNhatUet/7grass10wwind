@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from "react";
 import { 
   HelpCircle, Info, Plus, LayoutGrid, ChevronDown, 
-  Trash2, Copy, Image as ImageIcon, ToggleRight, ToggleLeft
+  Trash2, Copy, Image as ImageIcon, ToggleRight, ToggleLeft, ArrowLeft
 } from "lucide-react";
 import gsap from "gsap";
+import Link from "next/link";
 
 export default function QuizBuilderPage() {
   const [questions, setQuestions] = useState([
@@ -32,8 +33,18 @@ export default function QuizBuilderPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans p-6">
-      <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[300px_1fr_300px] gap-6 items-start">
+    <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
+      <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center border-b border-border/40 bg-card/80 backdrop-blur-md px-6 shadow-sm">
+        <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors font-medium text-sm no-underline group">
+          <div className="p-1 rounded-full bg-secondary/50 group-hover:bg-primary/10 transition-colors">
+            <ArrowLeft size={18} />
+          </div>
+          <span>Quay lại Hội thoại</span>
+        </Link>
+      </header>
+
+      <div className="flex-1 p-6">
+        <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[300px_1fr_300px] gap-6 items-start">
         
         {/* LEFT COLUMN: Questions List */}
         <div className="bg-card rounded-2xl shadow-sm border border-border h-[calc(100vh-48px)] flex flex-col">
@@ -212,6 +223,7 @@ export default function QuizBuilderPage() {
         </div>
 
       </div>
+    </div>
     </div>
   );
 }
