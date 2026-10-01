@@ -18,7 +18,7 @@ const AGENT: Record<string, string> = { academic: "Academic Assistant", learning
 
 // MOCK DATA TYPES
 type Role = 'user' | 'assistant';
-type Source = { id: string; title: string; page: number; content: string; url?: string; citationId?: string; documentId: string; versionId: string };
+type Source = { id: string; title: string; page: number; pageEnd?: number | null; content: string; url?: string; citationId?: string; documentId: string; versionId: string };
 type Message = {
   id: string;
   role: Role;
@@ -196,7 +196,7 @@ export default function UnifiedChat() {
             id: c.id,
             citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
             title: c.document_title || `Tài liệu ${c.document_id}`,
-            page: c.locator?.value ?? c.locator_value ?? 1,
+            page: c.locator?.value ?? c.locator_value ?? 1, pageEnd: c.locator?.end ?? null, // D-50: khoảng trang
             content: c.quote || "",
             url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`
           })) || []
@@ -293,7 +293,7 @@ export default function UnifiedChat() {
           id: c.id,
           citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
           title: c.document_title || `Tài liệu ${c.document_id}`,
-          page: c.locator?.value ?? c.locator_value ?? 1,
+          page: c.locator?.value ?? c.locator_value ?? 1, pageEnd: c.locator?.end ?? null, // D-50: khoảng trang
           content: c.quote || "",
           url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`
         })) || []
@@ -659,7 +659,7 @@ export default function UnifiedChat() {
                               {msg.sources.map((source) => (
                                 <li key={source.id}>
                                   <button type="button" onClick={() => setActiveSource(source)} className="w-full text-left rounded-lg p-3 bg-white/60 dark:bg-black/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 cursor-pointer">
-                                    <span className="block text-sm font-medium">[{source.id}] {source.title} — Trang {source.page}</span>
+                                    <span className="block text-sm font-medium">[{source.id}] {source.title} — Trang {source.page}{source.pageEnd && source.pageEnd !== source.page ? `–${source.pageEnd}` : ""}</span>
                                     {source.content && <span className="block text-xs mt-1 opacity-80 whitespace-pre-wrap">“{source.content}”</span>}
                                   </button>
                                 </li>

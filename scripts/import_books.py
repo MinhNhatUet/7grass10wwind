@@ -60,7 +60,7 @@ def resolve(path: str) -> Path:
     return p if p.is_absolute() else REPO_ROOT / p
 
 
-def load_manifest(path: str | Path = "data/raw/books/manifest.books.json"):
+def load_manifest(path: str | Path = "data/manifest.cnpm.json"):
     data = json.loads(resolve(str(path)).read_text(encoding="utf-8"))
     sources = []
     for item in data.get("sources", []):

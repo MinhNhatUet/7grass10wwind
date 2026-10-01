@@ -1,6 +1,6 @@
 {
   "config_version": "mvp-1",
-  "manifest_path": "data/raw/books/manifest.books.json",
+  "manifest_path": "data/manifest.cnpm.json",
   "manifest_enums": {
     "course.status": [
       "temporary",
@@ -36,9 +36,7 @@
     "total": 100,
     "per_question_type": 20,
     "course_allocation": {
-      "COURSE-01": 34,
-      "COURSE-02": 33,
-      "COURSE-03": 33
+      "SE101": 100
     },
     "pass_threshold": 80
   },

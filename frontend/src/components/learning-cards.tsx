@@ -23,7 +23,7 @@ export const HIDE_SOURCE_KINDS = ["quiz", "diagnose", "mcq", "flashcards", "cloz
 /** Bỏ nhãn [n] / [1, 3] khỏi văn bản hiển thị. */
 export const noCite = (t: string) => t.replace(/\s*\[\d+(?:\s*,\s*\d+)*\]/g, "").replace(/,(\s*)(?=[.;,)]|$)/g, "");
 
-export type EvidenceSource = { id: string; title: string; page: number; content: string };
+export type EvidenceSource = { id: string; title: string; page: number; pageEnd?: number | null; content: string };
 
 /** Dẫn chứng: đoạn trích trong tài liệu + tên, trang, nút mở đúng trang nguồn. */
 function Evidence({ ns, sources, onCite }: { ns: number[]; sources: EvidenceSource[]; onCite: (n: number) => void }) {
@@ -36,7 +36,7 @@ function Evidence({ ns, sources, onCite }: { ns: number[]; sources: EvidenceSour
           <span className="font-semibold">Dẫn chứng: </span>
           {s.content ? <span className="italic">“{s.content.length > 320 ? `${s.content.slice(0, 320)}…` : s.content}”</span> : null}
           <span className={`block mt-1 text-[12px] ${muted}`}>
-            — {s.title}, trang {s.page}{" "}
+            — {s.title}, trang {s.page}{s.pageEnd && s.pageEnd !== s.page ? `–${s.pageEnd}` : ""}{" "}
             <button type="button" onClick={() => onCite(Number(s.id))} className="ml-1 underline cursor-pointer bg-transparent border-0 p-0 text-inherit">Mở nguồn</button>
           </span>
         </div>

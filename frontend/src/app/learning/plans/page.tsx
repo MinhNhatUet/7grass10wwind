@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Calendar, Clock, Home, Lightbulb, ListTodo, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
 import { api, type CourseItem } from "@/lib/api";
-import { MyPlans, goToChat } from "@/components/learning-hub";
+import { LessonPicker, MyPlans, describeLesson, goToChat, lessonLabel, type Chapter } from "@/components/learning-hub";
 
 const field = "w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-black/30 py-3 pr-4 text-[15px] outline-none focus:border-black focus:ring-2 focus:ring-black/10";
 
@@ -68,7 +68,7 @@ export default function LearningPlansPage() {
   const [courses, setCourses] = useState<CourseItem[] | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [courseId, setCourseId] = useState("");
-  const [goal, setGoal] = useState("");
+  const [lessons, setLessons] = useState<Chapter[]>([]); // D-52: chọn bài thay vì gõ nội dung
   const [days, setDays] = useState(7);
   const [mode, setMode] = useState<"count" | "dates">("count");
   const [dates, setDates] = useState<string[]>([]);
@@ -82,13 +82,17 @@ export default function LearningPlansPage() {
 
   function create(e: FormEvent) {
     e.preventDefault();
-    if (!goal.trim() || !courseId || (mode === "dates" && dates.length === 0)) return;
+    if (!lessons.length || !courseId || (mode === "dates" && dates.length === 0)) return;
+    const goal = lessons.map(lessonLabel).join("; ");
     const chosen = mode === "dates" ? dates : null;
     const when = chosen ? `vào ${chosen.length} ngày đã chọn (${chosen.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(", ")})` : `trong ${days} ngày`;
-    const content = `Lập lộ trình học: ${goal.trim()} ${when}, mỗi ngày ${minutes} phút`;
+    const content = `Lập lộ trình học ${lessons.length} bài (${lessons.map((l) => l.chapter).join(", ")}) ${when}, mỗi ngày ${minutes} phút`;
     goToChat(router, content, {
       content, assistant: "learning",
-      learning: { action: "plan", goal: goal.trim(), days: chosen ? chosen.length : days, minutes_per_day: minutes, ...(chosen ? { dates: chosen } : {}) },
+      learning: {
+        action: "plan", goal, days: chosen ? chosen.length : days, minutes_per_day: minutes,
+        ...(chosen ? { dates: chosen } : {}), ...(lessons.length > 1 ? { topics: lessons.map(describeLesson) } : {}),
+      },
     }, courseId);
   }
 
@@ -143,16 +147,16 @@ export default function LearningPlansPage() {
                   <span className="block text-sm font-semibold mb-2">Chọn môn học</span>
                   <span className="relative block">
                     <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <select value={courseId} onChange={(e) => setCourseId(e.target.value)} className={`${field} pl-11`}>
+                    <select value={courseId} onChange={(e) => { setCourseId(e.target.value); setLessons([]); }} className={`${field} pl-11`}>
                       {(courses ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       {courses?.length === 0 && <option value="">Bạn chưa được ghi danh môn nào</option>}
                     </select>
                   </span>
                 </label>
-                <label className="block">
-                  <span className="block text-sm font-semibold mb-2">Nội dung muốn học</span>
-                  <input autoFocus required value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Vd: Đồ thị Euler và Hamilton, cây khung…" className={`${field} pl-4`} />
-                </label>
+                <div>
+                  <span className="block text-sm font-semibold mb-2">Chọn bài muốn học</span>
+                  <LessonPicker courseId={courseId} max={15} picked={lessons} onChange={setLessons} />
+                </div>
                 <div role="radiogroup" aria-label="Cách chọn ngày học" className="flex rounded-xl bg-slate-100 dark:bg-white/10 p-1 text-sm">
                   {([["count", "Số ngày liên tiếp"], ["dates", "Chọn ngày trên lịch"]] as const).map(([k, v]) => (
                     <button key={k} type="button" role="radio" aria-checked={mode === k} onClick={() => setMode(k)}
@@ -180,7 +184,7 @@ export default function LearningPlansPage() {
                 </div>
                 <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-white/10">
                   <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2.5 rounded-xl font-medium text-slate-600 dark:text-slate-300 bg-transparent border-0 cursor-pointer hover:bg-slate-100 dark:hover:bg-white/10">Hủy</button>
-                  <button type="submit" disabled={!courseId || (mode === "dates" && dates.length === 0)}
+                  <button type="submit" disabled={!courseId || !lessons.length || (mode === "dates" && dates.length === 0)}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium bg-black text-white dark:bg-white dark:text-black border-0 cursor-pointer hover:opacity-80 disabled:opacity-50">
                     <Sparkles size={18} />
                     Tạo lộ trình bằng AI
