@@ -11,7 +11,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 
-from src.models.orm import User
+from src.models.orm import Chunk, User
 from src.services.retrieval import Hit, still_servable
 
 logger = logging.getLogger(__name__)
@@ -91,10 +91,39 @@ def supporting_quotes(text: str, used: list[tuple[int, Hit]], llm_quotes: Any) -
     return out
 
 
+def quote_page(chunk: Chunk, quote: str) -> int:
+    """Trang của đoạn trích trong chunk nhiều trang (D-49): tìm vị trí trích dẫn (bỏ qua khác biệt khoảng trắng)
+    rồi tra page_map. Chunk một trang hoặc không tìm thấy → trang của chunk."""
+    if not chunk.page_map:
+        return chunk.locator_value
+    words = re.findall(r"\S+", quote)[:8]
+    m = re.search(r"\s+".join(map(re.escape, words)), chunk.text) if words else None
+    return chunk.page_at(m.start()) if m else chunk.locator_value
+
+
+def cited_pages(chunk: Chunk, quote: str, answer: str, n: int) -> tuple[int, int]:
+    """Khoảng trang hỗ trợ ý gắn [n] (D-50). Chunk nhiều trang: mỗi trang trong page_map được chấm theo số từ trùng
+    với các câu gắn [n]; lấy các trang đạt ≥ 50% trang tốt nhất (và ≥ 3 từ) cùng trang của đoạn trích → (đầu, cuối)."""
+    quote_at = quote_page(chunk, quote)
+    if not chunk.page_map or len(chunk.page_map) < 2:
+        return quote_at, quote_at
+    claim = {w for w in re.findall(r"\w{3,}", _claims_for(answer, n).casefold())}
+    bounds = [*(start for start, _ in chunk.page_map[1:]), len(chunk.text)]
+    scores: dict[int, int] = {}
+    for (start, page), end in zip(chunk.page_map, bounds, strict=True):
+        words = set(re.findall(r"\w{3,}", chunk.text[start:end].casefold()))
+        scores[page] = max(scores.get(page, 0), len(claim & words))
+    best = max(scores.values(), default=0)
+    pages = {p for p, s in scores.items() if s >= 3 and s >= best * 0.5} | {quote_at}
+    return min(pages), max(pages)
+
+
 def format_sources(hits: list[Hit]) -> str:
     blocks = []
     for i, h in enumerate(hits, start=1):
-        loc = f"{'trang' if h.chunk.locator_type == 'page' else 'slide'} {h.chunk.locator_value}"
+        pages = [p for _, p in h.chunk.page_map or []]
+        span = f"{min(pages)}–{max(pages)}" if len(set(pages)) > 1 else str(h.chunk.locator_value)
+        loc = f"{'trang' if h.chunk.locator_type == 'page' else 'slide'} {span}"
         blocks.append(
             f'<nguon so="{i}" tai_lieu="{h.document.title}" phien_ban="{h.version.version_label}" vi_tri="{loc}">\n'
             f"{h.chunk.text}\n</nguon>"

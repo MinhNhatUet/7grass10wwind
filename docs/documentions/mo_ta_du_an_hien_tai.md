@@ -33,23 +33,16 @@ Người dùng **không cần chọn môn hay trợ lý**. Router (LLM) tự ch�
 | `reviewer` | Duyệt / từ chối / thu hồi tài liệu các môn được giao |
 | `admin` | Quản lý người dùng, quyền, audit, số liệu. **Không** truy cập nội dung học tập |
 
-Tài khoản demo được tạo bằng `python scripts/seed_users.py --fixtures demo`. Mật khẩu chỉ nằm trong `.env` (`DEMO_*_PASSWORD`), không ghi ở đây.
+**Demo hiện tại chỉ dùng môn SE101 Công nghệ phần mềm** (D-47, D-48). Dữ liệu thật nằm ở `data/artifacts` (output pipeline MinerU: inventory/metadata, chunk, trang, ảnh công thức; PDF gốc môn CNPM ở `data/artifacts/pdf`). Nạp bằng `python scripts/seed_cnpm.py --confirm-demo-usage [--reset]`: 15 bộ slide qua luồng tải lên → duyệt → phát hành, **chunk lấy từ artifacts** (76 chunk), app tự embedding (artifacts không có embedding). Script cũng ghi `data/manifest.cnpm.json` dùng cho eval, `seed_users.py` và `import_books.py`. Mật khẩu chỉ nằm trong `.env` (`DEMO_CNPM_*_PASSWORD`, `DEMO_KIEMDUYET01_PASSWORD`), không ghi ở đây.
 
 | login_id | Vai trò | Môn |
 |---|---|---|
-| sinhvien01 | student | COURSE-01, COURSE-02 |
-| sinhvien02 | student | COURSE-02, COURSE-03 |
-| giangvien01 | lecturer | COURSE-01 |
-| giangvien02 | lecturer | COURSE-02, COURSE-03 |
-| kiemduyet01 | reviewer | COURSE-01, 02, 03 |
-| admin01 | admin | — |
+| sinhvien | student | SE101 |
+| giangvien | lecturer | SE101 |
+| quantri | admin | — |
+| kiemduyet01 | reviewer | SE101 (người duyệt phía sau, cần cho luồng HITL — không dùng khi demo) |
 
-Các môn tạm dùng cho MVP:
-- COURSE-01 Toán rời rạc
-- COURSE-02 Cấu trúc dữ liệu và giải thuật
-- COURSE-03 Phân tích và thiết kế thuật toán
-
-Dữ liệu dev là sách thật có giấy phép tự do, đặt tên file theo tựa sách. Hiện 2 cuốn đã phát hành ở COURSE-01 (*Elementary Number Theory*, *An Introduction to Combinatorics and Graph Theory*). Hai môn còn lại chưa có tài liệu đã phát hành.
+Dữ liệu dev cũ (3 môn tạm COURSE-01..03, sách dev, tài khoản và hội thoại cũ) đã được gỡ khỏi `data/` và DB; bản sao nằm trong `backup/` (gitignore). Audit log giữ nguyên (BR-11).
 
 ## 3. Kiến trúc
 
@@ -128,7 +121,7 @@ Về hiển thị nguồn trong bài tập: khi vừa tạo đề hay lộ trìn
 ```bash
 # Backend (Python 3.11+, .venv)
 pip install -r requirements.txt && cp .env.example .env
-python scripts/seed_users.py --fixtures demo
+python scripts/seed_cnpm.py --confirm-demo-usage   # môn SE101 + 3 tài khoản demo + tài liệu (D-47)
 uvicorn src.main:app --reload --port 8000        # GET /health
 
 # Frontend
@@ -150,7 +143,7 @@ Cấu hình chính (`src/config.py` / `.env`):
 ## 8. Hạn chế và việc còn mở
 
 - Gemini embedding free tier giới hạn khoảng 1000 request/ngày. Hết quota thì trả 503 `EMBEDDING_QUOTA`, chat vẫn báo lỗi rõ ràng.
-- Chỉ COURSE-01 có tài liệu đã phát hành, nên các môn khác sẽ trả lời "chưa có tài liệu".
+- Chỉ môn SE101 có dữ liệu; 8 môn thật còn lại trong `data/artifacts` chưa nạp vì chưa có PDF gốc. Chunk artifacts lớn (~2.000 ký tự, nhiều trang) nên trích dẫn mở ở trang đầu của chunk.
 - Google Calendar là link thêm sự kiện + file `.ics`, **không** đồng bộ OAuth hai chiều (D-37).
 - Quiz Builder là tính năng ngoài PRD 7.2 (D-38), cần báo nhóm.
 - Nhóm code mẫu của template (`api/routes.py`, `agents/graph.py`, `state.py`, `nodes/example_node.py`, `tools/example_tool.py`) còn trong repo; gỡ trong một thay đổi riêng.

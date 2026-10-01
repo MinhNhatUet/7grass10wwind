@@ -111,6 +111,13 @@ class LearningOptions(BaseModel):
         None, ge=3, le=20
     )  # số câu/thẻ người học chọn khi ôn tập  # D-37: ôn tập một buổi của lộ trình → server lấy môn từ lộ trình
     dates: list[str] | None = Field(None, max_length=60)  # D-46: ngày học cụ thể (YYYY-MM-DD) do người học chọn
+    topics: list[str] | None = Field(None, max_length=15)  # D-51/D-52: bài/chương đã chọn (ôn tập ≤ 5, lộ trình ≤ 15)
+
+    @field_validator("topics")
+    @classmethod
+    def _topics(cls, v: list[str] | None) -> list[str] | None:
+        cleaned = [t.strip()[:600] for t in v or [] if t and t.strip()]
+        return cleaned or None
 
     @field_validator("dates")
     @classmethod

@@ -3,7 +3,7 @@
 Chạy từ gốc repo:
     python scripts/validate_manifest.py [--manifest PATH] [--check-files] [--report PATH]
 
-Manifest mặc định: config.manifest_path (MVP: data/raw/books/manifest.books.json).
+Manifest mặc định: config.manifest_path (demo CNPM: data/manifest.cnpm.json — D-48).
 Script chỉ BÁO CÁO, không sửa manifest.
 """
 

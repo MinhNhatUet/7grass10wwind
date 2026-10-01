@@ -31,7 +31,7 @@ from src.models.orm import (
     new_id,
 )
 from src.services import acl, audit
-from src.services.assistants import AssistantResult, LlmError, learning
+from src.services.assistants import AssistantResult, LlmError, cited_pages, learning
 from src.services.errors import AppError, bad_request, forbidden, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import EmbeddingUnavailableError, document_scope, still_servable
@@ -152,7 +152,7 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
                 "document_title": db.get(Document, c.document_id).title,
                 "version_id": c.version_id,
                 "chunk_id": c.chunk_id,
-                "locator": {"type": c.locator_type, "value": c.locator_value},
+                "locator": {"type": c.locator_type, "value": c.locator_value, "end": c.locator_end},
                 "quote": c.quote,
             }
         )
@@ -255,6 +255,8 @@ def _persist_answer(
     db.add(msg)
     db.flush()
     for n, hit in result.used:
+        quote = result.quotes.get(n) or hit.chunk.text[:QUOTE_CHARS]
+        first, last = cited_pages(hit.chunk, quote, result.content, n)  # D-50: ý có thể trải nhiều trang
         db.add(
             Citation(
                 message_id=msg.id,
@@ -263,8 +265,9 @@ def _persist_answer(
                 version_id=hit.version.id,
                 document_id=hit.document.id,
                 locator_type=hit.chunk.locator_type,
-                locator_value=hit.chunk.locator_value,
-                quote=result.quotes.get(n) or hit.chunk.text[:QUOTE_CHARS],
+                locator_value=first,  # D-49: trang thật trong chunk nhiều trang, không phải trang đầu chunk
+                locator_end=last if last != first else None,
+                quote=quote,
                 source_revision=hit.version.revision,
             )
         )

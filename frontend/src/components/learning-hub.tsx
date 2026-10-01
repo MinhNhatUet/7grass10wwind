@@ -82,9 +82,10 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
       </section>
 
       <TopicPractice courses={courses} busy={false}
-        onStart={(courseId, topic, c, label) => {
+        onStart={(courseId, topics, c, label) => {
           const content = `Ôn tập ${label} — ${FORMAT_LABEL[c.action]}, ${c.count} câu`;
-          goToChat(router, content, { content, assistant: "learning", learning: { action: c.action, count: c.count, topic } }, courseId);
+          const topic = topics.length > 1 ? `Ôn tập tổng hợp ${topics.length} bài: ${topics.join(" | ")}. Câu hỏi trải đều các bài đã chọn.` : topics[0];
+          goToChat(router, content, { content, assistant: "learning", learning: { action: c.action, count: c.count, topic, ...(topics.length > 1 ? { topics } : {}) } }, courseId);
         }} />
 
       <section className={card}>
@@ -241,90 +242,121 @@ export function MyPlans() {
   );
 }
 
-type Chapter = { chapter: string; title: string; document: string; page: number | null; sections: string[] };
+export type Chapter = { chapter: string; title: string; document: string; page: number | null; sections: string[]; kind?: "lesson" };
+const unit = (c: Chapter) => (c.kind === "lesson" ? "Bài" : "Chương"); // bộ slide = một bài (D-47)
+const keyOf = (c: Chapter) => `${c.document}::${c.chapter}::${c.title}`;
+/** Tên ngắn để hiển thị: "Bài 3: Tiến trình…" */
+export const lessonLabel = (c: Chapter) => `${unit(c)} ${c.chapter}: ${c.title}`;
+/** Mô tả đầy đủ gửi trợ lý (dùng truy xuất riêng từng bài — D-51). */
+export const describeLesson = (c: Chapter) =>
+  `${unit(c)} ${c.chapter} "${c.title}" (${c.document})${c.sections.length ? ` — gồm các mục: ${c.sections.join("; ")}` : ""}`;
 
-/** Ôn tập theo CHƯƠNG (D-44): mục lục tài liệu → chương lớn kèm các mục con; câu hỏi trải khắp chương. */
-function TopicPractice({ courses, busy, onStart }: { courses: CourseItem[]; busy: boolean; onStart: (courseId: string, topic: string, c: PracticeChoice, label: string) => void }) {
-  const [courseId, setCourseId] = useState(courses[0]?.id ?? "");
+/** Danh sách bài/chương của môn để BẤM CHỌN (nhiều mục, tối đa `max`) — dùng cho ôn tập và lộ trình (D-51, D-52). */
+export function LessonPicker({ courseId, max, picked, onChange }: { courseId: string; max: number; picked: Chapter[]; onChange: (v: Chapter[]) => void }) {
   const [chapters, setChapters] = useState<Chapter[] | null>(null);
-  const [text, setText] = useState(""); // vừa là ô lọc, vừa là chủ đề tự gõ
-  const [picked, setPicked] = useState<Chapter | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     if (!courseId) return;
     let alive = true;
-    // Chương của các tài liệu trong môn mà user được đọc (server lọc quyền)
+    // Bài/chương của các tài liệu trong môn mà user được đọc (server lọc quyền)
     api<{ items: Chapter[] }>(`/learning/topics?course_id=${encodeURIComponent(courseId)}`)
       .then((r) => alive && setChapters(r.items))
       .catch(() => alive && setChapters([]));
     return () => { alive = false; };
   }, [courseId]);
 
-  const q = text.trim().toLowerCase();
+  const q = filter.trim().toLowerCase();
   const shown = (chapters ?? []).filter((c) => !q || `${c.title} ${c.sections.join(" ")}`.toLowerCase().includes(q));
   const byDoc = shown.reduce<Record<string, Chapter[]>>((acc, c) => ((acc[c.document] ||= []).push(c), acc), {});
-  const label = picked ? `Chương ${picked.chapter}: ${picked.title}` : text.trim();
-  const topic = picked
-    ? `Chương ${picked.chapter} "${picked.title}" (${picked.document})${picked.sections.length ? ` — gồm các mục: ${picked.sections.join("; ")}` : ""}. Câu hỏi trải đều các mục của chương.`
-    : text.trim();
+  const chosen = new Set(picked.map(keyOf));
+  const toggle = (c: Chapter) =>
+    onChange(chosen.has(keyOf(c)) ? picked.filter((x) => keyOf(x) !== keyOf(c)) : picked.length < max ? [...picked, c] : picked);
+  const all = chapters ?? [];
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Lọc danh sách bài"
+          placeholder="Lọc danh sách (vd. kiểm thử, thiết kế, yêu cầu…)"
+          className="min-w-[220px] flex-1 rounded-xl border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-3 py-2 text-sm outline-none" />
+        {max >= all.length && all.length > 0 && picked.length < all.length && (
+          <button type="button" className={btn2} onClick={() => onChange(all)}>Chọn tất cả</button>
+        )}
+      </div>
+      <div className="mt-2 max-h-96 overflow-y-auto rounded-xl border border-black/5 dark:border-white/10 p-2">
+        {chapters === null ? (
+          <p className={`p-2 text-sm ${muted}`}>Đang lấy danh sách bài…</p>
+        ) : chapters.length === 0 ? (
+          <p className={`p-2 text-sm ${muted}`}>Môn này chưa có tài liệu đã phát hành.</p>
+        ) : shown.length === 0 ? (
+          <p className={`p-2 text-sm ${muted}`}>Không có bài nào khớp “{filter}”.</p>
+        ) : (
+          Object.entries(byDoc).map(([doc, list]) => (
+            <div key={doc} className="mb-3">
+              <p className={`px-2 py-1 text-[12px] font-semibold uppercase tracking-wide ${muted}`}>{doc} · {list.length} {list[0]?.kind === "lesson" ? "bài" : "chương"}</p>
+              <div className="grid gap-2 px-1 sm:grid-cols-2">
+                {list.map((c) => {
+                  const on = chosen.has(keyOf(c));
+                  const full = !on && picked.length >= max;
+                  return (
+                    <button key={keyOf(c)} type="button" onClick={() => toggle(c)} aria-pressed={on} disabled={full}
+                      title={full ? `Tối đa ${max} bài` : c.page ? `Bắt đầu ở trang ${c.page}` : undefined}
+                      className={`rounded-xl border-2 p-3 text-left cursor-pointer bg-transparent disabled:cursor-not-allowed disabled:opacity-40 ${on ? "border-[#4f2b96] bg-[#f5f3ff] dark:bg-white/10" : "border-black/10 dark:border-white/15 hover:border-[#4f2b96]"}`}>
+                      <span className="flex items-start gap-2">
+                        <span aria-hidden="true" className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[12px] ${on ? "border-[#4f2b96] bg-[#4f2b96] text-white" : "border-black/20 dark:border-white/30"}`}>{on ? "✓" : ""}</span>
+                        <span>
+                          <span className="block text-[14px] font-medium"><span className={muted}>{unit(c)} {c.chapter} · </span>{c.title}</span>
+                          {c.sections.length > 0 && (
+                            <span className={`mt-1 block text-[12px] ${muted}`}>
+                              {c.sections.slice(0, 4).join(" · ")}{c.sections.length > 4 ? ` · +${c.sections.length - 4} mục` : ""}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      {picked.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]">
+          <span className="font-medium">Đã chọn {picked.length}/{max}:</span>
+          {picked.map((c) => (
+            <button key={keyOf(c)} type="button" onClick={() => toggle(c)} aria-label={`Bỏ ${unit(c)} ${c.chapter}`}
+              className="rounded-full bg-[#f5f3ff] dark:bg-white/10 px-3 py-1 text-[12px] cursor-pointer border-0">{unit(c)} {c.chapter} · {c.title} ✕</button>
+          ))}
+          <button type="button" className={btn2} onClick={() => onChange([])}>Bỏ chọn hết</button>
+        </div>
+      ) : (
+        <p className={`mt-2 text-[12px] ${muted}`}>Bấm vào các bài muốn chọn (tối đa {max}).</p>
+      )}
+    </div>
+  );
+}
+
+/** Ôn tập: CHỌN một hoặc nhiều bài/chương có sẵn (D-44, D-51) — không phải tự gõ. */
+function TopicPractice({ courses, busy, onStart }: { courses: CourseItem[]; busy: boolean; onStart: (courseId: string, topics: string[], c: PracticeChoice, label: string) => void }) {
+  const [courseId, setCourseId] = useState(courses[0]?.id ?? "");
+  const [picked, setPicked] = useState<Chapter[]>([]);
+  const label = picked.length === 1 ? lessonLabel(picked[0]) : picked.map((c) => `${unit(c)} ${c.chapter}`).join(", ");
 
   return (
     <section className={card}>
-      <h2 className="flex items-center gap-2 font-semibold"><ClipboardList size={18} /> Ôn tập theo chương</h2>
-      <p className={`mt-1 text-sm ${muted}`}>Chọn môn, chọn một chương (gõ để lọc theo tên chương hoặc mục bên trong) hoặc tự gõ chủ đề, rồi chọn hình thức và số câu.</p>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <h2 className="flex items-center gap-2 font-semibold"><ClipboardList size={18} /> Ôn tập theo bài</h2>
+      <p className={`mt-1 text-sm ${muted}`}>Chọn môn, bấm chọn một hoặc nhiều bài (tối đa 5), rồi chọn hình thức và số câu. Câu hỏi trải đều các bài đã chọn.</p>
+      <div className="mt-3 mb-2">
         <select value={courseId} aria-label="Môn"
-          onChange={(e) => { if (e.target.value === courseId) return; setCourseId(e.target.value); setChapters(null); setPicked(null); setText(""); }}
+          onChange={(e) => { if (e.target.value === courseId) return; setCourseId(e.target.value); setPicked([]); }}
           className="rounded-xl border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-3 py-2 text-sm">
           {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <input value={picked ? label : text} aria-label="Lọc hoặc gõ chủ đề"
-          onChange={(e) => { setPicked(null); setText(e.target.value); }}
-          placeholder="Lọc chương (vd. graph, prime, hamilton…) hoặc gõ chủ đề của bạn"
-          className="min-w-[260px] flex-1 rounded-xl border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-3 py-2 text-sm outline-none" />
-        {picked && <button type="button" className={btn2} onClick={() => { setPicked(null); setText(""); }}>Bỏ chọn</button>}
       </div>
-
-      {picked ? (
-        picked.sections.length > 0 && (
-          <p className={`mt-2 text-[12px] ${muted}`}>{picked.document} · gồm {picked.sections.length} mục: {picked.sections.join(" · ")}</p>
-        )
-      ) : (
-        <div className="mt-2 max-h-96 overflow-y-auto rounded-xl border border-black/5 dark:border-white/10 p-2">
-          {chapters === null ? (
-            <p className={`p-2 text-sm ${muted}`}>Đang lấy danh sách chương…</p>
-          ) : chapters.length === 0 ? (
-            <p className={`p-2 text-sm ${muted}`}>Môn này chưa có tài liệu đã phát hành — bạn vẫn có thể tự gõ chủ đề.</p>
-          ) : shown.length === 0 ? (
-            <p className={`p-2 text-sm ${muted}`}>Không có chương nào khớp “{text}”. Bạn có thể ôn tập đúng chủ đề vừa gõ.</p>
-          ) : (
-            Object.entries(byDoc).map(([doc, list]) => (
-              <div key={doc} className="mb-3">
-                <p className={`px-2 py-1 text-[12px] font-semibold uppercase tracking-wide ${muted}`}>{doc} · {list.length} chương</p>
-                <div className="grid gap-2 px-1 sm:grid-cols-2">
-                  {list.map((c) => (
-                    <button key={`${doc}-${c.chapter}`} type="button" onClick={() => setPicked(c)} title={c.page ? `Bắt đầu ở trang ${c.page}` : undefined}
-                      className="rounded-xl border border-black/10 dark:border-white/15 bg-transparent p-3 text-left cursor-pointer hover:border-[#4f2b96] hover:bg-[#f5f3ff] dark:hover:bg-white/10">
-                      <span className="block text-[14px] font-medium"><span className={muted}>Chương {c.chapter} · </span>{c.title}</span>
-                      {c.sections.length > 0 && (
-                        <span className={`mt-1 block text-[12px] ${muted}`}>
-                          {c.sections.slice(0, 4).join(" · ")}{c.sections.length > 4 ? ` · +${c.sections.length - 4} mục` : ""}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {topic ? (
-        <PracticePicker busy={busy} onPick={(c) => onStart(courseId, topic, c, label)} />
-      ) : (
-        <p className={`mt-2 text-[12px] ${muted}`}>Chọn một chương hoặc gõ chủ đề để chọn hình thức ôn tập.</p>
-      )}
+      <LessonPicker courseId={courseId} max={5} picked={picked} onChange={setPicked} />
+      {picked.length > 0 && <PracticePicker busy={busy} onPick={(choice) => onStart(courseId, picked.map(describeLesson), choice, label)} />}
     </section>
   );
 }

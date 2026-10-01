@@ -88,7 +88,7 @@ class EvalConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Manifest (data/raw/books/manifest.books.json) — giữ nguyên tên trường của file thật
+# Manifest (data/manifest.cnpm.json — D-48) — giữ nguyên tên trường của file thật
 # ---------------------------------------------------------------------------
 
 

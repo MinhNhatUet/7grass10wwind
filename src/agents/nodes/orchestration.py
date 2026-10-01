@@ -197,7 +197,6 @@ def hub_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]
 
 def learning_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     d = _deps(config)
-    db, user, course_id = d["db"], d["user"], state["course_id"]
     route, opts = state["route"], state.get("options") or {}
     action = route.get("learning_action") or "explain"
     question = state["question"]
@@ -206,6 +205,16 @@ def learning_node(state: OrchestratorState, config: RunnableConfig) -> dict[str,
     topic = opts.get("topic") or route.get("topic") or question
     query = _retrieval_query(topic, route)
     count = _int(opts.get("count"))  # số câu/thẻ người học chọn (3–20, đã kiểm ở API)
+    # D-51: người học chọn nhiều chủ đề → truy xuất riêng từng chủ đề (multi_topic) để câu hỏi trải đều
+    with academic.multi_topic(opts.get("topics")):
+        return _learning_action(d, state, action, topic, query, count)
+
+
+def _learning_action(
+    d: dict[str, Any], state: OrchestratorState, action: str, topic: str, query: str, count: int | None
+) -> dict[str, Any]:
+    db, user, course_id = d["db"], d["user"], state["course_id"]
+    route, opts, question = state["route"], state.get("options") or {}, state["question"]
     if action == "quiz":
         result = learning.quiz(db, user, course_id, topic, query, n=count)
     elif action == "mcq":
