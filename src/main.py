@@ -18,6 +18,7 @@ from src.db import get_engine, init_db
 from src.models.schemas import ErrorBody, ErrorDetail
 from src.services.documents import resume_interrupted_jobs
 from src.services.errors import AppError
+from src.services.retention import start_retention_job
 
 
 @asynccontextmanager
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     init_db()
     if settings.app_env != "test":
         resume_interrupted_jobs()
+        start_retention_job()
     yield
     print("Shutting down...")
 
@@ -64,8 +66,14 @@ for r in (
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     """Lỗi kỹ thuật theo PRD 11.4: {"status": "error", "error": {"code", "retryable"}}."""
     body = ErrorBody(error=ErrorDetail(code=exc.code, retryable=exc.retryable, message=exc.message))
-    headers = {"WWW-Authenticate": "Bearer"} if exc.http_status == 401 else None
-    return JSONResponse(status_code=exc.http_status, content=body.model_dump(exclude_none=True), headers=headers)
+    headers = {}
+    if exc.http_status == 401:
+        headers["WWW-Authenticate"] = "Bearer"
+    if exc.retry_after is not None:
+        headers["Retry-After"] = str(exc.retry_after)
+    return JSONResponse(
+        status_code=exc.http_status, content=body.model_dump(exclude_none=True), headers=headers if headers else None
+    )
 
 
 @app.get("/health")

@@ -60,6 +60,16 @@ def init_db() -> None:
     _migrate_conversation_document(engine)
     _migrate_chunk_page_map(engine)
     _migrate_citation_locator_end(engine)
+    _migrate_usage_tokens(engine)
+
+
+def _migrate_usage_tokens(engine: Engine) -> None:
+    """D-53 (nhánh quanghung): usage_events lưu số token + chi phí ước tính; DB cũ thêm cột, dòng cũ = NULL."""
+    with engine.begin() as conn:
+        have = {c["name"] for c in inspect(conn).get_columns("usage_events")}
+        for name, sql_type in (("tokens_input", "INTEGER"), ("tokens_output", "INTEGER"), ("estimated_cost", "FLOAT")):
+            if name not in have:
+                conn.exec_driver_sql(f"ALTER TABLE usage_events ADD COLUMN {name} {sql_type}")
 
 
 def _migrate_citation_locator_end(engine: Engine) -> None:
