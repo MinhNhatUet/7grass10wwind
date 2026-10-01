@@ -108,9 +108,9 @@ export default function LecturerDashboard({ courseId }: { courseId: string }) {
           <CardContent className="flex-1 overflow-y-auto pr-2 space-y-4">
             {feedbacks.length === 0 && <p className="text-sm text-gray-500">Chưa có phản hồi nào.</p>}
             {feedbacks.map(fb => (
-              <div key={fb.id} className={`border rounded-lg p-4 ${fb.status === 'Resolved' ? 'bg-gray-50' : 'bg-white border-slate-200 shadow-sm'}`}>
+              <div key={fb.id} className={`border rounded-lg p-4 ${fb.status === 'Resolved' ? 'bg-gray-50' : 'bg-white border-blue-100 shadow-sm'}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <Badge variant={fb.status === 'Resolved' ? "outline" : "default"} className={fb.status !== 'Resolved' ? 'bg-slate-800 text-white' : ''}>
+                  <Badge variant={fb.status === 'Resolved' ? "outline" : "default"} className={fb.status !== 'Resolved' ? 'bg-blue-100 text-blue-700' : ''}>
                     {fb.status}
                   </Badge>
                   <span className="text-xs text-gray-400">{new Date(fb.created_at).toLocaleString()}</span>
@@ -126,7 +126,7 @@ export default function LecturerDashboard({ courseId }: { courseId: string }) {
                 )}
 
                 {resolvingId === fb.id ? (
-                  <div className="mt-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div className="mt-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
                     <select 
                       className="w-full text-sm p-2 mb-2 rounded border border-gray-200"
                       value={resolveStatus}
@@ -142,7 +142,7 @@ export default function LecturerDashboard({ courseId }: { courseId: string }) {
                       onChange={e => setResolveNote(e.target.value)}
                     />
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={() => handleResolve(fb.id)} className="bg-slate-900 text-white hover:bg-black">Lưu</Button>
+                      <Button size="sm" onClick={() => handleResolve(fb.id)} className="bg-blue-600">Lưu</Button>
                       <Button size="sm" variant="outline" onClick={() => setResolvingId(null)}>Hủy</Button>
                     </div>
                   </div>
@@ -177,7 +177,7 @@ export default function LecturerDashboard({ courseId }: { courseId: string }) {
                 <div key={i} className="flex gap-3 text-sm">
                   <div className="mt-0.5 text-gray-400"><CheckCircle2 size={16}/></div>
                   <div>
-                    <p><span className="font-medium text-gray-700">{h.actor}</span> đã <span className="font-medium text-slate-800">{h.action}</span></p>
+                    <p><span className="font-medium text-gray-700">{h.actor}</span> đã <span className="font-medium text-blue-600">{h.action}</span></p>
                     <p className="text-xs text-gray-500 mt-0.5">{h.object_type}: {h.object_id}</p>
                     <p className="text-xs text-gray-400 mt-1">{new Date(h.created_at).toLocaleString()}</p>
                   </div>
