@@ -286,6 +286,9 @@ class UsageEvent(Base):
     status: Mapped[str] = mapped_column(String(30))
     latency_ms: Mapped[float | None] = mapped_column(Float)
     request_id: Mapped[str | None] = mapped_column(String(40))
+    tokens_input: Mapped[int | None] = mapped_column(Integer)
+    tokens_output: Mapped[int | None] = mapped_column(Integer)
+    estimated_cost: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
 
 

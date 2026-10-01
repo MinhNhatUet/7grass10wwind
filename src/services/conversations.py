@@ -237,7 +237,7 @@ def _check_quota(db: Session, user: User) -> None:
         .where(UsageEvent.user_id == user.id, UsageEvent.created_at >= since)
     )
     if (n or 0) >= get_settings().daily_question_quota:
-        raise AppError("QUOTA_EXCEEDED", 429, retryable=True)
+        raise AppError("QUOTA_EXCEEDED", 429, retryable=True, retry_after=3600)
 
 
 def _persist_answer(
@@ -330,6 +330,7 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
 
     started = time.perf_counter()
     status, chosen, routed_course = "error", mode, None
+    result = None
     try:
         with document_scope(conv.document_id):
             result, trace = orchestrator.run(
@@ -368,6 +369,9 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
                 status=status,
                 latency_ms=(time.perf_counter() - started) * 1000,
                 request_id=request_id,
+                tokens_input=result.tokens_input if result else 0,
+                tokens_output=result.tokens_output if result else 0,
+                estimated_cost=0.0,
             )
         )
         db.commit()

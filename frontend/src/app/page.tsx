@@ -2,31 +2,18 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Paperclip, ArrowUp, Zap, FileText, Menu, Plus, MessageSquare, X, ChevronRight, BookOpen, User, Compass, MoreHorizontal, Pencil, Pin, Folder, Share, Archive, Trash2, Sun, Moon, ShieldCheck, Check, ThumbsUp, ThumbsDown, Target, LogOut } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { mathDelims, rehypeMathPlugins, remarkMathPlugins } from "../components/math-text";
 import { motion, AnimatePresence } from "framer-motion";
 import * as HoverCard from '@radix-ui/react-hover-card';
 import { useTheme } from "next-themes";
 import SourceReader from "../components/source-reader";
 import { API, responseError } from "../lib/api-errors";
-import { HIDE_SOURCE_KINDS, LearningCards, PENDING_SEND, QuickStart, noCite } from "../components/learning-cards";
-import type { ChatMessage, HubResult } from "../lib/api";
+import { PENDING_SEND, QuickStart } from "../components/learning-cards";
+import { ChatMessage } from "@/components/chat/ChatMessage";
+import type { Message, Source } from "@/types/chat";
 
 // Router chọn trợ lý (FR-11, D-27): không ép "academic"; nhãn hiển thị theo trợ lý router đã chọn
 const AGENT: Record<string, string> = { academic: "Academic Assistant", learning: "Learning Assistant", hub: "Knowledge Hub", router: "EDU-04" };
 
-// MOCK DATA TYPES
-type Role = 'user' | 'assistant';
-type Source = { id: string; title: string; page: number; pageEnd?: number | null; content: string; url?: string; citationId?: string; documentId: string; versionId: string };
-type Message = {
-  id: string;
-  role: Role;
-  content: string;
-  agentName?: string;
-  sources?: Source[];
-  meta?: ChatMessage["metadata"]; // thẻ học: quiz, lộ trình, flashcard… (learning-cards)
-};
 
 const MOCK_HISTORY = [
   { id: 'h1', title: 'Tạo giao diện HTML CSS JavaScript' },
@@ -57,7 +44,6 @@ export default function UnifiedChat() {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Feedback state
-  const [feedbackSent, setFeedbackSent] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -136,7 +122,6 @@ export default function UnifiedChat() {
     try {
       const token = localStorage.getItem("token");
       if (!token) return;
-      setFeedbackSent(prev => ({ ...prev, [msgId]: type }));
       await fetch(`${API}/answers/${msgId}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -596,100 +581,14 @@ export default function UnifiedChat() {
               >
                 <div className="max-w-[768px] mx-auto flex flex-col gap-6 pt-4 pb-8">
                   {messages.map((msg) => (
-                    <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'assistant' && (
-                        <div className="w-[32px] h-[32px] shrink-0 rounded-full bg-gradient-to-br from-[#c69aff] to-[#8c55db] flex items-center justify-center mt-1">
-                          <Zap size={16} className="text-black dark:text-white" />
-                        </div>
-                      )}
-                      
-                      <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-black/5 dark:bg-[#2f2f2f] text-black dark:text-white rounded-[20px] px-5 py-3' : 'bg-blue-50/80 dark:bg-[#1a2b4c]/80 text-blue-900 dark:text-blue-100 rounded-[20px] px-5 py-4'}`}>
-                        {msg.agentName && (
-                          <div className="text-[12px] font-semibold text-[#c69aff] mb-2 uppercase tracking-wide">
-                            {msg.agentName}
-                          </div>
-                        )}
-                        
-                        {msg.role === 'user' ? (
-                          <div className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</div>
-                        ) : (
-                          <div className="prose prose dark:prose-invert max-w-none text-[15px] leading-relaxed prose-p:mb-4 prose-a:text-blue-600 dark:prose-a:text-[#60a5fa] prose-a:no-underline hover:prose-a:underline">
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm, ...remarkMathPlugins]}
-                              rehypePlugins={rehypeMathPlugins}
-                              components={{
-                                a: ({node, ...props}) => {
-                                  return (
-                                    <a 
-                                      {...props} 
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        const matchedSource = msg.sources?.find(s => s.url === props.href);
-                                        if (matchedSource) {
-                                          setActiveSource(matchedSource);
-                                        } else if (props.href) {
-                                          window.open(props.href, '_blank');
-                                        }
-                                      }}
-                                      className="cursor-pointer"
-                                    />
-                                  );
-                                }
-                              }}
-                            >
-                              {mathDelims(HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "") ? noCite(msg.content) : msg.content)}
-                            </ReactMarkdown>
-                          </div>
-                        )}
-                        {msg.role === 'assistant' && (
-                          <LearningCards
-                            meta={msg.meta}
-                            messageId={msg.id}
-                            onCite={(n) => { const src = msg.sources?.find((x) => String(x.id) === String(n)); if (src) setActiveSource(src); }}
-                            onChanged={() => { if (activeConversationId) void loadConversation(activeConversationId); }}
-                            onSend={(content, body) => void handleSend(undefined, { content, body })}
-                            onOpenHub={(r: HubResult) => setActiveSource({ id: r.chunk_id, title: r.title, page: r.locator.value, content: r.snippet, documentId: r.document_id, versionId: r.version_id })}
-                            sources={msg.sources}
-                          />
-                        )}
-                        {msg.role === 'assistant' && !!msg.sources?.length && !HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "") && (
-                          <section aria-label="Nguồn tham khảo" className="mt-4 border-t border-blue-200 dark:border-blue-800 pt-3">
-                            <h3 className="text-sm font-semibold mb-2">Nguồn tham khảo</h3>
-                            <ul className="space-y-2">
-                              {msg.sources.map((source) => (
-                                <li key={source.id}>
-                                  <button type="button" onClick={() => setActiveSource(source)} className="w-full text-left rounded-lg p-3 bg-white/60 dark:bg-black/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 cursor-pointer">
-                                    <span className="block text-sm font-medium">[{source.id}] {source.title} — Trang {source.page}{source.pageEnd && source.pageEnd !== source.page ? `–${source.pageEnd}` : ""}</span>
-                                    {source.content && <span className="block text-xs mt-1 opacity-80 whitespace-pre-wrap">“{source.content}”</span>}
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          </section>
-                        )}
-                        {msg.role === 'assistant' && (
-                          <div className="mt-3 flex items-center gap-2 border-t border-blue-200/50 dark:border-blue-800/50 pt-2">
-                            <button 
-                              onClick={() => submitFeedback(msg.id, "helpful")}
-                              className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 ${feedbackSent[msg.id] === 'helpful' ? 'text-green-600 dark:text-green-400' : 'text-black/50 dark:text-white/50'}`}
-                              title="Hữu ích"
-                            >
-                              <ThumbsUp size={14} className={feedbackSent[msg.id] === 'helpful' ? 'fill-current' : ''} />
-                            </button>
-                            <button 
-                              onClick={() => submitFeedback(msg.id, "not_helpful")}
-                              className={`p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/10 ${feedbackSent[msg.id] === 'not_helpful' ? 'text-red-500' : 'text-black/50 dark:text-white/50'}`}
-                              title="Không hữu ích"
-                            >
-                              <ThumbsDown size={14} className={feedbackSent[msg.id] === 'not_helpful' ? 'fill-current' : ''} />
-                            </button>
-                            {feedbackSent[msg.id] && (
-                              <span className="text-[11px] text-black/40 dark:text-white/40 ml-1">Đã gửi phản hồi</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
+                    <ChatMessage
+                      key={msg.id}
+                      msg={msg}
+                      onSourceClick={setActiveSource}
+                      onSubmitFeedback={submitFeedback}
+                      onChanged={() => { if (activeConversationId) void loadConversation(activeConversationId); }}
+                      onSend={(content, body) => void handleSend(undefined, { content, body })}
+                    />
                   ))}
                   
                   {isLoading && (

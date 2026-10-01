@@ -35,7 +35,6 @@ class RegisterRequest(BaseModel):
     login_id: str = Field(..., min_length=1, max_length=200)
     password: str = Field(..., min_length=1, max_length=200)
     display_name: str | None = None
-    role: Role = "student"
 
 
 class UserPublic(BaseModel):

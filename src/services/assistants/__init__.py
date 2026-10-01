@@ -52,6 +52,8 @@ class AssistantResult:
     used: list[tuple[int, Hit]] = field(default_factory=list)  # (số [n], hit)
     payload: dict[str, Any] = field(default_factory=dict)
     quotes: dict[int, str] = field(default_factory=dict)  # số [n] → đoạn trích hỗ trợ ý (đã kiểm có trong nguồn)
+    tokens_input: int = 0
+    tokens_output: int = 0
 
 
 QUOTE_MAX_CHARS = 400
