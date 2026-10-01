@@ -31,7 +31,7 @@ from src.models.orm import (
     new_id,
 )
 from src.services import acl, audit
-from src.services.assistants import AssistantResult, LlmError, cited_pages, learning
+from src.services.assistants import AssistantResult, LlmError, cited_pages, learning, occurrence_evidence
 from src.services.errors import AppError, bad_request, forbidden, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import EmbeddingUnavailableError, document_scope, still_servable
@@ -243,6 +243,9 @@ def _check_quota(db: Session, user: User) -> None:
 def _persist_answer(
     db: Session, conv: Conversation, request_id: str, assistant: str, result: AssistantResult
 ) -> Message:
+    payload = dict(result.payload or {})
+    if result.used:  # D-56: đoạn trích riêng cho từng lần [n] xuất hiện, hiện ngay tại [n] trong chat
+        payload["evidence"] = occurrence_evidence(result.content, result.used)
     msg = Message(
         conversation_id=conv.id,
         role="assistant",
@@ -250,7 +253,7 @@ def _persist_answer(
         status=result.status,
         assistant=assistant,
         request_id=request_id,
-        payload=result.payload,
+        payload=payload,
     )
     db.add(msg)
     db.flush()
@@ -393,7 +396,8 @@ def _attach_plan(
     )  # fmt: skip
     db.add(plan)
     db.flush()
-    msg.payload = {**(msg.payload or {}), "kind": "plan", "plan_id": plan.id}
+    rest = {k: v for k, v in (msg.payload or {}).items() if k != "plan_data"}  # plan_data đã lưu vào study_plans
+    msg.payload = {**rest, "kind": "plan", "plan_id": plan.id}
 
 
 def get_plan(db: Session, user: User, plan_id: str) -> StudyPlan:

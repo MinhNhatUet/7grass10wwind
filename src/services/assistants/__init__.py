@@ -120,6 +120,63 @@ def cited_pages(chunk: Chunk, quote: str, answer: str, n: int) -> tuple[int, int
     return min(pages), max(pages)
 
 
+# [n], [1, 2], [1][2] trong câu trả lời — cùng quy tắc với frontend (ChatMessage.linkCites) để đếm lần xuất hiện khớp nhau
+CITE_GROUP_RE = re.compile(r"(?<![\w)])\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]")
+_LINE = re.compile(r"[^\n]+")
+EVIDENCE_MIN, EVIDENCE_MAX = 200, 600
+
+
+def _sentence_at(text: str, pos: int) -> str:
+    """Câu chứa vị trí `pos` (ranh giới: . ! ? hoặc xuống dòng)."""
+    start = max(text.rfind("\n", 0, pos), *(text.rfind(p, 0, pos) for p in (". ", "! ", "? "))) + 1
+    ends = [i for i in (text.find("\n", pos), *(text.find(p, pos) for p in (". ", "! ", "? "))) if i != -1]
+    return text[start : min(ends) if ends else len(text)]
+
+
+def evidence_passage(chunk: Chunk, claim: str) -> tuple[str, int]:
+    """Đoạn trích ĐỦ Ý cho một câu trả lời (D-56): dòng trùng từ nhiều nhất với câu, mở rộng sang các dòng kề tới
+    ~200–600 ký tự (không cắt giữa dòng); trang lấy theo page_map tại dòng đầu. Không gọi LLM/embedding."""
+    lines = [(m.start(), m.group(0).strip()) for m in _LINE.finditer(chunk.text) if m.group(0).strip()]
+    if not lines:
+        return chunk.text[:EVIDENCE_MAX], chunk.locator_value
+    words = set(re.findall(r"\w{3,}", claim.casefold()))
+    scores = [len(words & set(re.findall(r"\w{3,}", t.casefold()))) for _, t in lines]
+    best = max(range(len(lines)), key=lambda i: scores[i])
+    lo = hi = best
+    size = len(lines[best][1])
+    while True:  # mở rộng sang dòng kề (trước/sau) liên quan hơn; dòng không liên quan chỉ thêm khi còn quá ngắn
+        options = [
+            (scores[i], i == hi + 1, i)
+            for i in (lo - 1, hi + 1)
+            if 0 <= i < len(lines) and size + len(lines[i][1]) <= EVIDENCE_MAX
+        ]
+        if not options:
+            break
+        score, _, i = max(options)
+        if score == 0 and size >= EVIDENCE_MIN:
+            break
+        lo, hi = min(lo, i), max(hi, i)
+        size += len(lines[i][1])
+    quote = "\n".join(t for _, t in lines[lo : hi + 1])[: EVIDENCE_MAX + 200]
+    return quote, chunk.page_at(lines[lo][0])
+
+
+def occurrence_evidence(content: str, used: list[tuple[int, Hit]]) -> dict[str, list[dict[str, Any]]]:
+    """Đoạn trích riêng cho TỪNG lần [n] xuất hiện (theo thứ tự) — mỗi câu có dẫn chứng của chính nó, không lặp một
+    đoạn chung cho mọi [n] (D-56). Frontend đếm lần xuất hiện theo cùng regex."""
+    hits = {str(n): h for n, h in used}
+    out: dict[str, list[dict[str, Any]]] = {}
+    for m in CITE_GROUP_RE.finditer(content):
+        ns = [x.strip() for x in m.group(1).split(",")]
+        if not all(n in hits for n in ns):
+            continue
+        claim = _sentence_at(content, m.start())
+        for n in ns:
+            quote, page = evidence_passage(hits[n].chunk, claim)
+            out.setdefault(n, []).append({"quote": quote, "page": page})
+    return out
+
+
 def format_sources(hits: list[Hit]) -> str:
     blocks = []
     for i, h in enumerate(hits, start=1):
