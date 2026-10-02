@@ -1,5 +1,6 @@
 """Dọn dữ liệu định kỳ (BL-26): xoá hẳn hội thoại đã xoá mềm quá 30 ngày. Audit log giữ nguyên (BR-11)."""
 
+import logging
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from src.db import get_sessionmaker
 from src.models.orm import Citation, Conversation, Message
+
+log = logging.getLogger(__name__)
 
 
 def _cleanup_worker() -> None:
@@ -34,12 +37,18 @@ def _cleanup_worker() -> None:
                 # Audit log KHÔNG bao giờ bị xoá: chỉ ghi thêm (BR-11) — bỏ bước xoá audit > 90 ngày của bản gốc (D-53)
 
                 db.commit()
+                log.info(
+                    "retention: dọn %d hội thoại",
+                    len(expired_convs),
+                    extra={"event": "retention.run", "conversations_deleted": len(expired_convs)},
+                )
             except Exception:
                 db.rollback()
+                log.exception("retention lỗi, đã rollback", extra={"event": "retention.failed"})
             finally:
                 db.close()
-        except Exception:
-            pass
+        except Exception:  # không mở được session DB — ghi lại, thử lại ở chu kỳ sau
+            log.exception("retention không chạy được", extra={"event": "retention.failed"})
 
         # Run once a day
         time.sleep(86400)
