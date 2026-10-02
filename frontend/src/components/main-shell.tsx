@@ -11,8 +11,8 @@ import { useTheme } from "next-themes";
 import { AnimatePresence, motion } from "framer-motion";
 import * as HoverCard from "@radix-ui/react-hover-card";
 import {
-  BookOpen, Check, ClipboardList, Compass, LogOut, Menu, MessageSquare, Moon, MoreHorizontal, Pencil, Plus,
-  ShieldCheck, Sun, Target, Trash2, User, Zap,
+  BookOpen, Check, ClipboardList, Compass, FolderOpen, LogOut, Menu, MessageSquare, Moon, MoreHorizontal, Pencil, Plus,
+  Sun, Target, Trash2, User, Zap,
 } from "lucide-react";
 import { API } from "@/lib/api-errors";
 
@@ -66,8 +66,11 @@ export function MainShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem("user");
+      const me = stored ? JSON.parse(stored) : null;
+      // D-61: admin không dùng Hỏi đáp/học tập → về khu quản trị (server cũng chặn admin gửi câu hỏi)
+      if (me?.role === "admin") { router.replace("/admin"); return; }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc localStorage sau hydrate (server không có)
-      if (stored) setUser(JSON.parse(stored));
+      if (me) setUser(me);
       // màn hình nhỏ: thanh bên mặc định đóng (mở dạng phủ); lựa chọn đóng/mở được nhớ trên máy này
       const saved = localStorage.getItem("sidebar-open");
       setOpen(saved !== null ? saved === "1" : window.innerWidth >= 768);
@@ -161,14 +164,15 @@ export function MainShell({ children }: { children: ReactNode }) {
 
             <nav className="px-3 py-1 flex flex-col gap-0.5 w-[260px] shrink-0" onClick={afterNavigate}>
               <NavItem href="/" icon={<MessageSquare size={18} />} label="Hỏi đáp" active={at("/")} />
-              <NavItem href="/library" icon={<Compass size={18} />} label="Tài liệu học tập" active={at("/library")} />
+              {/* D-59: giảng viên/người duyệt chỉ có Hỏi đáp · Quản lý tài liệu · Câu hỏi trắc nghiệm */}
+              {!staff && <NavItem href="/library" icon={<Compass size={18} />} label="Tài liệu học tập" active={at("/library")} />}
               {student && <NavItem href="/learning" icon={<BookOpen size={18} />} label="Ôn tập & đề kiểm tra" active={at("/learning")} />}
               {student && <NavItem href="/learning/plans" icon={<Target size={18} />} label="Lộ trình học" active={at("/learning/plans")} />}
-              {staff && <NavItem href="/learning" icon={<ClipboardList size={18} />} label="Soạn đề trắc nghiệm" active={at("/learning")} />}
-              {(staff || role === "admin") && (
-                <NavItem href={role === "admin" ? "/admin/management" : role === "reviewer" ? "/hub/review" : "/hub/manage"}
-                  icon={<ShieldCheck size={18} />} label={role === "admin" ? "Quản trị" : "Không gian làm việc"} active={false} />
+              {staff && (
+                <NavItem href={role === "reviewer" ? "/hub/review" : "/hub/manage"} icon={<FolderOpen size={18} />}
+                  label={role === "reviewer" ? "Duyệt tài liệu" : "Quản lý tài liệu"} active={pathname.startsWith("/hub/") || at("/dashboard")} />
               )}
+              {staff && <NavItem href="/learning" icon={<ClipboardList size={18} />} label="Câu hỏi trắc nghiệm" active={at("/learning")} />}
             </nav>
 
             <div className="flex-1 overflow-y-auto px-3 py-4 w-[260px]">

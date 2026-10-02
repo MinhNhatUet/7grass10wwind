@@ -5,16 +5,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import current_user
+from src.config import get_settings
 from src.db import get_db
 from src.models.orm import Chunk, Conversation, Course, Message, StudyPlan, User
 from src.services import course_quiz as svc
 from src.services import page_render
+from src.services.errors import AppError
 from src.services.retrieval import servable_versions
 
 router = APIRouter()
@@ -65,6 +67,24 @@ def update_quiz(
     quiz_id: str, body: QuizIn, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     return svc.view(svc.update(db, user, quiz_id, body.model_dump()), staff=True)
+
+
+@router.post("/course-quizzes/{quiz_id}/generate")
+def generate_quiz(
+    quiz_id: str,
+    file: UploadFile = File(...),
+    count: int = Form(10),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Giảng viên tải PDF (đề có sẵn hoặc tài liệu) → LLM tạo câu hỏi A–D vào đề Nháp. Hàm sync: chạy trong threadpool,
+    gọi LLM không chặn event loop."""
+    limit = get_settings().upload_max_mb * 1024 * 1024
+    data = file.file.read(limit + 1)
+    if len(data) > limit:
+        raise AppError("FILE_TOO_LARGE", 413)
+    quiz, added = svc.generate_from_pdf(db, user, quiz_id, data, count)
+    return svc.view(quiz, staff=True) | {"added": added}
 
 
 @router.post("/course-quizzes/{quiz_id}/status")

@@ -4,7 +4,7 @@
 // nhưng nối API thật. Quyền do server quyết định (chỉ môn phụ trách); đáp án chỉ người phụ trách thấy.
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, Copy, HelpCircle, Info, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, FileUp, HelpCircle, Info, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, json, type CourseItem } from "@/lib/api";
 import { MSG, errorMessage } from "@/lib/messages";
 
@@ -28,6 +28,18 @@ const emptyQ = (): Q => ({ text: "", options: ["", "", "", ""], correct: null, e
 const complete = (q: Q) => !!q.text.trim() && q.options.every((o) => o.trim()) && q.correct !== null;
 const card = "bg-white dark:bg-[#12181f] rounded-2xl shadow-sm border border-slate-100 dark:border-white/10";
 const errText = (e: unknown) => (e instanceof ApiError ? e.detail || errorMessage(e.code) : MSG.serviceError);
+const GEN_COUNTS = [5, 10, 15, 20, 30, 40, 50];
+
+/** Nút chọn file PDF (input ẩn); chọn xong gọi onFile và xoá giá trị để chọn lại cùng file được. */
+function PdfButton({ busy, label, onFile, className }: { busy: boolean; label: string; onFile: (f: File) => void; className: string }) {
+  return (
+    <label className={`inline-flex items-center justify-center gap-1.5 cursor-pointer ${busy ? "pointer-events-none opacity-40" : ""} ${className}`}>
+      <FileUp size={16} /> {busy ? "Đang xử lý…" : label}
+      <input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={busy}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }} />
+    </label>
+  );
+}
 
 export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
   const managed = courses.filter((c) => c.can_upload || c.can_review);
@@ -39,6 +51,7 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [results, setResults] = useState<Results | null>(null);
   const [busy, setBusy] = useState(false);
+  const [genCount, setGenCount] = useState(10);
 
   const loadList = useCallback(async () => {
     if (!courseId) return;
@@ -144,6 +157,39 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
     }
   }
 
+  /** Tải PDF (đề có sẵn hoặc tài liệu) → LLM tạo câu A–D vào đề Nháp. Không truyền quizId → tạo đề mới theo tên file. */
+  async function fromPdf(file: File, quizId?: string) {
+    if (dirty && !confirm("Bỏ các thay đổi chưa lưu?")) return;
+    setBusy(true);
+    setMsg({ ok: true, text: `Đang đọc “${file.name}” và tạo câu hỏi… (có thể mất 30–60 giây)` });
+    try {
+      let id = quizId;
+      if (!id) {
+        const title = file.name.replace(/\.pdf$/i, "").slice(0, 300) || "Đề từ PDF";
+        id = (await api<Quiz>("/course-quizzes", {
+          method: "POST",
+          body: json({ course_id: courseId, title, kind: "practice", time_limit_s: null, questions: [] }),
+        })).id;
+      }
+      const body = new FormData();
+      body.set("file", file);
+      body.set("count", String(genCount));
+      const q = await api<Quiz & { added: number }>(`/course-quizzes/${id}/generate`, { method: "POST", body });
+      setQuiz({ ...q, questions: q.questions.length ? q.questions : [emptyQ()] });
+      setActive(Math.max(0, q.questions.length - q.added));
+      setDirty(false);
+      setResults(null);
+      const noKey = q.questions.filter((x) => x.correct === null).length;
+      setMsg({ ok: true, text: `Đã thêm ${q.added} câu. Kiểm tra lại nội dung và đáp án trước khi phát hành${noKey ? ` — ${noKey} câu chưa có đáp án đúng` : ""}.` });
+      void loadList();
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+      void loadList();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function showResults() {
     if (!quiz) return;
     try {
@@ -177,16 +223,29 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
             </button>
           ))}
         </div>
-        <button type="button" disabled={busy} onClick={() => void createNew()}
-          className="ml-auto rounded-full border-2 border-[#4f2b96] px-4 py-1.5 text-sm font-semibold text-[#4f2b96] hover:bg-[#f5f3ff] cursor-pointer bg-transparent flex items-center gap-1">
-          <Plus size={16} /> Đề mới
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <PdfButton busy={busy} label="Tạo đề từ PDF" onFile={(f) => void fromPdf(f)}
+            className="rounded-full bg-[#4f2b96] px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90" />
+          <button type="button" disabled={busy} onClick={() => void createNew()}
+            className="rounded-full border-2 border-[#4f2b96] px-4 py-1.5 text-sm font-semibold text-[#4f2b96] hover:bg-[#f5f3ff] cursor-pointer bg-transparent flex items-center gap-1">
+            <Plus size={16} /> Đề trống
+          </button>
+        </div>
       </div>
 
       {msg && <p className={`rounded-xl px-4 py-2 text-sm ${msg.ok ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-200" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-200"}`}>{msg.text}</p>}
 
       {!quiz ? (
-        <p className={`${card} p-10 text-center text-slate-500`}>Chọn một đề ở trên hoặc bấm &quot;Đề mới&quot; để bắt đầu soạn.</p>
+        <div className={`${card} p-10 text-center text-slate-500 space-y-2`}>
+          <FileUp size={32} className="mx-auto text-[#4f2b96]" />
+          <p>Bấm <strong>Tạo đề từ PDF</strong>: tải lên đề có sẵn (AI chép câu hỏi và đáp án) hoặc tài liệu học (AI soạn câu hỏi từ nội dung).</p>
+          <p className="text-[13px]">Đề tạo ra ở trạng thái Nháp để bạn kiểm tra, sửa rồi mới phát hành. Hoặc chọn một đề ở trên / bấm &quot;Đề trống&quot; để tự soạn.</p>
+          <label className="inline-flex items-center gap-2 text-[13px]">Số câu tối đa
+            <select value={genCount} onChange={(e) => setGenCount(Number(e.target.value))} className="rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-2 py-1">
+              {GEN_COUNTS.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-4 items-start">
           {/* TRÁI: danh sách câu */}
@@ -278,6 +337,20 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
                 {quiz.kind === "practice" ? "Luyện tập: làm nhiều lần, xem đáp án + giải thích sau khi nộp." : "Kiểm tra/thi: làm 1 lần, sinh viên chỉ thấy điểm (không lộ đáp án)."}
               </p>
             </div>
+            {draft && (
+              <div className={`${card} p-5 space-y-3`}>
+                <h3 className="font-bold">Thêm câu từ PDF</h3>
+                <p className="text-[12px] text-slate-500">Đề có sẵn → AI chép câu hỏi + đáp án; tài liệu học → AI soạn câu mới. Câu được thêm vào cuối đề.</p>
+                <div className="flex items-center gap-2">
+                  <select value={genCount} onChange={(e) => setGenCount(Number(e.target.value))} aria-label="Số câu tối đa"
+                    className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-2 py-2 text-sm">
+                    {GEN_COUNTS.map((n) => <option key={n} value={n}>{n} câu</option>)}
+                  </select>
+                  <PdfButton busy={busy} label="Chọn file PDF" onFile={(f) => void fromPdf(f, quiz.id)}
+                    className="flex-1 rounded-full border-2 border-[#4f2b96] text-[#4f2b96] py-2 text-sm font-semibold hover:bg-[#f5f3ff]" />
+                </div>
+              </div>
+            )}
             <div className={`${card} p-5`}>
               <h3 className="font-bold mb-3">Thời gian làm bài</h3>
               <div className="flex flex-wrap gap-2">

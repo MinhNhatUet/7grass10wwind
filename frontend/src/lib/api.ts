@@ -119,12 +119,14 @@ export interface StudyItem {
   correct?: number;
   explanation?: string;
   sources: number[];
+  evidence?: ItemEvidence; // đoạn trích riêng của thẻ này theo từng [n] (D-57)
 }
+export type ItemEvidence = Record<string, { quote: string; page: number }>;
 
 export interface TriageSections {
-  definitions: { term?: string; text: string; sources: number[] }[];
-  pitfalls: { text: string; sources: number[] }[];
-  examples: { title?: string; text: string; sources: number[] }[];
+  definitions: { term?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
+  pitfalls: { text: string; sources: number[]; evidence?: ItemEvidence }[];
+  examples: { title?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
 }
 
 export interface Plan {

@@ -81,7 +81,7 @@ export default function LoginPage() {
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("user", JSON.stringify(data.user));
       
-      router.push("/");
+      router.push(data.user?.role === "admin" ? "/admin" : "/"); // D-61: admin vào thẳng khu quản trị
     } catch (err) {
       setError(err instanceof Error ? err.message : (isLoginView ? "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin." : "Đăng ký thất bại. Vui lòng thử lại."));
     } finally {
