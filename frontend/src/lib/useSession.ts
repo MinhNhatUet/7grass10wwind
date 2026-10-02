@@ -37,6 +37,7 @@ export function useSession() {
       toLogin(false);
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- tải dữ liệu từ server, setState sau await
     void reload();
   }, [reload, toLogin]);
 

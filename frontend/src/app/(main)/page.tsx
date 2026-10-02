@@ -9,9 +9,20 @@ import { API, responseError } from "@/lib/api-errors";
 import { PENDING_SEND, QuickStart } from "@/components/learning-cards";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import type { Message, Source } from "@/types/chat";
+import type { ChatMessage as ApiMessage, Citation } from "@/lib/api";
 
 // Router chọn trợ lý (FR-11, D-27): không ép "academic"; nhãn hiển thị theo trợ lý router đã chọn
-const AGENT: Record<string, string> = { academic: "Academic Assistant", learning: "Learning Assistant", hub: "Knowledge Hub", router: "EDU-04" };
+/** Citation của API → nguồn hiển thị (trang / khoảng trang D-50). */
+const toSource = (c: Citation): Source => ({
+  id: c.id,
+  citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
+  title: c.document_title || `Tài liệu ${c.document_id}`,
+  page: c.locator?.value ?? 1, pageEnd: c.locator?.end ?? null,
+  content: c.quote || "",
+  url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`,
+});
+
+const AGENT: Record<string, string> ={ academic: "Academic Assistant", learning: "Learning Assistant", hub: "Knowledge Hub", router: "EDU-04" };
 
 
 export default function ChatPage() {
@@ -73,20 +84,13 @@ function UnifiedChat() {
       }
       if (res.ok) {
         const data = await res.json();
-        const loadedMessages: Message[] = data.items.map((m: any) => ({
-          id: m.message_id || m.id,
+        const loadedMessages: Message[] = (data.items as ApiMessage[]).map((m) => ({
+          id: m.message_id,
           role: m.role,
           content: m.content,
-          agentName: m.role === 'assistant' ? AGENT[m.assistant] ?? 'EDU-04' : undefined,
+          agentName: m.role === 'assistant' ? AGENT[m.assistant ?? ""] ?? 'EDU-04' : undefined,
           meta: m.metadata,
-          sources: m.citations?.map((c: any) => ({
-            id: c.id,
-            citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
-            title: c.document_title || `Tài liệu ${c.document_id}`,
-            page: c.locator?.value ?? c.locator_value ?? 1, pageEnd: c.locator?.end ?? null, // D-50: khoảng trang
-            content: c.quote || "",
-            url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`
-          })) || []
+          sources: m.citations?.map(toSource) || []
         }));
         const detail = await fetch(`${API}/conversations/${convId}`, { headers: { Authorization: `Bearer ${token}` } });
         if (!detail.ok) throw await responseError(detail);
@@ -195,14 +199,7 @@ function UnifiedChat() {
         agentName: AGENT[data.assistant] ?? "EDU-04",
         content: data.content,
         meta: data.metadata,
-        sources: data.citations?.map((c: any) => ({
-          id: c.id,
-          citationId: c.citation_id, documentId: c.document_id, versionId: c.version_id,
-          title: c.document_title || `Tài liệu ${c.document_id}`,
-          page: c.locator?.value ?? c.locator_value ?? 1, pageEnd: c.locator?.end ?? null, // D-50: khoảng trang
-          content: c.quote || "",
-          url: `${API}/documents/${c.document_id}/versions/${c.version_id}/download`
-        })) || []
+        sources: (data.citations as Citation[] | undefined)?.map(toSource) || []
       };
       setMessages(prev => [...prev, assistantMessage]);
       window.dispatchEvent(new Event(CONV_CHANGED)); // thanh bên cập nhật tiêu đề hội thoại
