@@ -12,7 +12,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import * as HoverCard from "@radix-ui/react-hover-card";
 import {
   BookOpen, Check, ClipboardList, Compass, FolderOpen, LogOut, Menu, MessageSquare, Moon, MoreHorizontal, Pencil, Plus,
-  Sun, Target, Trash2, User, Zap,
+  Sun, Target, Trash2, Zap,
 } from "lucide-react";
 import { API } from "@/lib/api-errors";
 
@@ -86,7 +86,7 @@ export function MainShell({ children }: { children: ReactNode }) {
       window.removeEventListener(CONV_CHANGED, onChanged);
       window.removeEventListener(ACTIVE_CONV, onActive);
     };
-  }, [loadHistory]);
+  }, [loadHistory, router]);
 
   const toggle = (v: boolean) => {
     setOpen(v);
@@ -145,10 +145,6 @@ export function MainShell({ children }: { children: ReactNode }) {
                 className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
                 <Menu size={20} />
               </button>
-              <Link href={user ? "/profile" : "/login"} aria-label={user ? "Hồ sơ cá nhân" : "Đăng nhập"}
-                className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
-                <User size={20} />
-              </Link>
             </div>
 
             <div className="px-3 pb-3 w-[260px] shrink-0">
@@ -226,13 +222,8 @@ export function MainShell({ children }: { children: ReactNode }) {
             </div>
 
             <div className="p-3 border-t border-black/10 dark:border-white/10 flex items-center justify-between shrink-0 w-[260px]">
-              <Link href="/profile" className="flex min-w-0 items-center gap-3 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 p-1.5 no-underline">
-                <span className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shrink-0" />
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium text-black dark:text-white">{user?.display_name || "Khách"}</span>
-                  <span className="text-[11px] text-black/50 dark:text-white/50 capitalize">{role || "guest"}</span>
-                </span>
-              </Link>
+              {/* D-62: bỏ trang hồ sơ cá nhân — chỉ hiện tên người dùng */}
+              <span className="min-w-0 truncate p-1.5 text-sm font-medium text-black dark:text-white">{user?.display_name || "Khách"}</span>
               <div className="flex items-center">
                 <button type="button" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} aria-label="Chuyển giao diện sáng/tối"
                   className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg border-0 cursor-pointer bg-transparent">
