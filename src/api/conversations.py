@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from src.api.deps import Idempotency, current_user, idempotency_key
+from src.api.deps import Idempotency, current_user, idempotency_key, require_role
 from src.db import get_db
 from src.models.orm import Conversation, User
 from src.services import conversations as svc
@@ -17,6 +17,8 @@ from src.services.errors import AppError
 from src.services.plan_calendar import plan_ics
 
 router = APIRouter()
+# D-61: admin quản trị hệ thống, không dùng Hỏi đáp (cũng không đọc nội dung học tập — AC-01.6)
+chat_user = require_role("student", "lecturer", "reviewer")
 
 
 def conv_view(c: Conversation) -> dict[str, Any]:
@@ -39,9 +41,7 @@ class CreateConversation(BaseModel):
 
 
 @router.post("/conversations", status_code=201)
-def create(
-    body: CreateConversation, user: User = Depends(current_user), db: Session = Depends(get_db)
-) -> dict[str, Any]:
+def create(body: CreateConversation, user: User = Depends(chat_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     conv = svc.create(db, user, body.course_id, body.assistant, body.title, body.document_id)
     return {"conversation_id": conv.id, **conv_view(conv)}
 
@@ -141,7 +141,7 @@ def send(
     conversation_id: str,
     body: SendMessage,
     key: str | None = Depends(idempotency_key),
-    user: User = Depends(current_user),
+    user: User = Depends(chat_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Business result (answered/partial/...) trả HTTP 200; chỉ lỗi kỹ thuật mới là 4xx/5xx (PRD 11.4)."""

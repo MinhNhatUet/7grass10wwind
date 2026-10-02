@@ -54,7 +54,7 @@ interface AuditItem {
 const TABS = {
   users: "Tài khoản & quyền",
   courses: "Môn học",
-  documents: "Khóa khẩn cấp",
+  documents: "Quản lý tài liệu",
   audit: "Audit",
   ops: "Vận hành",
 } as const;

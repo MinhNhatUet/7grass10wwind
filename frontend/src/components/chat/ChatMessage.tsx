@@ -125,7 +125,7 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
             <LearningCards
               meta={msg.meta}
               messageId={msg.id}
-              onCite={(n) => { const src = msg.sources?.find((x) => String(x.id) === String(n)); if (src) onSourceClick(src); }}
+              onSource={onSourceClick}
               onChanged={onChanged}
               onSend={onSend}
               onOpenHub={(r: HubResult) => onSourceClick({ id: r.chunk_id, title: r.title, page: r.locator.value, content: r.snippet, documentId: r.document_id, versionId: r.version_id })}

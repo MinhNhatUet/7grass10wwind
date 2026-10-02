@@ -52,6 +52,30 @@ def chapters(storage_key: str) -> tuple[dict[str, Any], ...]:
     return tuple(c for c in out if not c.get("skip"))
 
 
+def pdf_text(data: bytes, max_chars: int) -> str:
+    """Văn bản của một PDF tải lên (không lưu file). PDF hỏng → ValueError; dừng khi đủ max_chars."""
+    parts: list[str] = []
+    size = 0
+    with _lock:
+        try:
+            pdf = pdfium.PdfDocument(data)
+        except pdfium.PdfiumError as e:
+            raise ValueError("PDF không đọc được") from e
+        with pdf:
+            for i in range(len(pdf)):
+                page = pdf[i]
+                try:
+                    text = page.get_textpage().get_text_range().strip()
+                finally:
+                    page.close()
+                if text:
+                    parts.append(f"[Trang {i + 1}]\n{text}")
+                    size += len(text)
+                if size >= max_chars:
+                    break
+    return "\n\n".join(parts)[:max_chars]
+
+
 def render_png(storage_key: str, page: int, width: int = 1000) -> bytes:
     with _lock:
         with pdfium.PdfDocument(str(storage.path_of(storage_key))) as pdf:

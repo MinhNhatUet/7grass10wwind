@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,7 +31,9 @@ BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc
 7. Trả lời bằng tiếng Việt, giữ thuật ngữ gốc khi giúp hiểu. Không nêu điểm similarity như xác suất đúng.
 8. Viết MỌI công thức/ký hiệu toán bằng LaTeX: trong dòng $...$, riêng dòng $$...$$ (không dùng \\( \\) hay \\[ \\]).
    Văn bản NGUỒN trích từ PDF có thể vỡ ký hiệu (vd. "∑n i=1 mi" là $\\sum_{i=1}^{n} m_i$, "n 1 edges" là "$n-1$ edges"):
-   khôi phục đúng ký hiệu theo ngữ cảnh nguồn, KHÔNG thêm nội dung mới. Trong chuỗi JSON, viết backslash đôi (\\\\frac)."""
+   khôi phục đúng ký hiệu theo ngữ cảnh nguồn, KHÔNG thêm nội dung mới. Trong chuỗi JSON, viết backslash đôi (\\\\frac).
+9. Người học không thấy số thứ tự NGUỒN: không viết "nguồn 1", "tài liệu [2]"… trong nội dung; cần nhắc tài liệu thì
+   ghi tên tài liệu (thuộc tính tai_lieu). Số [n] chỉ dùng làm nhãn trích dẫn ở cuối ý."""
 
 CITATION_RE = re.compile(r"\[(\d{1,2})\]")
 # Không khớp chỉ số mảng dính liền tên biến ("A[1, 2]", "a[0]" — rất hay gặp trong sách CTDL & GT)
@@ -177,6 +182,64 @@ def occurrence_evidence(content: str, used: list[tuple[int, Hit]]) -> dict[str, 
     return out
 
 
+# "nguồn 1", "Nguồn số 2", "tài liệu [3]", "NGUỒN 1" — model nhắc nguồn bằng số mà người học không biết là sách nào
+_SOURCE_BY_NUMBER = re.compile(r"\b(?:nguồn|tài liệu)\s+(?:số\s+)?(\[)?(\d{1,2})\]?", re.I)
+
+
+def name_sources(text: str, used: list[tuple[int, Hit]]) -> str:
+    """Đổi "nguồn n" thành tên tài liệu thật (giữ nhãn [n] nếu có để vẫn bấm xem được)."""
+    titles = {str(n): h.document.title for n, h in used}
+
+    def sub(m: re.Match[str]) -> str:
+        title = titles.get(m.group(2))
+        if not title:
+            return m.group(0)
+        return f"tài liệu “{title}”" + (f" [{m.group(2)}]" if m.group(1) else "")
+
+    return _SOURCE_BY_NUMBER.sub(sub, text)
+
+
+def _cited_parts(node: Any) -> list[dict[str, Any]]:
+    """Mọi mục trong payload có trường "sources" (thẻ, câu hỏi, mục cấp cứu…), ở bất kỳ độ sâu nào."""
+    if isinstance(node, list):
+        return [d for v in node for d in _cited_parts(v)]
+    if not isinstance(node, dict):
+        return []
+    own = [node] if isinstance(node.get("sources"), list) else []
+    return own + [d for v in node.values() for d in _cited_parts(v)]
+
+
+def _part_text(part: dict[str, Any]) -> str:
+    texts = [v for v in part.values() if isinstance(v, str)]
+    texts += [x for v in part.values() if isinstance(v, list) for x in v if isinstance(x, str)]  # options trắc nghiệm
+    return " ".join(texts)
+
+
+def attach_evidence(payload: dict[str, Any], used: list[tuple[int, Hit]]) -> str:
+    """Hoạt động học (flashcard, điền khuyết, trắc nghiệm, quiz, cấp cứu…) gắn nguồn ở từng mục chứ không ở câu trong
+    nội dung tin nhắn (D-57). Mỗi mục được gắn `evidence = {n: {quote, page}}` (đoạn trích + trang theo chính nội dung
+    mục). Trả về các ý dạng "nội dung [n]." để tính trang và đoạn trích chung của citation; nếu không có các ý này, trang
+    mặc định là trang đầu chunk (sai)."""
+    hits = {str(n): h for n, h in used}
+    claims = []
+    for part in _cited_parts(payload):
+        for k, v in part.items():  # "nguồn 1" trong câu hỏi/thẻ/đáp án → tên tài liệu
+            if isinstance(v, str):
+                part[k] = name_sources(v, used)
+            elif isinstance(v, list) and all(isinstance(x, str) for x in v):
+                part[k] = [name_sources(x, used) for x in v]
+        text = _part_text(part)
+        ev = {}
+        for n in map(str, part["sources"]):
+            if n in hits:
+                quote, page = evidence_passage(hits[n].chunk, text)
+                ev[n] = {"quote": quote, "page": page}
+                claims.append(f"{text} [{n}].")
+        if ev:
+            part["evidence"] = ev
+    return "\n".join(claims)
+
+
 def format_sources(hits: list[Hit]) -> str:
     blocks = []
     for i, h in enumerate(hits, start=1):
@@ -210,6 +273,32 @@ def _latex_safe(text: str) -> str:
     return _BAD_ESCAPE.sub(r"\\\\", _LATEX_CMD.sub(r"\\\\", text))
 
 
+# D-60: token của mọi lần gọi LLM trong một yêu cầu → usage_events (chi phí cho admin). Hộp [vào, ra] dùng chung theo
+# tham chiếu nên vẫn cộng đúng khi LangGraph chạy node trong context sao chép.
+_usage: ContextVar[list[int] | None] = ContextVar("llm_usage", default=None)
+
+
+@contextmanager
+def track_usage() -> Iterator[list[int]]:
+    """Đếm token [vào, ra] của các lần gọi call_json bên trong khối."""
+    box = [0, 0]
+    token = _usage.set(box)
+    try:
+        yield box
+    finally:
+        _usage.reset(token)
+
+
+def _count_usage(resp: Any, prompt_chars: int, output: str) -> None:
+    box = _usage.get()
+    if box is None:
+        return
+    meta = getattr(resp, "usage_metadata", None) or {}
+    # provider không trả usage → ước lượng ~4 ký tự/token
+    box[0] += int(meta.get("input_tokens") or prompt_chars // 4)
+    box[1] += int(meta.get("output_tokens") or len(output) // 4)
+
+
 def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any]:
     """Gọi LLM, lấy JSON. Lỗi provider → LlmError ngay; JSON hỏng/thiếu → thử lại ĐÚNG 1 lần rồi mới LlmError."""
     from src.services.llm import get_llm
@@ -221,6 +310,7 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
             logger.warning("LLM provider lỗi: %s: %s", type(e).__name__, str(e)[:300])
             raise LlmError(type(e).__name__) from e
         text = resp.content if isinstance(resp.content, str) else str(resp.content)
+        _count_usage(resp, len(system) + len(user), text)
         match = re.search(r"\{.*\}", text, re.S)
         if match:
             try:
