@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     model_name: str = "gpt-4o-mini"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    llm_timeout_seconds: float = Field(default=60, gt=0)  # D-64: mỗi lần gọi LLM
     # D-60: bảng giá để ước tính chi phí (USD / 1 triệu token). Mặc định theo giá niêm yết dòng Gemini Flash-Lite —
     # chỉnh trong .env theo giá thật của nhà cung cấp đang dùng.
     llm_price_input_per_1m: float = Field(default=0.10, ge=0)
