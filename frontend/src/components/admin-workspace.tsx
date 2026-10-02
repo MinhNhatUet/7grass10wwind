@@ -91,6 +91,7 @@ export default function AdminWorkspace({ tab = "users" }: { tab?: ManagementSect
   }, [tab, docCourse, fail]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- tải dữ liệu từ server, setState sau await
     if (profile?.user.role === "admin") void load();
   }, [profile, load]);
 
@@ -303,6 +304,7 @@ function OpsPanel({ onError }: { onError: (e: unknown) => void }) {
   const [days, setDays] = useState(7);
   const [m, setM] = useState<Metrics | null>(null);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset state khi đổi trang/nguồn
     setM(null);
     api<Metrics>(`/metrics?days=${days}`).then(setM, onError);
   }, [days, onError]);

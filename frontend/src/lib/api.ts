@@ -37,9 +37,11 @@ export interface CourseItem {
 export interface Locator {
   type: "page" | "slide";
   value: number;
+  end?: number | null; // D-50: khoảng trang
 }
 
 export interface Citation {
+  document_title?: string;
   id: string;
   citation_id: string;
   document_id: string;

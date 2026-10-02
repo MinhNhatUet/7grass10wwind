@@ -6,10 +6,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Activity, BookOpen, Clock, FileText, CheckCircle2, MessageSquare, ArrowRight, Save } from "lucide-react";
 
+type Overview = {
+  usage: { total_queries: number; latency_p95_ms?: number | null };
+  review_queue: number;
+  source_gaps?: { insufficient_evidence: number };
+};
+type Feedback = {
+  id: string; status: string; type: string; created_at: string;
+  note?: string | null; resolution_note?: string | null; shared?: { question?: string } | null;
+};
+
 export default function LecturerDashboard({ courseId }: { courseId: string }) {
-  const [overview, setOverview] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
-  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [history, setHistory] = useState<{ actor: string; action: string; object_type: string; object_id: string; created_at: string }[]>([]);
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [resolvingId, setResolvingId] = useState<string | null>(null);
@@ -116,7 +126,7 @@ export default function LecturerDashboard({ courseId }: { courseId: string }) {
                   <span className="text-xs text-gray-400">{new Date(fb.created_at).toLocaleString()}</span>
                 </div>
                 <div className="text-sm font-medium mb-1">Loại: <span className="text-gray-600">{fb.type}</span></div>
-                {fb.note && <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded mb-2">"{fb.note}"</div>}
+                {fb.note && <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded mb-2">“{fb.note}”</div>}
                 
                 {fb.shared && fb.shared.question && (
                   <div className="text-xs border-l-2 border-gray-200 pl-2 mt-2 mb-3">

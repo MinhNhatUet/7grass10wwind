@@ -54,7 +54,7 @@ export default function LoginPage() {
 
     try {
       const endpoint = isLoginView ? "/api/v1/auth/login" : "/api/v1/auth/register";
-      const payload: any = { login_id: email.trim(), password };
+      const payload: { login_id: string; password: string; display_name?: string } = { login_id: email.trim(), password };
       if (!isLoginView) {
         payload.display_name = name;
       }
