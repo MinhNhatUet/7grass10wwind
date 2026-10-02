@@ -307,7 +307,11 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
         try:
             resp = get_llm(temperature=temperature).invoke([SystemMessage(content=system), HumanMessage(content=user)])
         except Exception as e:  # noqa: BLE001 — timeout/401/5xx của provider
-            logger.warning("LLM provider lỗi: %s: %s", type(e).__name__, str(e)[:300])
+            # chỉ metadata — thông báo lỗi provider có thể lặp lại nội dung prompt (dữ liệu học tập)
+            status_code = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", None)
+            logger.warning("LLM provider lỗi: %s", type(e).__name__, extra={
+                "event": "llm.provider_error", "error_type": type(e).__name__, "provider_status": status_code,
+                "attempt": attempt + 1})  # fmt: skip
             raise LlmError(type(e).__name__) from e
         text = resp.content if isinstance(resp.content, str) else str(resp.content)
         _count_usage(resp, len(system) + len(user), text)
@@ -317,7 +321,8 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
                 return json.loads(_latex_safe(match.group(0)))
             except json.JSONDecodeError:
                 pass
-        logger.warning("LLM trả JSON không hợp lệ (lần %d): %r", attempt + 1, text[:200])
+        logger.warning("LLM trả JSON không hợp lệ (lần %d)", attempt + 1, extra={
+            "event": "llm.invalid_json", "attempt": attempt + 1, "output_chars": len(text)})  # fmt: skip
         if attempt == 1:
             raise LlmError("INVALID_JSON")
     raise LlmError("INVALID_JSON")  # không tới được; giữ cho kiểu trả về rõ ràng

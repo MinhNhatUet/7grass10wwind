@@ -8,6 +8,7 @@ Job chạy nền bằng thread riêng, có DB session riêng; lỗi giữ stage/
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 from dataclasses import dataclass
@@ -390,7 +391,9 @@ def _run_job(job_id: str) -> None:
 
 
 def start_job(job_id: str) -> None:
-    threading.Thread(target=_run_job, args=(job_id,), daemon=True, name=f"job-{job_id}").start()
+    # thread không tự mang context của request → sao chép để log của job giữ http_request_id đã khởi tạo nó
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(_run_job, job_id), daemon=True, name=f"job-{job_id}").start()
 
 
 def resume_interrupted_jobs() -> None:

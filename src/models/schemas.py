@@ -63,6 +63,7 @@ class ErrorDetail(BaseModel):
     code: str
     retryable: bool = False
     message: str | None = None
+    request_id: str | None = None  # mã hỗ trợ (X-Request-ID) để tra log
 
 
 class ErrorBody(BaseModel):

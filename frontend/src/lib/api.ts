@@ -1,6 +1,7 @@
 // Client gọi API FastAPI (PRD 11.2) qua rewrite /api/* của Next. Role và quyền chỉ lấy từ server (BR-02).
 import { API } from "./api-errors";
 import { clearToken, getToken } from "./session";
+import { errorMessage } from "./messages";
 
 export type Role = "student" | "lecturer" | "reviewer" | "admin";
 
@@ -257,7 +258,10 @@ async function raw(path: string, init: RequestOptions = {}): Promise<Response> {
     const err = body?.error;
     const code = typeof err?.code === "string" ? err.code : `HTTP_${resp.status}`;
     if (resp.status === 401 && auth) clearToken();
-    throw new ApiError(resp.status, code, Boolean(err?.retryable), err?.message);
+    // Lỗi máy chủ: kèm mã hỗ trợ (X-Request-ID) để tra log; lỗi nghiệp vụ 4xx giữ nguyên thông báo
+    const rid = resp.headers.get("X-Request-ID") || err?.request_id;
+    const detail = resp.status >= 500 && rid ? `${err?.message || errorMessage(code)} (Mã hỗ trợ: ${rid})` : err?.message;
+    throw new ApiError(resp.status, code, Boolean(err?.retryable), detail);
   }
   return resp;
 }
