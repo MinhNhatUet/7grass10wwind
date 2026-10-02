@@ -118,7 +118,7 @@ Tất cả các quy tắc này được thực thi ở server.
 - **MVP-ADM-01** Người dùng (tạo, khóa/mở có lý do), quyền theo môn (đọc / tải / tải lên / duyệt, hạn hiệu lực), môn học, nhật ký hoạt động.
 - **MVP-ADM-02** Giám sát vận hành (số liệu sử dụng, trạng thái, độ trễ).
 - **MVP-ADM-03** **Chi phí AI** (D-60):
-  - Ghi token vào/ra thật của mọi lần gọi LLM (chat, chấm tự luận, tạo đề).
+  - Ghi token vào/ra của mọi lần gọi LLM (chat, chấm tự luận, tạo đề) theo usage provider trả về; provider không trả thì **ước lượng** ~4 ký tự/token (chưa tách nguồn đo — logging đợt 2).
   - Chi phí = token × bảng giá trong `.env`.
   - Báo cáo theo ngày, theo chức năng, theo môn, top người dùng; hiển thị bằng VND và USD.
 
