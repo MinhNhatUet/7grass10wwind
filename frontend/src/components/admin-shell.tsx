@@ -38,6 +38,19 @@ export default function AdminShell({ children, managementTab }: { children: Reac
   const { resolvedTheme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    // D-62: không có trang hồ sơ — chỉ hiện tên người đăng nhập (đọc sau hydrate; quyền do server kiểm tra)
+    let n = "Quản trị viên";
+    try {
+      n = JSON.parse(localStorage.getItem("user") || "{}").display_name || n;
+    } catch {
+      /* storage bị chặn → tên mặc định */
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setName(n);
+  }, []);
   const isManagement = pathname === "/admin/management";
   const isActive = (item: NavLink) => (item.tab ? isManagement && (managementTab || "users") === item.tab : pathname === item.href);
   const current = navigation.find(isActive);
@@ -71,7 +84,7 @@ export default function AdminShell({ children, managementTab }: { children: Reac
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-20 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-xl dark:border-white/10 dark:bg-[#151619]/90 sm:px-8">
         <div className="flex min-w-0 items-center gap-3 text-sm"><button aria-label="Mở điều hướng" onClick={() => setMobileOpen(true)} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-white/5 lg:hidden"><Menu size={20} /></button><Link href="/admin" aria-label="Trang chủ" className="hidden text-slate-400 sm:block"><Home size={18} /></Link><ChevronRight size={15} className="hidden text-slate-300 sm:block" /><span className="hidden text-slate-500 sm:inline">Quản trị</span><ChevronRight size={15} className="hidden text-slate-300 sm:block" />{group && <><span className="hidden text-slate-500 xl:inline">{group.title.charAt(0) + group.title.slice(1).toLowerCase()}</span><ChevronRight size={15} className="hidden shrink-0 text-slate-300 xl:block" /></>}<span className="truncate font-semibold">{current?.label || "Quản trị"}</span></div>
-        <div className="flex shrink-0 items-center gap-2 sm:gap-4"><button type="button" onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.replace("/login"); }} className="hidden items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white md:flex"><LogOut size={15} />Đăng xuất</button><button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5"><Moon size={17} className="dark:hidden" /><Sun size={17} className="hidden dark:block" /></button><Link href="/profile" aria-label="Hồ sơ quản trị viên" className="grid h-9 w-9 place-items-center rounded-full bg-slate-900 text-xs font-bold text-white dark:bg-violet-500">AD</Link></div>
+        <div className="flex shrink-0 items-center gap-2 sm:gap-4"><button type="button" onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.replace("/login"); }} className="hidden items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white md:flex"><LogOut size={15} />Đăng xuất</button><button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5"><Moon size={17} className="dark:hidden" /><Sun size={17} className="hidden dark:block" /></button><span className="max-w-[180px] truncate text-sm font-semibold">{name}</span></div>
       </header>
       <main className="admin-content min-h-0 flex-1 overflow-y-auto p-4 sm:p-8"><div className="mx-auto max-w-[1600px]">{children}</div></main>
     </div>
