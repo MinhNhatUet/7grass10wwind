@@ -11,7 +11,6 @@ from src.api.conversations import router as conversations_router
 from src.api.dashboard import router as dashboard_router
 from src.api.documents import router as documents_router
 from src.api.quizzes import router as quizzes_router
-from src.api.routes import router
 from src.api.sources import router as sources_router
 from src.config import get_settings
 from src.db import get_engine, init_db
@@ -49,7 +48,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, prefix="/api/v1")
 for r in (
     auth_router,
     documents_router,
