@@ -2,25 +2,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
-class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
-
-
-class ChatSource(BaseModel):
-    id: str
-    title: str
-    page: int
-    content: str
-    url: str | None = None
-
-
-class ChatResponse(BaseModel):
-    response: str = Field(..., description="Phản hồi từ agent")
-    analysis: str = Field(default="", description="Phân tích nội bộ")
-    sources: list[ChatSource] = Field(default_factory=list, description="Danh sách tài liệu tham khảo")
-
-
 # --- Auth (UC-09, PRD 9.1 / 11.2) ---
 
 Role = Literal["student", "lecturer", "reviewer", "admin"]
