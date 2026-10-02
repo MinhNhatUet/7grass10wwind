@@ -189,9 +189,36 @@ def _generate_prompt(text: str, count: int) -> str:
         "đúng và 3 phương án nhiễu hợp lý, trải đều các phần quan trọng; vị trí đáp án đúng phân bố ngẫu nhiên.\n"
         '- "explanation": 1–2 câu vì sao đáp án đúng, dựa trên tài liệu (đề có sẵn không có lời giải thì để "").\n'
         '- "correct" là chỉ số 0–3 (0 = A).\n'
-        'JSON: {"questions":[{"text":"...","options":["...","...","...","..."],"correct":0,"explanation":"..."}]}\n\n'
+        '- "source_type": "exam_with_key" (đề có bảng/dòng đáp án), "exam_without_key" (đề không có đáp án) hoặc '
+        '"material" (tài liệu học).\n'
+        'JSON: {"source_type":"...","questions":[{"text":"...","options":["...","...","...","..."],"correct":0,'
+        '"explanation":"..."}]}\n\n'
         f"<tai_lieu>\n{text}\n</tai_lieu>"
     )
+
+
+# D-64: không tin model về đáp án của đề có sẵn. Nhận diện đề bằng cấu trúc câu đánh số + lựa chọn A–D; chỉ giữ đáp án
+# khi văn bản PDF thật sự có bảng/dòng đáp án.
+_NUMBERED_Q = re.compile(r"^\s*(?:câu\s*)?\d{1,3}\s*[.):]", re.I | re.M)
+_OPTION_MARK = re.compile(r"(?:^|\s)[A-D]\s*[.)]\s+\S", re.M)
+_KEY_PAIR = re.compile(r"\b\d{1,3}\s*[-.:)=]\s*[A-D](?![A-Za-z])")  # "1-D", "2. A", "3: C"
+_KEY_WORD = re.compile(r"answer|đáp\s*án|key", re.I)
+
+
+def _has_answer_key(text: str) -> bool:
+    """Có dòng ánh xạ câu → đáp án: ≥ 2 cặp trên một dòng, hoặc 1 cặp trên dòng có chữ 'đáp án'/'answer'."""
+    return any(
+        len(pairs := _KEY_PAIR.findall(line)) >= 2 or (pairs and _KEY_WORD.search(line)) for line in text.splitlines()
+    )
+
+
+def _keep_answers(source_type: str, text: str) -> bool:
+    """Đáp án do model trả có được giữ không. Tài liệu học: giữ (model soạn câu + đáp án từ nội dung, GV duyệt).
+    Đề có sẵn (theo model hoặc theo cấu trúc văn bản): chỉ giữ khi PDF có dòng đáp án."""
+    looks_like_exam = len(_NUMBERED_Q.findall(text)) >= 2 and len(_OPTION_MARK.findall(text)) >= 4
+    if source_type == "material" and not looks_like_exam:
+        return True
+    return source_type != "exam_without_key" and _has_answer_key(text)
 
 
 def generate_from_pdf(db: Session, user: User, quiz_id: str, data: bytes, count: int) -> tuple[CourseQuiz, int]:
@@ -223,13 +250,15 @@ def generate_from_pdf(db: Session, user: User, quiz_id: str, data: bytes, count:
             usage.record(db, user_id=user.id, course_id=quiz.course_id, assistant="quiz_generate", status=status,
                          latency_ms=(time.perf_counter() - started) * 1000, request_id=None, tokens=tokens)  # fmt: skip
             db.commit()
+    keep = _keep_answers(str(out.get("source_type") or ""), text)
     new = []
     for q in json_dicts(out, "questions")[:count]:
         opts = [_OPTION_PREFIX.sub("", str(o)).strip() for o in json_list(q, "options")]
         if not str(q.get("text") or "").strip() or len(opts) != 4:
             continue
-        correct = q.get("correct")
-        new.append({**q, "id": None, "options": opts, "correct": correct if correct in (0, 1, 2, 3) else None})
+        correct = q.get("correct") if keep else None  # đề không có đáp án → GV tự chọn trước khi phát hành
+        new.append({**q, "id": None, "options": opts, "correct": correct if correct in (0, 1, 2, 3) else None,
+                    "explanation": q.get("explanation") if keep else ""})  # fmt: skip
     if not new:
         raise AppError("QUIZ_GENERATE_EMPTY", 422, message="Không tạo được câu hỏi nào từ file này.")
     cleaned = _clean({"title": quiz.title, "kind": quiz.kind, "time_limit_s": quiz.time_limit_s,
