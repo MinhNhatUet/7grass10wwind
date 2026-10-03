@@ -24,6 +24,7 @@ Trợ lý học thuật RAG "Kho tri thức hỗ trợ học thuật X" (AI20K B
 | [brief_edu04.md](documentions/brief_edu04.md), [milestone_01_edu04.md](documentions/milestone_01_edu04.md), [wireframe&UIflow_edu04.md](documentions/wireframe&UIflow_edu04.md) | Brief, milestone 1, wireframe và luồng UI |
 | [cong_viec_TV1_edu04.md](documentions/cong_viec_TV1_edu04.md) | Phân công TV1 |
 | [mo_ta_du_an_hien_tai.md](documentions/mo_ta_du_an_hien_tai.md) | Hiện trạng code |
+| [phan_cong_cai_tien_edu04.md](documentions/phan_cong_cai_tien_edu04.md) | Phân công cải tiến sau MVP cho 4 thành viên, quyền sở hữu file, hợp đồng dùng chung, cấu trúc thư mục |
 
 ## Quyết định — `decisions/`
 
