@@ -31,15 +31,20 @@ function daysUntil(until: string): string[] {
   return out;
 }
 
-/** Lịch tháng: bấm từng ngày để chọn/bỏ (D-46). Không chọn ngày đã qua; tối đa 60 ngày. */
-function DayPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+/** Lịch tháng (D-46). `range`: bấm một ngày = học mỗi ngày từ hôm nay đến ngày đó (D-81); không thì bấm từng ngày
+ * để chọn/bỏ. Không chọn ngày đã qua; tối đa 60 ngày. */
+function DayPicker({ value, onChange, range = false, onSuggestUntil }: {
+  value: string[]; onChange: (v: string[]) => void; range?: boolean; onSuggestUntil?: (d: string) => void;
+}) {
   const today = iso(new Date());
+  const lastAllowed = daysUntil("9999-12-31").at(-1) ?? today;
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const first = (month.getDay() + 6) % 7; // thứ Hai đứng đầu
   const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const cells: (string | null)[] = [...Array(first).fill(null), ...Array.from({ length: count }, (_, i) => iso(new Date(month.getFullYear(), month.getMonth(), i + 1)))];
   const picked = new Set(value);
   const toggle = (d: string) => {
+    if (range) return onChange(daysUntil(d));
     const next = new Set(picked);
     if (next.has(d)) next.delete(d);
     else if (next.size < 60) next.add(d);
@@ -57,14 +62,22 @@ function DayPicker({ value, onChange }: { value: string[]; onChange: (v: string[
       <div className="grid grid-cols-7 gap-1 text-center text-[13px]">
         {MONTH_HEAD.map((h) => <span key={h} className="py-1 text-[12px] font-medium text-slate-400">{h}</span>)}
         {cells.map((d, i) => d === null ? <span key={`e${i}`} /> : (
-          <button key={d} type="button" disabled={d < today} onClick={() => toggle(d)} aria-pressed={picked.has(d)} aria-label={`Ngày ${d}`}
+          <button key={d} type="button" disabled={d < today || (range && d > lastAllowed)} onClick={() => toggle(d)} aria-pressed={picked.has(d)} aria-label={`Ngày ${d}`}
             className={`h-9 rounded-lg border-0 cursor-pointer disabled:cursor-default disabled:opacity-30 ${picked.has(d) ? "bg-black text-white dark:bg-white dark:text-black font-semibold" : "bg-transparent hover:bg-slate-100 dark:hover:bg-white/10"} ${d === today && !picked.has(d) ? "ring-1 ring-slate-400" : ""}`}>
             {Number(d.slice(8))}
           </button>
         ))}
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-500">
-        <span>{value.length ? `${value.length} ngày đã chọn: ${value.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(", ")}` : "Bấm vào các ngày bạn muốn học."}</span>
+        <span>{range
+          ? (value.length ? `Học mỗi ngày từ hôm nay (${ddmm(value[0])}) đến ${ddmm(value[value.length - 1])} — ${value.length} ngày.` : "Bấm vào ngày cuối cùng bạn muốn học.")
+          : (value.length ? `${value.length} ngày đã chọn: ${value.map(ddmm).join(", ")}` : "Bấm vào các ngày bạn muốn học.")}</span>
+        {/* Chỉ chọn 1 ngày ở chế độ chọn từng ngày thường là ý "học đến ngày này" → gợi ý chuyển chế độ */}
+        {!range && value.length === 1 && value[0] > today && onSuggestUntil && (
+          <button type="button" onClick={() => onSuggestUntil(value[0])} className="rounded-lg border-0 bg-black px-3 py-1 font-medium text-white dark:bg-white dark:text-black cursor-pointer">
+            Học mỗi ngày đến {ddmm(value[0])}
+          </button>
+        )}
         {value.length > 0 && <button type="button" onClick={() => onChange([])} className="border-0 bg-transparent underline cursor-pointer text-slate-500">Bỏ chọn hết</button>}
       </div>
     </div>
@@ -165,20 +178,8 @@ export default function LearningPlansPage() {
                       className={`flex-1 rounded-lg py-2 border-0 cursor-pointer ${mode === k ? "bg-white dark:bg-black/40 font-semibold shadow-sm" : "bg-transparent text-slate-500"}`}>{v}</button>
                   ))}
                 </div>
-                {mode === "dates" && <DayPicker value={dates} onChange={setDates} />}
-                {mode === "until" && (
-                  <label className="block">
-                    <span className="block text-sm font-semibold mb-2">Học đến hết ngày</span>
-                    <span className="relative block">
-                      <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                      <input type="date" required value={until} min={iso(new Date())} max={daysUntil("9999-12-31").at(-1)}
-                        onChange={(e) => setUntil(e.target.value)} className={`${field} pl-11`} />
-                    </span>
-                    <span className="mt-1.5 block text-[12px] text-slate-500">
-                      {untilDates.length ? `Học mỗi ngày từ hôm nay (${ddmm(untilDates[0])}) đến ${ddmm(untilDates[untilDates.length - 1])} — ${untilDates.length} ngày.` : `Chọn ngày cuối cùng bạn muốn học (tối đa ${MAX_PLAN_DAYS} ngày).`}
-                    </span>
-                  </label>
-                )}
+                {mode === "dates" && <DayPicker value={dates} onChange={setDates} onSuggestUntil={(d) => { setUntil(d); setMode("until"); }} />}
+                {mode === "until" && <DayPicker range value={untilDates} onChange={(v) => setUntil(v.at(-1) ?? "")} />}
                 <div className={`grid gap-5 ${mode === "count" ? "grid-cols-2" : "grid-cols-1"}`}>
                   {mode === "count" && (
                     <label className="block">
