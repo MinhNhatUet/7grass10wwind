@@ -14,8 +14,13 @@ from src.models.orm import Citation, Conversation, Message
 log = logging.getLogger(__name__)
 
 
+INTERVAL_S = 86400
+_stop = threading.Event()
+
+
 def _cleanup_worker() -> None:
-    while True:
+    next_run = time.monotonic()
+    while not _stop.is_set():
         try:
             db: Session = get_sessionmaker()()
             try:
@@ -50,9 +55,15 @@ def _cleanup_worker() -> None:
         except Exception:  # không mở được session DB — ghi lại, thử lại ở chu kỳ sau
             log.exception("retention không chạy được", extra={"event": "retention.failed"})
 
-        # Run once a day
-        time.sleep(86400)
+        # M-06: chạy theo lịch cố định mỗi 24 giờ (không trôi theo thời gian dọn); Event cho phép dừng ngay khi tắt app
+        next_run += INTERVAL_S
+        _stop.wait(max(0.0, next_run - time.monotonic()))
 
 
 def start_retention_job() -> None:
+    _stop.clear()
     threading.Thread(target=_cleanup_worker, daemon=True, name="retention-job").start()
+
+
+def stop_retention_job() -> None:
+    _stop.set()

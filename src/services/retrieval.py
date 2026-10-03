@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -21,8 +22,10 @@ from src.config import get_settings
 from src.models.orm import PUBLISHED, Chunk, Document, DocumentVersion, User
 from src.services import acl
 
-# version_id → (chunk_ids, ma trận đã chuẩn hóa, tập từ của từng chunk — cho điểm khớp từ khóa D-68)
-_cache: dict[str, tuple[list[str], np.ndarray, list[set[str]]]] = {}
+# version_id → (chunk_ids, ma trận đã chuẩn hóa, tập từ của từng chunk — cho điểm khớp từ khóa D-68). LRU có trần:
+# version không còn được hỏi (đã thu hồi/lưu trữ) tự rơi khỏi cache thay vì giữ mãi.
+_cache: OrderedDict[str, tuple[list[str], np.ndarray, list[set[str]]]] = OrderedDict()
+CACHE_MAX_VERSIONS = 256
 _WORD = re.compile(r"\w{4,}")
 _cache_lock = threading.Lock()
 _document_scope: ContextVar[str | None] = ContextVar("document_scope", default=None)
@@ -36,6 +39,11 @@ def document_scope(document_id: str | None):
         yield
     finally:
         _document_scope.reset(token)
+
+
+def current_document_scope() -> str | None:
+    """Expose the request-local document boundary to retrieval adapters."""
+    return _document_scope.get()
 
 
 class EmbeddingUnavailableError(Exception):
@@ -87,6 +95,12 @@ def embed_texts(texts: list[str]) -> list[bytes]:
     return out
 
 
+def chunk_embedding_text(chunk: Chunk) -> str:
+    """Include section hierarchy in embeddings without polluting the source excerpt."""
+    text = chunk.text.strip()
+    return f"Section: {chunk.section.strip()}\n\n{text}" if chunk.section and chunk.section.strip() else text
+
+
 def embed_query(text: str) -> np.ndarray:
     from src.services.llm import get_embeddings
 
@@ -117,6 +131,7 @@ def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[Doc
 def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray, list[set[str]]]:
     with _cache_lock:
         if version_id in _cache:
+            _cache.move_to_end(version_id)
             return _cache[version_id]
     rows = db.execute(
         select(Chunk.id, Chunk.embedding, Chunk.text).where(
@@ -128,6 +143,8 @@ def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray, list[s
     words = [set(_WORD.findall(r[2].casefold())) for r in rows]
     with _cache_lock:
         _cache[version_id] = (ids, mat, words)
+        while len(_cache) > CACHE_MAX_VERSIONS:
+            _cache.popitem(last=False)
     return ids, mat, words
 
 

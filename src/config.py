@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     app_name: str = "AI20K Agent"
     app_env: Literal["development", "production", "test"] = "development"
     app_port: int = Field(default=8000, ge=1, le=65535)
-    app_host: str = "0.0.0.0"
+    app_host: str = "127.0.0.1"  # L-04: dev chỉ nghe máy local; container ghi đè 0.0.0.0 (Dockerfile)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     cors_origins: str = "http://localhost:3000"
+    http_thread_limit: int = Field(default=100, ge=1)  # M-12: số request đồng bộ chạy song song
 
     # LLM — endpoint tương thích OpenAI (AI_* trong .env); OPENAI_API_KEY/MODEL_NAME là fallback cũ
     ai_provider: str = ""
@@ -52,11 +53,16 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     embedding_dimension: int | None = Field(default=None, gt=0)
     gemini_api_key: str = ""
+    # D-77: key riêng cho embedding OpenAI chính hãng. Có giá trị → gọi thẳng OpenAI (EMBEDDING_BASE_URL nếu cần đổi);
+    # để trống → provider "openai" dùng endpoint AI_* như trước.
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
 
     # Auth tối giản MVP (UC-09). Giá trị giới hạn là đề xuất — PRD 11.2 chỉ yêu cầu "rate limit".
     auth_users_file: str = "data/auth/users.json"
     auth_session_ttl_minutes: int = Field(default=480, gt=0)
     auth_max_failed_logins: int = Field(default=5, gt=0)
+    auth_max_registrations_per_hour: int = Field(default=10, gt=0)  # mỗi IP; đề xuất, cần chốt
     auth_failed_window_seconds: int = Field(default=300, gt=0)
 
     # MVP toàn sản phẩm (UC-11). Các ngưỡng là ĐỀ XUẤT, cần chốt (PRD 4.2, 10.2, 12.1).
@@ -70,6 +76,7 @@ class Settings(BaseSettings):
     embedding_pause_seconds: float = Field(default=3, ge=0)  # nghỉ giữa các lô
     # D-34: embedding ngay sau trích xuất (chỉ mục tạm, KHÔNG tham gia tìm kiếm tới khi Published — PRD 9.2)
     embed_on_upload: bool = True
+    job_max_workers: int = Field(default=2, gt=0)  # số job tài liệu chạy đồng thời; job thừa xếp hàng
     retrieval_top_k: int = Field(default=6, gt=0)  # PRD 10.2: 5–8 đoạn sau rerank
     retrieval_min_score: float = Field(default=0.55, ge=-1, le=1)  # evidence gate, hiệu chỉnh trên dev
     chat_max_input_chars: int = Field(default=5000, gt=0)
@@ -78,9 +85,6 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite:///./data/app.db"
-
-    # Vector Store
-    chroma_persist_dir: str = "./data/chroma"
 
 
 @lru_cache

@@ -15,6 +15,7 @@ from src.db import get_db
 from src.models.orm import AuditEvent, Document, DocumentVersion, Feedback, UsageEvent, User
 from src.services import acl
 from src.services.errors import AppError, bad_request, not_found
+from src.services.formatting import iso
 
 router = APIRouter()
 
@@ -22,10 +23,6 @@ router = APIRouter()
 def _require_manage(db: Session, user: User, course_id: str) -> None:
     if not acl.can_manage_course(db, user, course_id):
         raise AppError("FORBIDDEN", 403)
-
-
-def _iso(dt: datetime | None) -> str | None:
-    return (dt if dt is None or dt.tzinfo else dt.replace(tzinfo=UTC)).isoformat(timespec="seconds") if dt else None
 
 
 def usage_stats(
@@ -106,7 +103,7 @@ def history(
     return {
         "items": [
             {"action": e.action, "object_type": e.object_type, "object_id": e.object_id, "actor": names.get(e.actor_id or "", "hệ thống"),
-             "reason": e.reason, "detail": e.detail, "created_at": _iso(e.created_at)}
+             "reason": e.reason, "detail": e.detail, "created_at": iso(e.created_at)}
             for e in rows
         ]
     }  # fmt: skip
@@ -125,7 +122,7 @@ def list_feedback(
         items.append(
             {
                 "id": f.id, "type": f.type, "note": f.note, "status": f.status, "assignee_id": f.assignee_id,
-                "resolution_note": f.resolution_note, "created_at": _iso(f.created_at), "updated_at": _iso(f.updated_at),
+                "resolution_note": f.resolution_note, "created_at": iso(f.created_at), "updated_at": iso(f.updated_at),
                 # AC-12.2: nội dung chỉ có khi người dùng chủ động chia sẻ; không trả answer ID để truy ngược hội thoại
                 "shared": {"question": f.shared_question, "answer": f.shared_answer} if f.share_content else None,
             }

@@ -1,0 +1,6 @@
+# Phụ thuộc chỉ cho công cụ đánh giá (RAGAS, BL-36) — không cần để chạy app.
+#   pip install -r requirements.txt -r eval/requirements.txt
+# Ghim version, ghi vào eval/ragas/config.json. Cần Python 3.11/3.12 (scikit-network không build trên 3.14).
+ragas==0.4.3
+# ragas 0.4.3 import langchain_community.chat_models.vertexai — module này bị bỏ từ langchain-community 0.4
+langchain-community>=0.3,<0.4

@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import require_role
@@ -230,8 +230,9 @@ def lock_document(
 def audit_log(
     limit: int = Query(200, ge=1, le=1000), admin: User = Depends(admin_only), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
-    rows = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit))
-    names = {u.id: u.display_name for u in db.scalars(select(User))}
+    rows = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)).all()
+    actor_ids = {e.actor_id for e in rows if e.actor_id}  # chỉ tra tên người có trong trang nhật ký (P-05)
+    names = {u.id: u.display_name for u in db.scalars(select(User).where(User.id.in_(actor_ids)))}
     return {
         "items": [
             {"action": e.action, "object_type": e.object_type, "object_id": e.object_id, "course_id": e.course_id,
@@ -250,12 +251,19 @@ def costs(
     Chỉ số liệu vận hành — không đọc nội dung hội thoại (AC-01.6)."""
     s = get_settings()
     since = datetime.now(UTC) - timedelta(days=days)
+    # Gộp nhóm trong SQL (ngày × người × môn × trợ lý) thay vì kéo từng lượt vào Python (P-04)
+    day = func.date(UsageEvent.created_at)
+    tin_, tout_ = func.coalesce(UsageEvent.tokens_input, 0), func.coalesce(UsageEvent.tokens_output, 0)
     rows = db.execute(
-        select(UsageEvent.created_at, UsageEvent.user_id, UsageEvent.course_id, UsageEvent.assistant,
-               UsageEvent.status, UsageEvent.tokens_input, UsageEvent.tokens_output, UsageEvent.estimated_cost)
+        select(day.label("day"), UsageEvent.user_id, UsageEvent.course_id, UsageEvent.assistant,
+               func.count().label("n"), func.sum(tin_).label("tin"), func.sum(tout_).label("tout"),
+               func.sum(func.coalesce(UsageEvent.estimated_cost, 0.0)).label("cost"),
+               func.sum(case((tin_ + tout_ == 0, 1), else_=0)).label("untracked"))
         .where(UsageEvent.created_at >= since)
+        .group_by(day, UsageEvent.user_id, UsageEvent.course_id, UsageEvent.assistant)
     ).all()  # fmt: skip
-    users = {u.id: f"{u.display_name} ({u.login_id})" for u in db.scalars(select(User))}
+    user_ids = {r.user_id for r in rows}
+    users = {u.id: f"{u.display_name} ({u.login_id})" for u in db.scalars(select(User).where(User.id.in_(user_ids)))}
     courses = {c.id: c.name for c in db.scalars(select(Course))}
 
     def bucket() -> dict[str, Any]:
@@ -265,17 +273,16 @@ def costs(
     groups: dict[str, dict[str, dict[str, Any]]] = {"assistant": {}, "course": {}, "user": {}}
     untracked = 0
     for r in rows:
-        tin, tout, cost = r.tokens_input or 0, r.tokens_output or 0, r.estimated_cost or 0.0
-        untracked += not (tin or tout)  # lượt ghi trước D-60 (chưa đếm token)
+        tin, tout, cost = int(r.tin or 0), int(r.tout or 0), float(r.cost or 0.0)
+        untracked += int(r.untracked or 0)  # lượt ghi trước D-60 (chưa đếm token)
         keys = {"assistant": r.assistant or "khác", "course": courses.get(r.course_id or "", "Chưa xác định môn"),
                 "user": users.get(r.user_id, r.user_id)}  # fmt: skip
-        day = r.created_at.date().isoformat()
         for b in (
             total,
-            by_day.setdefault(day, bucket()),
+            by_day.setdefault(str(r.day), bucket()),
             *(groups[g].setdefault(k, bucket()) for g, k in keys.items()),
         ):
-            b["requests"] += 1
+            b["requests"] += r.n
             b["tokens_input"] += tin
             b["tokens_output"] += tout
             b["cost_usd"] += cost

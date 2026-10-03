@@ -30,17 +30,10 @@ from src.services.assistants import (
     verified_quote,
 )
 from src.services.errors import AppError, bad_request, forbidden, not_found
+from src.services.formatting import aware, iso
 
 GRACE_S = 30
 MAX_QUESTIONS = 100
-
-
-def _aware(dt: datetime) -> datetime:
-    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-
-
-def _iso(dt: datetime | None) -> str | None:
-    return _aware(dt).isoformat(timespec="seconds") if dt else None
 
 
 def _complete(q: dict[str, Any]) -> bool:
@@ -64,7 +57,7 @@ def view(quiz: CourseQuiz, *, staff: bool) -> dict[str, Any]:
         "time_limit_s": quiz.time_limit_s,
         "status": quiz.status,
         "question_count": len(qs),
-        "updated_at": _iso(quiz.updated_at),
+        "updated_at": iso(quiz.updated_at),
         "questions": [
             {
                 k: q.get(k)
@@ -346,7 +339,7 @@ def delete(db: Session, user: User, quiz_id: str) -> None:
 
 
 def _deadline(quiz: CourseQuiz, attempt: QuizAttempt) -> datetime | None:
-    return _aware(attempt.started_at) + timedelta(seconds=quiz.time_limit_s) if quiz.time_limit_s else None
+    return aware(attempt.started_at) + timedelta(seconds=quiz.time_limit_s) if quiz.time_limit_s else None
 
 
 def start(db: Session, user: User, quiz_id: str) -> dict[str, Any]:
@@ -362,7 +355,7 @@ def start(db: Session, user: User, quiz_id: str) -> dict[str, Any]:
         db.add(attempt)
         db.commit()
     deadline = _deadline(quiz, attempt)
-    return {"attempt_id": attempt.id, "deadline": _iso(deadline), "server_now": _iso(datetime.now(UTC))} | {
+    return {"attempt_id": attempt.id, "deadline": iso(deadline), "server_now": iso(datetime.now(UTC))} | {
         "quiz": view(quiz, staff=False)
     }
 
@@ -418,7 +411,7 @@ def results(db: Session, user: User, quiz_id: str) -> dict[str, Any]:
                 "score": a.score,
                 "total": a.total,
                 "late": a.late,
-                "submitted_at": _iso(a.submitted_at),
+                "submitted_at": iso(a.submitted_at),
             }
             for a, u in rows
         ],

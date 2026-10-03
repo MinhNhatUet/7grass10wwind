@@ -201,6 +201,55 @@ def test_source_page_exact_and_no_original_download(setup, monkeypatch):
     assert client.get(path + "/pages/2/image").status_code == 401
 
 
+def test_knowledge_hub_backend_uses_hybrid_core_and_exact_source(setup, monkeypatch):
+    from src.services.knowledge_hub_database import ConfiguredQueryEmbeddingProvider
+
+    client, db, *_ = setup
+    chunk = db.get(Chunk, "chunk1")
+    chunk.section = "Architecture > Layered design"
+    chunk.text = "Layered design separates responsibilities.\nA second page discusses trade-offs."
+    chunk.page_map = [[0, 2], [42, 3]]
+    db.commit()
+    monkeypatch.setattr(ConfiguredQueryEmbeddingProvider, "embed_query", lambda _self, _text: [1.0, 0.0])
+
+    response = client.get(
+        "/api/v1/knowledge-hub/search",
+        params={"course_id": "course", "q": "layered design", "page_size": 10},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "hybrid"
+    assert body["trace"]["vector_candidate_count"] == 2
+    item = next(item for item in body["items"] if item["chunk_id"] == "chunk1")
+    assert item["locator"] == {
+        "type": "page",
+        "value": 2,
+        "end": 3,
+        "section": "Architecture > Layered design",
+    }
+    assert item["citation"]["document_id"] == "doc1"
+    assert item["citation"]["version_id"] == "ver1"
+    assert item["citation"]["quote"] == chunk.text
+
+    library = client.get("/api/v1/documents", params={"course_id": "course", "q": "layered design"})
+    assert library.status_code == 200 and library.json()["mode"] == "hybrid"
+    source = client.get("/api/v1/chunks/chunk1/source").json()
+    assert source["chunk_id"] == "chunk1"
+    assert source["locator"] == item["locator"]
+    assert source["excerpt"] == chunk.text
+
+    conversation_id = client.post("/api/v1/conversations", json={"course_id": "course", "assistant": "hub"}).json()[
+        "conversation_id"
+    ]
+    message = client.post(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        json={"content": "Tìm tài liệu layered design", "assistant": "hub"},
+    )
+    assert message.status_code == 200
+    result = next(row for row in message.json()["metadata"]["results"] if row["chunk_id"] == "chunk1")
+    assert result["citation"]["locator"] == item["locator"]
+
+
 def test_source_render_errors_are_safe(setup, monkeypatch):
     client, db, *_ = setup
     path = "/api/v1/documents/doc1/versions/ver1/pages/2/image"
@@ -290,6 +339,49 @@ def test_progress_and_retry_preserve_embeddings(setup, monkeypatch):
     assert client.get("/api/v1/review/versions/ver1/preview").json()["version"]["embedded_count"] == 2
 
 
+def test_reprocess_prechunked_keeps_published_version_until_index(setup):
+    _, db, _, teacher, _ = setup
+    old = db.get(DocumentVersion, "ver1")
+    document = db.get(Document, "doc1")
+
+    replacement = documents.reprocess_prechunked(
+        db,
+        teacher,
+        old.id,
+        reason="section-aware rebuild",
+        page_count=3,
+        chunks=[
+            {
+                "page": 2,
+                "section": "Architecture > Layers",
+                "text": "Layered architecture separates responsibilities.",
+                "page_map": [[0, 2]],
+            },
+            {
+                "page": 3,
+                "section": "Architecture > Trade-offs",
+                "text": "Extra layers can add latency.",
+                "page_map": [[0, 3]],
+            },
+        ],
+        source="artifacts/chunks_sectioned/example.json",
+    )
+
+    assert replacement.id != old.id
+    assert replacement.state == "Draft"
+    assert replacement.document_id == old.document_id
+    assert replacement.storage_key == old.storage_key
+    assert replacement.page_count == 3
+    assert document.current_version_id == old.id
+    assert old.state == "Published"
+    chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == replacement.id).order_by(Chunk.ordinal)))
+    assert [(chunk.section, chunk.locator_value) for chunk in chunks] == [
+        ("Architecture > Layers", 2),
+        ("Architecture > Trade-offs", 3),
+    ]
+    assert all(chunk.embedding is None for chunk in chunks)
+
+
 def test_document_scope_migration_preserves_rows_and_is_repeatable():
     engine = create_engine("sqlite://")
     with engine.begin() as conn:
@@ -317,7 +409,6 @@ def test_real_pdf_page_render_and_range(tmp_path, monkeypatch):
 
 
 def test_registration_cannot_choose_admin(setup, monkeypatch):
-    import asyncio
     from types import SimpleNamespace
 
     from src.api.auth import register
@@ -331,7 +422,5 @@ def test_registration_cannot_choose_admin(setup, monkeypatch):
             return "token", SimpleNamespace(expires_at=datetime.now(UTC)), user
 
     request = SimpleNamespace(client=SimpleNamespace(host="test"))
-    result = asyncio.run(
-        register(RegisterRequest(login_id="new", password="test-password", role="admin"), request, db, Auth())
-    )
+    result = register(RegisterRequest(login_id="new", password="test-password", role="admin"), request, db, Auth())
     assert result.user.role == "student"

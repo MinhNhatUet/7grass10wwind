@@ -1,0 +1,49 @@
+courses:
+  "Công nghệ phần mềm":
+    course_id: SE101
+    course_code: SE101
+    course_name: Công nghệ phần mềm
+    term: "2026A"
+    status: active
+  "Cơ sở dữ liệu":
+    course_id: DB101
+    course_code: DB101
+    course_name: Cơ sở dữ liệu
+    term: "2026A"
+    status: active
+  "Giải tích":
+    course_id: MATH101
+    course_code: MATH101
+    course_name: Giải tích
+    term: "2026A"
+    status: active
+  "Triết":
+    course_id: PHIL101
+    course_code: PHIL101
+    course_name: Triết học
+    term: "2026A"
+    status: active
+  "Tín hiệu hệ thống":
+    course_id: SIG101
+    course_code: SIG101
+    course_name: Tín hiệu hệ thống
+    term: "2026A"
+    status: active
+  "Tư tưởng Hồ Chí Minh":
+    course_id: HCM101
+    course_code: HCM101
+    course_name: Tư tưởng Hồ Chí Minh
+    term: "2026A"
+    status: active
+  "Vật lý đại cương":
+    course_id: PHY101
+    course_code: PHY101
+    course_name: Vật lý đại cương
+    term: "2026A"
+    status: active
+  "Đại số tuyến tính":
+    course_id: MATH102
+    course_code: MATH102
+    course_name: Đại số tuyến tính
+    term: "2026A"
+    status: active

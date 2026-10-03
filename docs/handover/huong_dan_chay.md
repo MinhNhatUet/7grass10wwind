@@ -33,6 +33,9 @@ copy .env.example .env            # macOS/Linux: cp .env.example .env
 | `DEMO_LOGIN_ENABLED` | `true` để hiện nút **Đăng nhập demo** (chọn Sinh viên / Giảng viên, không cần mật khẩu). Luôn tắt khi `APP_ENV=production` (D-71) |
 | `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M`, `USD_TO_VND` | Ước tính chi phí AI ở trang Quản trị → Chi phí AI (D-60) |
 | `LLM_TIMEOUT_SECONDS` | Thời gian chờ mỗi lần gọi LLM (mặc định 60) |
+| `JOB_MAX_WORKERS`, `HTTP_THREAD_LIMIT` | Số job tài liệu chạy cùng lúc (mặc định 2); số request đồng bộ chạy song song (mặc định 100) |
+| `AUTH_MAX_REGISTRATIONS_PER_HOUR` | Số lần tự đăng ký mỗi IP trong 1 giờ (mặc định 10) |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Chỉ cho `docker compose`; bắt buộc đặt mật khẩu |
 | `EVAL_*_LOGIN`, `EVAL_*_PASSWORD` | Tài khoản test/đăng nhập (xem mục 3) |
 
 `DATABASE_URL=sqlite:///./data/app.db` (mặc định, D-20). DB tạo tự động khi chạy seed hoặc khởi động backend.
@@ -57,6 +60,8 @@ Chạy backend:
 ```bash
 uvicorn src.main:app --reload --host 127.0.0.1 --port 8000      # hoặc: make run
 ```
+
+Schema DB do **Alembic** quản lý (`migrations/`): backend tự chạy `upgrade head` khi khởi động. DB cũ chưa có Alembic được tự đưa về mốc rồi nâng cấp, dữ liệu giữ nguyên. Đổi model thì thêm migration: `alembic revision --autogenerate -m "mo ta"`.
 
 Kiểm tra: mở <http://localhost:8000/health>, kết quả phải là `{"status":"ok",...}`. Tài liệu API ở <http://localhost:8000/docs>. Mọi response đều có header `X-Request-ID`. Lỗi từ 500 trở lên hiện "mã hỗ trợ" trên giao diện; dùng mã này để tìm trong log JSON của backend (D-65).
 
@@ -95,7 +100,7 @@ Kiểm tra mã: `npm run lint` và `npx tsc --noEmit`. `package.json` không có
 
 ## 5. Docker (tùy chọn)
 
-`docker compose up --build` dựng 3 service: `db` (Postgres 15), `backend` và `frontend`. Frontend có `frontend/Dockerfile` (Next.js standalone).
+`docker compose up --build` dựng 3 service: `db` (Postgres 15), `backend` và `frontend`. Frontend có `frontend/Dockerfile` (Next.js standalone). Phải đặt `POSTGRES_PASSWORD` trong `.env`, nếu không compose sẽ báo lỗi. Volume Postgres đã tạo trước đây dùng mật khẩu `password`: đặt đúng giá trị đó, hoặc xóa volume để khởi tạo lại.
 
 Lưu ý: compose đặt `DATABASE_URL` của backend sang Postgres, trong khi MVP được phát triển và kiểm thử (UAT) trên **SQLite**. Luồng Postgres chưa được kiểm chứng. Khi demo, nên chạy trực tiếp theo mục 2 và 4.
 

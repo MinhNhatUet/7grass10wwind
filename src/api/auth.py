@@ -21,11 +21,13 @@ from src.models.schemas import (
     UserPublic,
 )
 from src.services import acl, audit
-from src.services.auth import AuthService, get_auth_service, hash_password
+from src.services.auth import AuthService, LoginRateLimiter, get_auth_service, hash_password
 from src.services.auth import Session as AuthSession
 from src.services.errors import AppError
 
 router = APIRouter()
+# Đăng ký tự do chỉ tạo SV chưa có môn, nhưng vẫn giới hạn theo IP để không tạo tài khoản hàng loạt (H-06)
+_register_limiter = LoginRateLimiter(max_failures=get_settings().auth_max_registrations_per_hour, window_s=3600)
 
 
 def public_user(user: User) -> UserPublic:
@@ -33,7 +35,7 @@ def public_user(user: User) -> UserPublic:
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-async def login(
+def login(
     body: LoginRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -58,7 +60,7 @@ async def demo_login_status() -> dict[str, bool]:
 
 
 @router.post("/auth/demo-login", response_model=LoginResponse)
-async def demo_login(
+def demo_login(
     body: DemoLogin,
     db: Session = Depends(get_db),
     auth: AuthService = Depends(get_auth_service),
@@ -80,13 +82,16 @@ async def demo_login(
 
 
 @router.post("/auth/register", response_model=LoginResponse)
-async def register(
+def register(
     body: RegisterRequest,
     request: Request,
     db: Session = Depends(get_db),
     auth: AuthService = Depends(get_auth_service),
 ) -> LoginResponse:
     client_ip = request.client.host if request.client else "unknown"
+    if _register_limiter.blocked(("register", client_ip)):
+        raise AppError("TOO_MANY_REGISTRATIONS", 429, retryable=True)
+    _register_limiter.fail(("register", client_ip))  # đếm mọi lần thử, kể cả trùng tài khoản
 
     if db.scalar(select(User).where(User.login_id == body.login_id)):
         raise HTTPException(400, "Tài khoản đã tồn tại")
@@ -107,12 +112,12 @@ async def register(
 
 
 @router.post("/auth/logout", status_code=204)
-async def logout(token: str = Depends(bearer_token), auth: AuthService = Depends(get_auth_service)) -> None:
+def logout(token: str = Depends(bearer_token), auth: AuthService = Depends(get_auth_service)) -> None:
     auth.logout(token)
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(current: tuple[User, AuthSession] = Depends(current_session)) -> MeResponse:
+def me(current: tuple[User, AuthSession] = Depends(current_session)) -> MeResponse:
     user, session = current
     return MeResponse(
         user=public_user(user),
@@ -122,7 +127,7 @@ async def me(current: tuple[User, AuthSession] = Depends(current_session)) -> Me
 
 
 @router.get("/me/courses", response_model=CoursesResponse)
-async def my_courses(user: User = Depends(current_user), db: Session = Depends(get_db)) -> CoursesResponse:
+def my_courses(user: User = Depends(current_user), db: Session = Depends(get_db)) -> CoursesResponse:
     """Môn người hiện tại được hỏi đáp/tìm (PRD 11.2, 5.1) kèm quyền quản lý do backend tính."""
     items = []
     for course_id in acl.readable_course_ids(db, user):

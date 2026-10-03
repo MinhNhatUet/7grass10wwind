@@ -14,7 +14,7 @@ import hmac
 import secrets
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -76,7 +76,11 @@ class SessionStore:
     def create(self, user_id: str, ttl: timedelta) -> tuple[str, Session]:
         token = secrets.token_urlsafe(32)
         session = Session(user_id=user_id, expires_at=datetime.now(UTC) + ttl)
+        now = datetime.now(UTC)
         with self._lock:
+            # Dọn phiên hết hạn mỗi lần đăng nhập: phiên của người đóng trình duyệt không đăng xuất không tích lũy mãi
+            for key in [k for k, s in self._sessions.items() if s.expires_at <= now]:
+                del self._sessions[key]
             self._sessions[self._key(token)] = session
         return token, session
 
@@ -102,13 +106,15 @@ class LoginRateLimiter:
     def __init__(self, max_failures: int, window_s: int) -> None:
         self.max_failures = max_failures
         self.window_s = window_s
-        self._failures: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._failures: dict[tuple[str, str], deque[float]] = {}
         self._lock = threading.Lock()
 
     def _prune(self, key: tuple[str, str], now: float) -> deque[float]:
-        q = self._failures[key]
+        q = self._failures.get(key, deque())
         while q and now - q[0] > self.window_s:
             q.popleft()
+        if not q:
+            self._failures.pop(key, None)  # không giữ khóa rỗng (login_id ngẫu nhiên không làm phình bộ nhớ)
         return q
 
     def blocked(self, key: tuple[str, str]) -> bool:
@@ -118,7 +124,11 @@ class LoginRateLimiter:
     def fail(self, key: tuple[str, str]) -> None:
         with self._lock:
             now = time.monotonic()
-            self._prune(key, now).append(now)
+            for stale in [k for k, q in self._failures.items() if not q or now - q[-1] > self.window_s]:
+                del self._failures[stale]  # dọn khóa đã quá cửa sổ
+            q = self._prune(key, now)
+            q.append(now)
+            self._failures[key] = q
 
     def reset(self, key: tuple[str, str]) -> None:
         with self._lock:

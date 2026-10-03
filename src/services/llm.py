@@ -28,6 +28,8 @@ def get_embeddings() -> OpenAIEmbeddings:
         if not settings.gemini_api_key:
             raise RuntimeError("EMBEDDING_PROVIDER=gemini nhưng thiếu GEMINI_API_KEY trong .env")
         api_key, base_url = settings.gemini_api_key, GEMINI_OPENAI_BASE_URL
+    elif settings.embedding_api_key:  # D-77: OpenAI chính hãng, tách khỏi endpoint LLM
+        api_key, base_url = settings.embedding_api_key, settings.embedding_base_url or None
     else:
         api_key, base_url = settings.llm_api_key, settings.ai_base_url or None
     return OpenAIEmbeddings(

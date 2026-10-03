@@ -21,16 +21,30 @@ const GUIDE = [
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const MONTH_HEAD = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const MAX_PLAN_DAYS = 60; // backend nhận tối đa 60 ngày
+const ddmm = (d: string) => `${d.slice(8)}/${d.slice(5, 7)}`;
 
-/** Lịch tháng: bấm từng ngày để chọn/bỏ (D-46). Không chọn ngày đã qua; tối đa 60 ngày. */
-function DayPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+/** Mọi ngày từ hôm nay đến hết `until` (YYYY-MM-DD), tối đa MAX_PLAN_DAYS ngày. */
+function daysUntil(until: string): string[] {
+  const out: string[] = [];
+  for (const d = new Date(); iso(d) <= until && out.length < MAX_PLAN_DAYS; d.setDate(d.getDate() + 1)) out.push(iso(d));
+  return out;
+}
+
+/** Lịch tháng (D-46). `range`: bấm một ngày = học mỗi ngày từ hôm nay đến ngày đó (D-81); không thì bấm từng ngày
+ * để chọn/bỏ. Không chọn ngày đã qua; tối đa 60 ngày. */
+function DayPicker({ value, onChange, range = false, onSuggestUntil }: {
+  value: string[]; onChange: (v: string[]) => void; range?: boolean; onSuggestUntil?: (d: string) => void;
+}) {
   const today = iso(new Date());
+  const lastAllowed = daysUntil("9999-12-31").at(-1) ?? today;
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const first = (month.getDay() + 6) % 7; // thứ Hai đứng đầu
   const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const cells: (string | null)[] = [...Array(first).fill(null), ...Array.from({ length: count }, (_, i) => iso(new Date(month.getFullYear(), month.getMonth(), i + 1)))];
   const picked = new Set(value);
   const toggle = (d: string) => {
+    if (range) return onChange(daysUntil(d));
     const next = new Set(picked);
     if (next.has(d)) next.delete(d);
     else if (next.size < 60) next.add(d);
@@ -48,14 +62,22 @@ function DayPicker({ value, onChange }: { value: string[]; onChange: (v: string[
       <div className="grid grid-cols-7 gap-1 text-center text-[13px]">
         {MONTH_HEAD.map((h) => <span key={h} className="py-1 text-[12px] font-medium text-slate-400">{h}</span>)}
         {cells.map((d, i) => d === null ? <span key={`e${i}`} /> : (
-          <button key={d} type="button" disabled={d < today} onClick={() => toggle(d)} aria-pressed={picked.has(d)} aria-label={`Ngày ${d}`}
+          <button key={d} type="button" disabled={d < today || (range && d > lastAllowed)} onClick={() => toggle(d)} aria-pressed={picked.has(d)} aria-label={`Ngày ${d}`}
             className={`h-9 rounded-lg border-0 cursor-pointer disabled:cursor-default disabled:opacity-30 ${picked.has(d) ? "bg-black text-white dark:bg-white dark:text-black font-semibold" : "bg-transparent hover:bg-slate-100 dark:hover:bg-white/10"} ${d === today && !picked.has(d) ? "ring-1 ring-slate-400" : ""}`}>
             {Number(d.slice(8))}
           </button>
         ))}
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-500">
-        <span>{value.length ? `${value.length} ngày đã chọn: ${value.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(", ")}` : "Bấm vào các ngày bạn muốn học."}</span>
+        <span>{range
+          ? (value.length ? `Học mỗi ngày từ hôm nay (${ddmm(value[0])}) đến ${ddmm(value[value.length - 1])} — ${value.length} ngày.` : "Bấm vào ngày cuối cùng bạn muốn học.")
+          : (value.length ? `${value.length} ngày đã chọn: ${value.map(ddmm).join(", ")}` : "Bấm vào các ngày bạn muốn học.")}</span>
+        {/* Chỉ chọn 1 ngày ở chế độ chọn từng ngày thường là ý "học đến ngày này" → gợi ý chuyển chế độ */}
+        {!range && value.length === 1 && value[0] > today && onSuggestUntil && (
+          <button type="button" onClick={() => onSuggestUntil(value[0])} className="rounded-lg border-0 bg-black px-3 py-1 font-medium text-white dark:bg-white dark:text-black cursor-pointer">
+            Học mỗi ngày đến {ddmm(value[0])}
+          </button>
+        )}
         {value.length > 0 && <button type="button" onClick={() => onChange([])} className="border-0 bg-transparent underline cursor-pointer text-slate-500">Bỏ chọn hết</button>}
       </div>
     </div>
@@ -69,8 +91,11 @@ export default function LearningPlansPage() {
   const [courseId, setCourseId] = useState("");
   const [lessons, setLessons] = useState<Chapter[]>([]); // D-52: chọn bài thay vì gõ nội dung
   const [days, setDays] = useState(7);
-  const [mode, setMode] = useState<"count" | "dates">("count");
+  const [mode, setMode] = useState<"count" | "until" | "dates">("count");
   const [dates, setDates] = useState<string[]>([]);
+  const [until, setUntil] = useState(""); // "Học đến ngày": học mỗi ngày từ hôm nay đến hạn này
+  const untilDates = until ? daysUntil(until) : [];
+  const chosen = mode === "dates" ? dates : mode === "until" ? untilDates : null;
   const [minutes, setMinutes] = useState(45);
 
   useEffect(() => {
@@ -81,10 +106,11 @@ export default function LearningPlansPage() {
 
   function create(e: FormEvent) {
     e.preventDefault();
-    if (!lessons.length || !courseId || (mode === "dates" && dates.length === 0)) return;
+    if (!lessons.length || !courseId || (chosen && chosen.length === 0)) return;
     const goal = lessons.map(lessonLabel).join("; ");
-    const chosen = mode === "dates" ? dates : null;
-    const when = chosen ? `vào ${chosen.length} ngày đã chọn (${chosen.map((d) => `${d.slice(8)}/${d.slice(5, 7)}`).join(", ")})` : `trong ${days} ngày`;
+    const when = mode === "until" && chosen
+      ? `mỗi ngày từ ${ddmm(chosen[0])} đến ${ddmm(chosen[chosen.length - 1])} (${chosen.length} ngày)`
+      : chosen ? `vào ${chosen.length} ngày đã chọn (${chosen.map(ddmm).join(", ")})` : `trong ${days} ngày`;
     const content = `Lập lộ trình học ${lessons.length} bài (${lessons.map((l) => l.chapter).join(", ")}) ${when}, mỗi ngày ${minutes} phút`;
     goToChat(router, content, {
       content, assistant: "learning",
@@ -147,12 +173,13 @@ export default function LearningPlansPage() {
                   <LessonPicker courseId={courseId} max={15} picked={lessons} onChange={setLessons} />
                 </div>
                 <div role="radiogroup" aria-label="Cách chọn ngày học" className="flex rounded-xl bg-slate-100 dark:bg-white/10 p-1 text-sm">
-                  {([["count", "Số ngày liên tiếp"], ["dates", "Chọn ngày trên lịch"]] as const).map(([k, v]) => (
+                  {([["count", "Số ngày liên tiếp"], ["until", "Học đến ngày"], ["dates", "Chọn từng ngày"]] as const).map(([k, v]) => (
                     <button key={k} type="button" role="radio" aria-checked={mode === k} onClick={() => setMode(k)}
                       className={`flex-1 rounded-lg py-2 border-0 cursor-pointer ${mode === k ? "bg-white dark:bg-black/40 font-semibold shadow-sm" : "bg-transparent text-slate-500"}`}>{v}</button>
                   ))}
                 </div>
-                {mode === "dates" && <DayPicker value={dates} onChange={setDates} />}
+                {mode === "dates" && <DayPicker value={dates} onChange={setDates} onSuggestUntil={(d) => { setUntil(d); setMode("until"); }} />}
+                {mode === "until" && <DayPicker range value={untilDates} onChange={(v) => setUntil(v.at(-1) ?? "")} />}
                 <div className={`grid gap-5 ${mode === "count" ? "grid-cols-2" : "grid-cols-1"}`}>
                   {mode === "count" && (
                     <label className="block">
@@ -173,7 +200,7 @@ export default function LearningPlansPage() {
                 </div>
                 <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-white/10">
                   <button type="button" onClick={() => setShowForm(false)} className="px-6 py-2.5 rounded-xl font-medium text-slate-600 dark:text-slate-300 bg-transparent border-0 cursor-pointer hover:bg-slate-100 dark:hover:bg-white/10">Hủy</button>
-                  <button type="submit" disabled={!courseId || !lessons.length || (mode === "dates" && dates.length === 0)}
+                  <button type="submit" disabled={!courseId || !lessons.length || (chosen !== null && chosen.length === 0)}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium bg-black text-white dark:bg-white dark:text-black border-0 cursor-pointer hover:opacity-80 disabled:opacity-50">
                     <Sparkles size={18} />
                     Tạo lộ trình bằng AI

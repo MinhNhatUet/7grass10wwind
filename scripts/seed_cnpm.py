@@ -33,6 +33,8 @@ from sqlalchemy import delete, select  # noqa: E402
 from eval.common import REPO_ROOT, setup_console  # noqa: E402
 from scripts.import_books import wait_job  # noqa: E402
 from src.db import get_sessionmaker, init_db  # noqa: E402
+from src.ingestion.chunking.serializers import serialize_element  # noqa: E402
+from src.ingestion.models.element import Element  # noqa: E402
 from src.models.orm import (  # noqa: E402
     PUBLISHED,
     Approval,
@@ -96,6 +98,15 @@ def _clean(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", _FOOTER.sub("", _IMAGE_BLOCK.sub("", text))).strip()
 
 
+def _artifact_element_text(element: dict | None) -> str:
+    if not element:
+        return ""
+    try:
+        return _clean(serialize_element(Element.model_validate(element)))
+    except (TypeError, ValueError):
+        return _clean(str(element.get("text") or ""))
+
+
 def _artifact_chunks(version_id: str) -> tuple[list[dict], int]:
     """Chunk artifacts GIỮ NGUYÊN (1 chunk = 1 embedding — D-49) + page_map [[vị trí ký tự, trang], …] dựng từ
     page_number của từng phần tử (data/artifacts/pages), để trích dẫn mở đúng trang mà không phải embedding theo trang.
@@ -108,18 +119,33 @@ def _artifact_chunks(version_id: str) -> tuple[list[dict], int]:
     elements = {e["id"]: e for p in pages for e in p["elements"]}
     out = []
     for c in json.loads(path.read_text(encoding="utf-8")):
-        text, page_map = "", []
+        text, page_map, cursor = _clean(str(c.get("text") or "")), [], 0
         for eid in c["element_ids"]:
             e = elements.get(eid)
-            part = _clean(e["text"]) if e and e.get("text") else ""
+            part = _artifact_element_text(e)
             if not part:
+                continue
+            position = text.find(part, cursor)
+            if position < 0:
                 continue
             page = int(e["page_number"])
             if not page_map or page_map[-1][1] != page:
-                page_map.append([len(text) + (1 if text else 0), page])
-            text = f"{text}\n{part}" if text else part
+                page_map.append([position, page])
+            cursor = position + len(part)
+        if not page_map:
+            locator = c.get("locator") or {}
+            page_map = [[0, int(locator.get("start") or locator.get("number") or 1)]]
+        else:
+            page_map[0][0] = 0
         if len(text) >= 20:
-            out.append({"page": page_map[0][1], "text": text, "page_map": page_map})
+            out.append(
+                {
+                    "page": page_map[0][1],
+                    "section": c.get("section"),
+                    "text": text,
+                    "page_map": page_map,
+                }
+            )
     return out, len(pages)
 
 
@@ -148,7 +174,7 @@ def fill_page_map(db) -> tuple[int, int]:  # noqa: ANN001
                 cursor, page_map = 0, []
                 for eid in c["element_ids"]:
                     e = elements.get(eid)
-                    part = _clean(e["text"]) if e and e.get("text") else ""
+                    part = _artifact_element_text(e)
                     pos = ch.text.find(part, cursor) if len(part) >= 3 else -1
                     if pos < 0:
                         continue

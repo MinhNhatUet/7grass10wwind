@@ -18,6 +18,7 @@ from src.services import conversations as plan_svc
 from src.services import course_quiz as svc
 from src.services import page_render
 from src.services.errors import AppError
+from src.services.formatting import iso
 from src.services.retrieval import servable_versions
 
 router = APIRouter()
@@ -137,7 +138,7 @@ def my_plans(user: User = Depends(current_user), db: Session = Depends(get_db)) 
                 "masked": view["masked"],
                 "days": p.days, "minutes_per_day": p.minutes_per_day, "conversation_id": p.conversation_id,
                 "done": sum(1 for s in sessions if s.get("status") == "done"), "total": len(sessions),
-                "updated_at": svc._iso(p.updated_at),
+                "updated_at": iso(p.updated_at),
             }
         )  # fmt: skip
     return {"items": items}
@@ -164,7 +165,7 @@ def my_self_checks(user: User = Depends(current_user), db: Session = Depends(get
                 "message_id": m.id, "conversation_id": c.id, "conversation_title": c.title, "kind": p["kind"],
                 "topic": p.get("topic") or (p["questions"][0].get("topic") if p["questions"] else None),
                 "questions": len(p["questions"]), "answered": len([v for v in (p.get("answers") or {}).values() if str(v).strip()]),
-                "assessed": bool(topics), "levels": [t.get("level") for t in topics], "created_at": svc._iso(m.created_at),
+                "assessed": bool(topics), "levels": [t.get("level") for t in topics], "created_at": iso(m.created_at),
             }
         )  # fmt: skip
     return {"items": items}
