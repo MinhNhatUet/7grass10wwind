@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     model_name: str = "gpt-4o-mini"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     llm_timeout_seconds: float = Field(default=60, gt=0)  # D-64: mỗi lần gọi LLM
+    # D-71: nút "Đăng nhập demo" (chọn vai trò, không cần mật khẩu). CHỈ bật ở môi trường demo; production luôn tắt.
+    demo_login_enabled: bool = False
+    demo_cnpm_sinhvien_login: str = "sinhvien"
+    demo_cnpm_giangvien_login: str = "giangvien"
     # D-60: bảng giá để ước tính chi phí (USD / 1 triệu token). Mặc định theo giá niêm yết dòng Gemini Flash-Lite —
     # chỉnh trong .env theo giá thật của nhà cung cấp đang dùng.
     llm_price_input_per_1m: float = Field(default=0.10, ge=0)
