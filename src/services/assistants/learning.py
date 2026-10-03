@@ -15,7 +15,7 @@ from src.models.orm import StudyPlan, User
 from src.services.assistants import BASE_POLICY, AssistantResult, call_json, format_sources, json_dicts, json_list
 from src.services.assistants.academic import answer as academic_answer
 from src.services.assistants.academic import evidence
-from src.services.policy import INSUFFICIENT_MESSAGE
+from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import Hit, still_servable
 
 LEVELS = {"short": "ngắn gọn", "step": "từng bước", "detailed": "chi tiết"}
@@ -166,9 +166,14 @@ def plan(
         ), None
     prev_note = ""
     if previous is not None:
-        prev_note = (
-            f"\nĐây là bản điều chỉnh của kế hoạch trước (mục tiêu: {previous.goal}); giữ các buổi đã hoàn thành."
-        )
+        from src.services.conversations import plan_view
+
+        previous_view = plan_view(db, user, previous)
+        if previous_view["masked"]:
+            return AssistantResult(
+                status="insufficient_evidence", content=SOURCE_WITHDRAWN_MESSAGE, payload={"kind": "plan"}
+            ), None
+        prev_note = f"\nĐây là bản điều chỉnh của kế hoạch trước (mục tiêu: {previous_view['goal']}); giữ các buổi đã hoàn thành."
     data = call_json(
         BASE_POLICY,
         "Lập lộ trình học chỉ dựa trên NGUỒN. Ưu tiên nền tảng trước phần phụ thuộc. Trả về JSON "
