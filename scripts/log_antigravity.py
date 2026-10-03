@@ -211,20 +211,29 @@ def extract_user_prompt(content: str) -> str:
 
 def get_logged_entry_ids(log_file: Path) -> set[str]:
     logged: set[str] = set()
-    if not log_file.exists():
-        return logged
-    with open(log_file, encoding="utf-8-sig") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            eid = entry.get("entry_id", "")
-            if eid:
-                logged.add(eid)
+    files_to_check = [log_file]
+    archive_dir = log_file.parent / "archive"
+    if archive_dir.is_dir():
+        files_to_check.extend(archive_dir.glob("*.jsonl"))
+
+    for fpath in files_to_check:
+        if not fpath.exists():
+            continue
+        try:
+            with open(fpath, encoding="utf-8-sig") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    eid = entry.get("entry_id", "")
+                    if eid:
+                        logged.add(eid)
+        except OSError:
+            pass
     return logged
 
 

@@ -10,12 +10,6 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_empty_message(client):
-    response = await client.post("/api/v1/chat", json={"message": ""})
-    assert response.status_code == 422  # Validation error
-
-
-@pytest.mark.asyncio
-async def test_agent_status(client):
-    response = await client.get("/api/v1/status")
-    assert response.status_code == 200
+async def test_template_chat_removed(client):
+    """Endpoint mẫu của template đã gỡ (D-63); hỏi đáp chỉ qua /conversations có xác thực."""
+    assert (await client.post("/api/v1/chat", json={"message": "hi"})).status_code == 404

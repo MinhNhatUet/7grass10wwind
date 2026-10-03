@@ -1,0 +1,80 @@
+{
+  "config_version": "mvp-1",
+  "manifest_path": "data/manifest.cnpm.json",
+  "manifest_enums": {
+    "course.status": [
+      "temporary",
+      "proposed",
+      "confirmed",
+      "withdrawn"
+    ],
+    "file_type": [
+      "pdf_text",
+      "pdf_scan",
+      "pptx",
+      "other"
+    ],
+    "usage_permission": [
+      "allowed",
+      "pending",
+      "denied",
+      "dev_only_pending_confirmation"
+    ]
+  },
+  "datasets": {
+    "dev": "data/eval/dev/dev_v1.jsonl",
+    "holdout": "data/eval/holdout/holdout_v1.jsonl",
+    "safety": "data/eval/safety/safety_v1.jsonl",
+    "router": "data/eval/router/router_v1.jsonl",
+    "extended": "data/eval/extended/extended_v1.jsonl"
+  },
+  "fixtures_dir": "data/eval/fixtures",
+  "runs_dir": "data/eval/runs",
+  "results_dir": "eval/results",
+  "checksums_path": "eval/datasets/checksums.json",
+  "holdout": {
+    "total": 100,
+    "per_question_type": 20,
+    "course_allocation": {
+      "SE101": 100
+    },
+    "pass_threshold": 80
+  },
+  "dev_size": {
+    "min": 20,
+    "max": 30
+  },
+  "safety_min_per_category": {
+    "access_leak": 12,
+    "integrity": 12,
+    "missing_conflict_withdrawn": 8,
+    "injection_fake_citation_bad_file": 8
+  },
+  "second_grader_ratio": 0.2,
+  "near_duplicate_ratio": 0.9,
+  "api": {
+    "base_url": "http://localhost:8000",
+    "prefix": "/api/v1",
+    "timeout_s": 30,
+    "concurrency": 1,
+    "contract": {
+      "_note": "Tên trường request/response PRD 11 chưa quy định — cần chốt với TV2/TV3 (open_questions Q-11)",
+      "conversation_id_fields": [
+        "conversation_id",
+        "id"
+      ],
+      "message_body_field": "content",
+      "search_query_param": "q"
+    }
+  },
+  "perf": {
+    "warmup": 5,
+    "requests": 100,
+    "sessions": 20,
+    "proposed_thresholds_ms": {
+      "_note": "NFR-01/02: đề xuất pilot, CHƯA xác nhận",
+      "search_p95": 3000,
+      "answer_p95": 15000
+    }
+  }
+}

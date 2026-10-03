@@ -4,19 +4,32 @@ uvicorn[standard]>=0.34.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 python-dotenv>=1.0.0
+PyYAML>=6.0.0  # config/*.yaml của pipeline dữ liệu (src/ingestion)
 
 # AI / LangChain
 langchain>=0.3.0
 langchain-openai>=0.3.0
+langchain-google-genai>=1.0.0
 langgraph>=0.2.0
 
-# Database (uncomment as needed)
-# sqlalchemy>=2.0.0
-# alembic>=1.14.0
-# psycopg2-binary>=2.9.0
+# Database (D-20: SQLite + SQLAlchemy cho MVP)
+sqlalchemy>=2.1,<3
+alembic>=1.14,<2  # M-09: migration có phiên bản (migrations/)
+psycopg2-binary>=2.9.0
 
-# Vector Store (uncomment as needed)
-# chromadb>=0.5.0
+# Ingestion + retrieval MVP (D-21, D-22, D-23)
+pypdf>=6.19,<7
+python-pptx>=1.0.2,<2
+pypdfium2==5.13.0
+PyMuPDF>=1.24.0  # src/ingestion: parser PDF, cắt ảnh công thức (import khi dùng)
+# paddleocr  # tùy chọn: nhận dạng công thức (src/ingestion/formula/recognizer.py), không cài mặc định
+python-multipart>=0.0.32
+numpy>=2.0,<3
+
+# Vector store: embedding lưu trong DB, cosine bằng NumPy (D-21) — không dùng ChromaDB
+
+# Evaluation (RAGAS) tách sang eval/requirements.txt (M-11): ghim langchain-community cho RAGAS không còn chặn
+# bản vá của langchain trong app
 
 # Dev tools
 ruff>=0.8.0

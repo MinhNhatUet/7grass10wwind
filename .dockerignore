@@ -14,3 +14,6 @@ eval/
 .dockerignore
 Dockerfile
 docker-compose.yml
+chroma_data/
+venv/
+frontend/
