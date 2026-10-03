@@ -49,7 +49,6 @@ Trợ lý học thuật RAG "Kho tri thức hỗ trợ học thuật X" (AI20K B
 | Mục | Ghi chú |
 |---|---|
 | [ui-completion-roadmap.md](ui-completion-roadmap.md) | Lộ trình hoàn thiện giao diện (phần còn mở + lịch sử) |
-| [work/](work/README.md) | Nhật ký từng bước làm việc, có mục lục. Là lịch sử, không thay tài liệu vận hành |
 | [archive/reviews/](archive/reviews/) | Báo cáo rà soát cũ (27/09, 30/09), chỉ để tham khảo lịch sử |
 | [guide/](guide/) | **Tài liệu đào tạo của template** AI20K (Technical Guidebook), đồng bộ từ upstream, không phải hướng dẫn sản phẩm. Không sửa |
-| `plans/`, `rules/` | Tài liệu cục bộ (gitignore) của TV1; tài liệu bàn giao không phụ thuộc vào chúng |
+| `plans/`, `rules/`, `work/` | Tài liệu cục bộ (gitignore); tài liệu bàn giao không phụ thuộc vào chúng |

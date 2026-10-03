@@ -56,5 +56,5 @@ Bộ ca: [uat_mvp.md](uat_mvp.md) phiên bản 1.0. Lượt trước: [UAT_20261
   - LA-01, LA-02: mỗi mục có `proof`, không có câu trùng.
   - QZ-02: mỗi câu tạo từ tài liệu học có "Căn cứ trong tài liệu".
 - Kết quả toàn bộ: **16 Pass · 0 Fail · 22 Blocked**, không hồi quy so với lượt `0933`. LA-01 19/19, LA-02 33/33, QZ-02 13/13 tiêu chí máy.
-- Trong quá trình sửa, lượt `1017` có QZ-02 **Fail**: model dịch `proof` sang tiếng Việt nên không câu nào kiểm được. Đã sửa prompt để giữ ngôn ngữ gốc. Chi tiết ở `docs/work/77_kiem_chung_cau_hoi_dap_an.md`.
+- Trong quá trình sửa, lượt `1017` có QZ-02 **Fail**: model dịch `proof` sang tiếng Việt nên không câu nào kiểm được. Đã sửa prompt để giữ ngôn ngữ gốc.
 - Kết luận không đổi: **chưa thể kết luận nghiệm thu.**
