@@ -33,8 +33,11 @@ ROUTER_SYSTEM = """Bạn là bộ điều phối (router) của hệ thống tr�
 nhiều môn hay "tất cả".
 MÔN: chọn môn mà nội dung câu hỏi thuộc về. Câu nối tiếp ("còn cái kia thì sao", "giải thích thêm") giữ MÔN LƯỢT
 TRƯỚC. Không xác định được môn → course_id null.
-- "hub": muốn TÌM/LIỆT KÊ/MỞ tài liệu, slide, giáo trình, trang chứa nội dung ("tìm tài liệu về…", "slide nào nói về…").
-- "academic": hỏi kiến thức, định nghĩa, so sánh, tổng hợp, câu hỏi nối tiếp về nội dung môn.
+- "hub": CHỈ khi muốn TÌM/LIỆT KÊ/MỞ tài liệu, slide, giáo trình, trang ("tìm tài liệu về…", "slide nào nói về…",
+  "có tài liệu nào về…", "mở giáo trình…") — kết quả là DANH SÁCH tài liệu, không phải câu trả lời.
+- "academic": hỏi kiến thức, định nghĩa, so sánh, tổng hợp, câu hỏi nối tiếp về nội dung môn — KỂ CẢ khi câu hỏi nhắc
+  tới "tài liệu": "theo tài liệu, X là gì?", "tài liệu này nói gì về X?", "tóm tắt tài liệu/nội dung về X",
+  "trong slide, X cần bao nhiêu…" đều là "academic" (người dùng muốn câu TRẢ LỜI, không muốn danh sách tài liệu).
 - "learning" — chọn learning_action:
   * "explain": giải thích theo mức hiểu ("giải thích dễ hơn", "từng bước");
   * "analogy": giải thích bằng ví dụ/ẩn dụ đời thường ("giải thích bằng ví dụ bóng đá/trà sữa…") → điền analogy_context;

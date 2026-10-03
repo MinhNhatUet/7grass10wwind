@@ -1,8 +1,10 @@
 # Cấu trúc dự án và đánh giá code hiện tại
 
+> **Báo cáo lịch sử (lưu trữ 2026-10-03), không phải hiện trạng.** Nhiều mục đã được xử lý sau ngày rà soát; hiện trạng xem [mô tả dự án hiện tại](../../documentions/mo_ta_du_an_hien_tai.md) và [PRD v2](../../documentions/PRD_v2_MVP_edu04.md).
+
 Ngày rà soát: **27/09/2026**.
 
-Tài liệu mô tả code đang có trong working tree, gồm cả thay đổi chưa commit. Đây là ảnh chụp hiện trạng, không phải kiến trúc mục tiêu hay xác nhận hệ thống đã sẵn sàng production. Các đường dẫn bên dưới tính tương đối từ thư mục `docs`.
+Tài liệu mô tả code đang có trong working tree, gồm cả thay đổi chưa commit. Đây là ảnh chụp hiện trạng, không phải kiến trúc mục tiêu hay xác nhận hệ thống đã sẵn sàng production. Các liên kết bên dưới đã được chỉnh theo vị trí lưu trữ mới.
 
 ## 1. Tổng quan
 
@@ -76,15 +78,15 @@ Các thư mục `.venv`, `node_modules`, cache công cụ và file DB runtime kh
 
 | File | Trách nhiệm |
 | --- | --- |
-| [main.py](../src/main.py) | Khởi tạo DB, khôi phục job gián đoạn, CORS, handler `AppError`, đăng ký router |
-| [api/deps.py](../src/api/deps.py) | Bearer token, current user, kiểm tra role, lưu/replay idempotency |
-| [api/auth.py](../src/api/auth.py) | Đăng nhập/đăng xuất, thông tin người dùng và môn học |
-| [api/conversations.py](../src/api/conversations.py) | Hội thoại, tin nhắn, quiz, kế hoạch học |
-| [api/documents.py](../src/api/documents.py) | Thư viện, upload, phiên bản, preview, submit, duyệt, retry, thu hồi |
-| [api/sources.py](../src/api/sources.py) | Citation/chunk source, text và ảnh trang, feedback |
-| [api/dashboard.py](../src/api/dashboard.py) | Dashboard và phản hồi trong phạm vi quản lý |
-| [api/admin.py](../src/api/admin.py) | Tài khoản, membership, môn học, khóa tài liệu, audit |
-| [api/routes.py](../src/api/routes.py) | Endpoint chat/status mẫu còn sót và vẫn được đăng ký |
+| [main.py](../../../src/main.py) | Khởi tạo DB, khôi phục job gián đoạn, CORS, handler `AppError`, đăng ký router |
+| [api/deps.py](../../../src/api/deps.py) | Bearer token, current user, kiểm tra role, lưu/replay idempotency |
+| [api/auth.py](../../../src/api/auth.py) | Đăng nhập/đăng xuất, thông tin người dùng và môn học |
+| [api/conversations.py](../../../src/api/conversations.py) | Hội thoại, tin nhắn, quiz, kế hoạch học |
+| [api/documents.py](../../../src/api/documents.py) | Thư viện, upload, phiên bản, preview, submit, duyệt, retry, thu hồi |
+| [api/sources.py](../../../src/api/sources.py) | Citation/chunk source, text và ảnh trang, feedback |
+| [api/dashboard.py](../../../src/api/dashboard.py) | Dashboard và phản hồi trong phạm vi quản lý |
+| [api/admin.py](../../../src/api/admin.py) | Tài khoản, membership, môn học, khóa tài liệu, audit |
+| `api/routes.py` (đã gỡ ở D-63) | Endpoint chat/status mẫu còn sót và vẫn được đăng ký |
 
 API chính có prefix `/api/v1`. Request schema đang phân bố ở từng file API và `models/schemas.py`; không có một bộ schema hợp đồng tập trung hoàn chỉnh.
 
@@ -92,33 +94,33 @@ API chính có prefix `/api/v1`. Request schema đang phân bố ở từng file
 
 | File/module | Trách nhiệm |
 | --- | --- |
-| [agents/orchestrator.py](../src/agents/orchestrator.py) | Xây graph, thực thi và trả kết quả cùng trace |
-| [agents/orchestrator_state.py](../src/agents/orchestrator_state.py) | Kiểu state, mode, quyết định route |
-| [agents/nodes/orchestration.py](../src/agents/nodes/orchestration.py) | Policy, chọn môn/trợ lý, chuẩn hóa tham số và gọi dịch vụ |
-| [services/assistants/academic.py](../src/services/assistants/academic.py) | Evidence gate, hỏi đáp theo nguồn, kiểm tra citation |
-| [services/assistants/learning.py](../src/services/assistants/learning.py) | Giải thích, quiz, đánh giá câu trả lời, kế hoạch học |
-| [services/assistants/hub.py](../src/services/assistants/hub.py) | Tìm tài liệu và trả thẻ kết quả |
-| [services/assistants/study_tools.py](../src/services/assistants/study_tools.py) | Diagnose, flashcards, cloze, analogy, triage, gợi ý trang ôn tập |
-| [services/assistants/__init__.py](../src/services/assistants/__init__.py) | `AssistantResult`, gọi JSON, format nguồn/lịch sử, kiểm tra citation/quote |
-| [services/retrieval.py](../src/services/retrieval.py) | Embedding, chọn nguồn theo ACL, cache vector, similarity, tái kiểm tra nguồn |
-| [services/llm.py](../src/services/llm.py) | Tạo client LLM/embedding |
-| [services/policy.py](../src/services/policy.py) | Luật nhận diện yêu cầu xin lời giải bài tính điểm, thông báo nghiệp vụ |
+| [agents/orchestrator.py](../../../src/agents/orchestrator.py) | Xây graph, thực thi và trả kết quả cùng trace |
+| [agents/orchestrator_state.py](../../../src/agents/orchestrator_state.py) | Kiểu state, mode, quyết định route |
+| [agents/nodes/orchestration.py](../../../src/agents/nodes/orchestration.py) | Policy, chọn môn/trợ lý, chuẩn hóa tham số và gọi dịch vụ |
+| [services/assistants/academic.py](../../../src/services/assistants/academic.py) | Evidence gate, hỏi đáp theo nguồn, kiểm tra citation |
+| [services/assistants/learning.py](../../../src/services/assistants/learning.py) | Giải thích, quiz, đánh giá câu trả lời, kế hoạch học |
+| [services/assistants/hub.py](../../../src/services/assistants/hub.py) | Tìm tài liệu và trả thẻ kết quả |
+| [services/assistants/study_tools.py](../../../src/services/assistants/study_tools.py) | Diagnose, flashcards, cloze, analogy, triage, gợi ý trang ôn tập |
+| [services/assistants/__init__.py](../../../src/services/assistants/__init__.py) | `AssistantResult`, gọi JSON, format nguồn/lịch sử, kiểm tra citation/quote |
+| [services/retrieval.py](../../../src/services/retrieval.py) | Embedding, chọn nguồn theo ACL, cache vector, similarity, tái kiểm tra nguồn |
+| [services/llm.py](../../../src/services/llm.py) | Tạo client LLM/embedding |
+| [services/policy.py](../../../src/services/policy.py) | Luật nhận diện yêu cầu xin lời giải bài tính điểm, thông báo nghiệp vụ |
 
 Graph hiện chọn **một trợ lý cho mỗi lượt**. Chưa triển khai kế hoạch gọi nhiều trợ lý phụ thuộc nhau trong một yêu cầu. `document_scope()` dùng `ContextVar` để giới hạn retrieval vào tài liệu được chọn trong lượt đó.
 
 ### 3.3. Dịch vụ nghiệp vụ
 
-- [conversations.py](../src/services/conversations.py): quyền sở hữu hội thoại, lưu tin nhắn, dựng lịch sử, quota, điều phối, citation, kế hoạch và quiz. Đây là module đang tập trung nhiều trách nhiệm nhất của luồng chat.
-- [documents.py](../src/services/documents.py): vòng đời phiên bản, job trích xuất/embedding/index, phê duyệt, thu hồi và khóa khẩn cấp.
-- [ingestion.py](../src/services/ingestion.py), [text_cleaning.py](../src/services/text_cleaning.py): xác định định dạng, trích xuất, làm sạch, chia chunk theo trang/slide.
-- [acl.py](../src/services/acl.py): quyền theo tài khoản, môn, role, nhãn liêm chính và trạng thái phiên bản.
-- [auth.py](../src/services/auth.py): scrypt password hash, token phiên và giới hạn đăng nhập sai.
-- [storage.py](../src/services/storage.py), [page_render.py](../src/services/page_render.py): lưu file riêng tư và render trang PDF.
-- [audit.py](../src/services/audit.py), [errors.py](../src/services/errors.py): sự kiện audit và lỗi nghiệp vụ chuẩn hóa.
+- [conversations.py](../../../src/services/conversations.py): quyền sở hữu hội thoại, lưu tin nhắn, dựng lịch sử, quota, điều phối, citation, kế hoạch và quiz. Đây là module đang tập trung nhiều trách nhiệm nhất của luồng chat.
+- [documents.py](../../../src/services/documents.py): vòng đời phiên bản, job trích xuất/embedding/index, phê duyệt, thu hồi và khóa khẩn cấp.
+- [ingestion.py](../../../src/services/ingestion.py), [text_cleaning.py](../../../src/services/text_cleaning.py): xác định định dạng, trích xuất, làm sạch, chia chunk theo trang/slide.
+- [acl.py](../../../src/services/acl.py): quyền theo tài khoản, môn, role, nhãn liêm chính và trạng thái phiên bản.
+- [auth.py](../../../src/services/auth.py): scrypt password hash, token phiên và giới hạn đăng nhập sai.
+- [storage.py](../../../src/services/storage.py), [page_render.py](../../../src/services/page_render.py): lưu file riêng tư và render trang PDF.
+- [audit.py](../../../src/services/audit.py), [errors.py](../../../src/services/errors.py): sự kiện audit và lỗi nghiệp vụ chuẩn hóa.
 
 ### 3.4. Dữ liệu
 
-Các bảng nằm trong [models/orm.py](../src/models/orm.py).
+Các bảng nằm trong [models/orm.py](../../../src/models/orm.py).
 
 | Nhóm | Model | Quan hệ/chức năng chính |
 | --- | --- | --- |
@@ -136,7 +138,7 @@ Nhiều payload học tập lưu bằng JSON. Cách này giúp bổ sung tính n
 | Trang/module | Vai trò |
 | --- | --- |
 | `app/page.tsx`, `app/login/page.tsx` | Điều hướng ban đầu, đăng nhập |
-| [app/chat/page.tsx](../frontend/src/app/chat/page.tsx) | Danh sách hội thoại, gửi/retry, hiển thị câu trả lời, nguồn và tương tác học tập |
+| `app/chat/page.tsx` (đã gỡ ở D-63) | Danh sách hội thoại, gửi/retry, hiển thị câu trả lời, nguồn và tương tác học tập |
 | `app/library/page.tsx` | Thư viện và bắt đầu hội thoại theo tài liệu |
 | `app/lecturer/documents/page.tsx` | Quản lý/upload tài liệu |
 | `app/lecturer/review/page.tsx` | Kiểm tra, duyệt phiên bản |
@@ -146,11 +148,11 @@ Nhiều payload học tập lưu bằng JSON. Cách này giúp bổ sung tính n
 | `components/SourceReader.tsx`, `CiteChip.tsx` | Đọc nguồn và mở citation |
 | `components/VersionPreview.tsx` | Preview phiên bản phục vụ kiểm tra |
 | `components/StudyTools.tsx` | Công cụ học tập và thao tác nhanh |
-| [lib/api.ts](../frontend/src/lib/api.ts) | Type API, fetch wrapper, Bearer token, lỗi, tải file |
+| [lib/api.ts](../../../frontend/src/lib/api.ts) | Type API, fetch wrapper, Bearer token, lỗi, tải file |
 | `lib/session.ts`, `lib/useSession.ts` | Token trong sessionStorage và trạng thái phiên |
 | `lib/messages.ts` | Nội dung thông báo/nhãn |
 
-[next.config.ts](../frontend/next.config.ts) chuyển `/api/*` sang FastAPI. `layout.tsx` nạp `globals.css` rồi `theme.css`; file theme cố ý ghi đè style nền, vì vậy không thể kết luận mọi selector trùng là code thừa.
+[next.config.ts](../../../frontend/next.config.ts) chuyển `/api/*` sang FastAPI. `layout.tsx` nạp `globals.css` rồi `theme.css`; file theme cố ý ghi đè style nền, vì vậy không thể kết luận mọi selector trùng là code thừa.
 
 ## 5. Các luồng xử lý chính
 

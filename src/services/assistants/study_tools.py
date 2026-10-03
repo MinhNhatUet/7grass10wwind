@@ -13,6 +13,7 @@ Chung: chỉ dùng nguồn Published đúng quyền trong môn router đã chố
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -25,14 +26,18 @@ from src.services.assistants import (
     AssistantResult,
     balance_answers,
     call_json,
+    dedupe_key,
     format_sources,
     json_dicts,
     strip_citations,
+    verified_quote,
 )
 from src.services.assistants.academic import answer as academic_answer
 from src.services.assistants.academic import evidence
 from src.services.policy import INSUFFICIENT_MESSAGE
 from src.services.retrieval import Hit, search, still_servable
+
+log = logging.getLogger(__name__)
 
 MAX_CARDS = 10
 TRIAGE_LIMITS = {"definitions": 8, "pitfalls": 5, "examples": 2}
@@ -54,6 +59,22 @@ def _refs(raw: Any, hits: list[Hit], db: Session, user: User) -> list[int]:
         if 1 <= n <= len(hits) and n not in out and still_servable(db, user, hits[n - 1].version.id):
             out.append(n)
     return out
+
+
+def _proof(raw: Any, refs: list[int], hits: list[Hit], db: Session, user: User) -> tuple[str, list[int]]:
+    """D-74: câu trích chứng minh đáp án, kiểm nguyên văn trong nguồn model gắn; model gắn nhầm số mà câu trích có thật
+    ở nguồn khác (đúng quyền) → nhận nguồn thật đó. Không nguồn nào chứa → ("", refs) để loại mục."""
+    for n in refs + [k for k in range(1, len(hits) + 1) if k not in refs]:
+        if (p := verified_quote(raw, hits[n - 1].chunk.text)) and (
+            n in refs or still_servable(db, user, hits[n - 1].version.id)
+        ):
+            return p, [n]
+    return "", refs
+
+
+def _spare(n: int) -> int:
+    """Xin model dư vài mục: mục không kiểm được câu trích bị loại (D-74) mà vẫn đủ số người học yêu cầu."""
+    return n + max(2, n // 2)
 
 
 def _used(hits: list[Hit], ns: set[int]) -> list[tuple[int, Hit]]:
@@ -125,45 +146,72 @@ def flashcards(
         return _empty(mode)
     if mode == "cloze":
         instruction = (
-            f"Tạo {max_cards} câu ĐIỀN KHUYẾT từ NGUỒN về CHỦ ĐỀ. Mỗi câu thay một thuật ngữ/khái niệm then chốt "
+            f"Tạo {_spare(max_cards)} câu ĐIỀN KHUYẾT từ NGUỒN về CHỦ ĐỀ. Mỗi câu thay một thuật ngữ/khái niệm then chốt "
             'bằng "____". "answer" phải là cụm từ CHÉP NGUYÊN VĂN từ nguồn n (giữ nguyên ngôn ngữ gốc). '
-            'Trả về JSON {"items":[{"sentence":"câu có ____","answer":"...","hint":"gợi ý ngắn","source":n}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
+            'Trả về JSON {"items":[{"sentence":"câu có ____","answer":"...","hint":"gợi ý ngắn","source":n,"proof":"câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn n chứng minh đáp án"}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         )
     else:
         instruction = (
-            f"Tạo {max_cards} THẺ GHI NHỚ từ NGUỒN về CHỦ ĐỀ: mặt trước là câu hỏi ngắn buộc người học nhớ lại, "
+            f"Tạo {_spare(max_cards)} THẺ GHI NHỚ từ NGUỒN về CHỦ ĐỀ: mặt trước là câu hỏi ngắn buộc người học nhớ lại, "
             "mặt sau là câu trả lời ngắn gọn đúng theo nguồn n (tiếng Việt, giữ thuật ngữ gốc). "
-            'Trả về JSON {"items":[{"front":"...","back":"...","source":n}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
+            'Trả về JSON {"items":[{"front":"...","back":"...","source":n,"proof":"câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn n chứng minh đáp án"}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         )
     data = call_json(
         BASE_POLICY, f"{instruction}\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}", temperature=0.3
     )
-    items, used = [], set()
-    for it in json_dicts(data, "items")[:max_cards]:
+    items, used, seen, unproven = [], set(), set(), 0
+    for it in json_dicts(data, "items")[: _spare(max_cards)]:
+        if len(items) == max_cards:
+            break
         refs = _refs(it.get("source"), hits, db, user)
         if not refs:
             continue
+        # D-74: thẻ phải kèm câu trích nguyên văn có THẬT trong nguồn chứng minh đáp án — không có thì loại thẻ
+        proof, refs = _proof(it.get("proof"), refs, hits, db, user)
         if mode == "cloze":
             sentence, ans = str(it.get("sentence") or ""), str(it.get("answer") or "").strip()
+            key = dedupe_key(sentence)
             # đáp án phải có nguyên văn trong đoạn nguồn → thẻ neo chặt vào học liệu, không bịa
             if "____" not in sentence or not ans or ans.casefold() not in hits[refs[0] - 1].chunk.text.casefold():
+                continue
+            if not proof or ans.casefold() not in proof.casefold():
+                unproven += 1
+                continue
+            if key in seen:
                 continue
             items.append(
                 {
                     "sentence": strip_citations(sentence)[:500],
                     "answer": ans[:120],
                     "hint": strip_citations(str(it.get("hint") or ""))[:200],
+                    "proof": proof,
                     "sources": refs[:1],
                 }
             )
         else:
             front, back = str(it.get("front") or "").strip(), str(it.get("back") or "").strip()
+            key = dedupe_key(front)
             if not front or not back:
                 continue
+            if not proof:
+                unproven += 1
+                continue
+            if key in seen:
+                continue
             items.append(
-                {"front": strip_citations(front)[:300], "back": strip_citations(back)[:600], "sources": refs[:1]}
+                {
+                    "front": strip_citations(front)[:300],
+                    "back": strip_citations(back)[:600],
+                    "proof": proof,
+                    "sources": refs[:1],
+                }
             )
+        seen.add(key)
         used.update(refs[:1])
+    log.info(
+        "study_items_verified",
+        extra={"event": "study_items_verified", "kind": mode, "kept": len(items), "unproven": unproven},
+    )
     if not items:
         return _empty(mode)
     label = "câu điền khuyết" if mode == "cloze" else "thẻ ghi nhớ"
@@ -186,15 +234,17 @@ def mcq(
         return _empty("mcq")
     data = call_json(
         BASE_POLICY,
-        f"Tạo {n} câu TRẮC NGHIỆM tự ôn về CHỦ ĐỀ, chỉ dựa trên NGUỒN. Mỗi câu 4 lựa chọn, đúng 1 đáp án đúng; các "
+        f"Tạo {_spare(n)} câu TRẮC NGHIỆM tự ôn về CHỦ ĐỀ, chỉ dựa trên NGUỒN. Mỗi câu 4 lựa chọn, đúng 1 đáp án đúng; các "
         "lựa chọn sai phải hợp lý (lỗi hiểu nhầm thường gặp), không đánh đố. Giải thích ngắn vì sao đáp án đúng, theo nguồn n; "
         "KHÔNG nhắc chữ cái A/B/C/D trong giải thích hay lựa chọn (thứ tự lựa chọn sẽ được xáo). "
-        'Trả về JSON {"items":[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","source":n}]} Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
+        'Trả về JSON {"items":[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","source":n,"proof":"câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn n chứng minh đáp án đúng"}]} Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         f"(correct là chỉ số 0–3).\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
         temperature=0.4,
     )
-    items, used = [], set()
-    for it in json_dicts(data, "items")[:n]:
+    items, used, seen, unproven = [], set(), set(), 0
+    for it in json_dicts(data, "items")[: _spare(n)]:
+        if len(items) == n:
+            break
         refs = _refs(it.get("source"), hits, db, user)
         opts = [strip_citations(str(o)).strip()[:300] for o in (it.get("options") or [])]
         q = strip_citations(str(it.get("question") or "")).strip()
@@ -204,16 +254,29 @@ def mcq(
             continue
         if not refs or not q or len(opts) != 4 or not all(opts) or len(set(opts)) != 4 or not 0 <= correct <= 3:
             continue
+        # D-74: đáp án đúng phải có câu trích nguyên văn trong nguồn chứng minh — không có thì loại câu
+        proof, refs = _proof(it.get("proof"), refs, hits, db, user)
+        if not proof:
+            unproven += 1
+            continue
+        if dedupe_key(q) in seen:
+            continue
+        seen.add(dedupe_key(q))
         items.append(
             {
                 "question": q[:600],
                 "options": opts,
                 "correct": correct,
                 "explanation": strip_citations(str(it.get("explanation") or ""))[:600],
+                "proof": proof,
                 "sources": refs[:1],
             }
         )
         used.update(refs[:1])
+    log.info(
+        "study_items_verified",
+        extra={"event": "study_items_verified", "kind": "mcq", "kept": len(items), "unproven": unproven},
+    )
     balance_answers(items)  # D-69: đáp án đúng không dồn vào A
     if not items:
         return _empty("mcq")

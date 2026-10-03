@@ -174,8 +174,10 @@ def plan(
         "Lập lộ trình học chỉ dựa trên NGUỒN. Ưu tiên nền tảng trước phần phụ thuộc. Trả về JSON "
         '{"feasible":true|false,"sessions":[{"day":1,"title":"...","objective":"...","minutes":45,'
         '"activity":"đọc/làm ví dụ...","self_check":"cách tự kiểm tra","sources":[n]}],'
-        '"uncovered":["chủ đề thiếu nguồn"]}. '
-        f"Ràng buộc: {days} ngày, mỗi ngày tổng phút KHÔNG vượt {minutes}. Nếu không đủ thời gian, feasible=false."
+        '"uncovered":["chủ đề thiếu nguồn"],"deferred":["phần quan trọng chưa xếp được vì thiếu thời gian"]}. '
+        f"Ràng buộc: {days} ngày, mỗi ngày tổng phút KHÔNG vượt {minutes}. Nội dung nhiều hơn thời gian thì VẪN lập lộ "
+        'trình cho phần cốt lõi vừa quỹ thời gian và liệt kê phần còn lại trong "deferred"; chỉ đặt feasible=false khi '
+        "không thể xếp nổi một buổi có ý nghĩa nào."
         f"{prev_note}\n\nNGUỒN:\n{format_sources(hits)}\n\nMỤC TIÊU: {goal}",
         temperature=0.3,
     )
@@ -213,6 +215,9 @@ def plan(
     uncovered = [str(u) for u in json_list(data, "uncovered") if str(u).strip()]
     if uncovered:
         warnings.append("Thiếu nguồn cho: " + "; ".join(uncovered))
+    deferred = [str(u) for u in json_list(data, "deferred") if str(u).strip()]
+    if deferred:  # AC-03.4: quá tải vẫn báo rõ cho người học, nhưng có lộ trình cho phần cốt lõi (D-72)
+        warnings.append("Chưa đủ thời gian cho: " + "; ".join(deferred) + " — tăng số ngày/phút mỗi ngày để học thêm.")
     if any(s["missing_source"] for s in sessions):
         warnings.append("Một số buổi chưa có nguồn hợp lệ — cần xác nhận trước khi thực hiện.")
     plan_data = {
