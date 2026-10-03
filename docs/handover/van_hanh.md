@@ -67,7 +67,7 @@ python -m eval.ragas.report --run-id <accuracy_run>
 python -m eval.benchmark.compare
 ```
 
-Cần Python 3.11 hoặc 3.12 để cài `ragas==0.4.3`. Trên 3.14, phụ thuộc `scikit-network` không build được.
+Cài phụ thuộc eval riêng: `pip install -r eval/requirements.txt` (RAGAS tách khỏi phụ thuộc của app, D-79). Cần Python 3.11 hoặc 3.12 để cài `ragas==0.4.3`. Trên 3.14, phụ thuộc `scikit-network` không build được.
 
 ## 4. Nguyên tắc
 
