@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy.orm import Session
 
-from src.models.orm import User
+from src.models.orm import Chunk, User
 from src.services.retrieval import Hit, still_servable
 
 logger = logging.getLogger(__name__)
@@ -25,15 +29,43 @@ BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc
    và cách tiếp cận (BR-06).
 5. Nếu nguồn mâu thuẫn, nêu rõ cả hai và nguồn của từng bên, không tự chọn (BR-08).
 6. Phân biệt rõ phần có trong nguồn và phần suy luận từ nguồn ("Suy luận từ [n]: ...").
-7. Trả lời bằng tiếng Việt, giữ thuật ngữ gốc khi giúp hiểu. Không nêu điểm similarity như xác suất đúng.
+7. LUÔN viết câu trả lời bằng tiếng Việt, KỂ CẢ khi NGUỒN bằng tiếng Anh: diễn đạt lại ý bằng tiếng Việt, giữ thuật
+   ngữ gốc trong ngoặc khi giúp hiểu, vd "tính kết dính (cohesion)". Chỉ trường "quotes" được chép nguyên văn nguồn.
+   Không nêu điểm similarity như xác suất đúng.
 8. Viết MỌI công thức/ký hiệu toán bằng LaTeX: trong dòng $...$, riêng dòng $$...$$ (không dùng \\( \\) hay \\[ \\]).
    Văn bản NGUỒN trích từ PDF có thể vỡ ký hiệu (vd. "∑n i=1 mi" là $\\sum_{i=1}^{n} m_i$, "n 1 edges" là "$n-1$ edges"):
-   khôi phục đúng ký hiệu theo ngữ cảnh nguồn, KHÔNG thêm nội dung mới. Trong chuỗi JSON, viết backslash đôi (\\\\frac)."""
+   khôi phục đúng ký hiệu theo ngữ cảnh nguồn, KHÔNG thêm nội dung mới. Trong chuỗi JSON, viết backslash đôi (\\\\frac).
+9. Người học không thấy số thứ tự NGUỒN: không viết "nguồn 1", "tài liệu [2]"… trong nội dung; cần nhắc tài liệu thì
+   ghi tên tài liệu (thuộc tính tai_lieu). Số [n] chỉ dùng làm nhãn trích dẫn ở cuối ý."""
 
 CITATION_RE = re.compile(r"\[(\d{1,2})\]")
 # Không khớp chỉ số mảng dính liền tên biến ("A[1, 2]", "a[0]" — rất hay gặp trong sách CTDL & GT)
 MULTI_CITATION_RE = re.compile(r"(?<![\w\])])\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\]")
 ANY_CITATION_RE = re.compile(r"\s*(?<![\w\])])\[\d{1,2}(?:\s*,\s*\d{1,2})*\]")
+
+
+# Lựa chọn nhắc tới lựa chọn khác ("Cả A và B", "Tất cả các đáp án trên") → không được đổi thứ tự
+_CROSS_OPTION = re.compile(r"\b[A-D]\b|tất cả|cả hai|cả (?:ba|bốn)|không (?:có )?đáp án nào|all of|none of|both", re.I)
+
+
+def balance_answers(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """D-69: model hay đặt đáp án đúng ở A. Phân bổ lại vị trí đáp án đúng ĐỀU cho A–D trong bộ câu (vòng lặp vị trí đã
+    xáo), các phương án nhiễu xáo ngẫu nhiên. Bỏ qua câu có lựa chọn nhắc tới lựa chọn khác. Sửa tại chỗ, trả lại list."""
+    import random
+
+    slots: list[int] = []
+    for it in items:
+        opts, correct = it.get("options") or [], it.get("correct")
+        if len(opts) != 4 or correct not in (0, 1, 2, 3) or any(_CROSS_OPTION.search(str(o)) for o in opts):
+            continue
+        if not slots:
+            slots = random.sample(range(4), 4)
+        target = slots.pop()
+        others = [o for k, o in enumerate(opts) if k != correct]
+        random.shuffle(others)
+        others.insert(target, opts[correct])
+        it["options"], it["correct"] = others, target
+    return items
 
 
 def strip_citations(text: str) -> str:
@@ -93,13 +125,239 @@ def supporting_quotes(text: str, used: list[tuple[int, Hit]], llm_quotes: Any) -
     return out
 
 
-def format_sources(hits: list[Hit]) -> str:
+def quote_page(chunk: Chunk, quote: str) -> int:
+    """Trang của đoạn trích trong chunk nhiều trang (D-49): tìm vị trí trích dẫn (bỏ qua khác biệt khoảng trắng)
+    rồi tra page_map. Chunk một trang hoặc không tìm thấy → trang của chunk."""
+    if not chunk.page_map:
+        return chunk.locator_value
+    words = re.findall(r"\S+", quote)[:8]
+    m = re.search(r"\s+".join(map(re.escape, words)), chunk.text) if words else None
+    return chunk.page_at(m.start()) if m else chunk.locator_value
+
+
+def cited_pages(chunk: Chunk, quote: str, answer: str, n: int) -> tuple[int, int]:
+    """Khoảng trang hỗ trợ ý gắn [n] (D-50). Chunk nhiều trang: mỗi trang trong page_map được chấm theo số từ trùng
+    với các câu gắn [n]; lấy các trang đạt ≥ 50% trang tốt nhất (và ≥ 3 từ) cùng trang của đoạn trích → (đầu, cuối)."""
+    quote_at = quote_page(chunk, quote)
+    if not chunk.page_map or len(chunk.page_map) < 2:
+        return quote_at, quote_at
+    claim = {w for w in re.findall(r"\w{3,}", _claims_for(answer, n).casefold())}
+    bounds = [*(start for start, _ in chunk.page_map[1:]), len(chunk.text)]
+    scores: dict[int, int] = {}
+    for (start, page), end in zip(chunk.page_map, bounds, strict=True):
+        words = set(re.findall(r"\w{3,}", chunk.text[start:end].casefold()))
+        scores[page] = max(scores.get(page, 0), len(claim & words))
+    best = max(scores.values(), default=0)
+    pages = {p for p, s in scores.items() if s >= 3 and s >= best * 0.5} | {quote_at}
+    return min(pages), max(pages)
+
+
+# [n], [1, 2], [1][2] trong câu trả lời — cùng quy tắc với frontend (ChatMessage.linkCites) để đếm lần xuất hiện khớp nhau
+CITE_GROUP_RE = re.compile(r"(?<![\w)])\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]")
+_LINE = re.compile(r"[^\n]+")
+_TOKEN = re.compile(r"\w+")
+# D-70: đủ dài để nội dung trải qua vài slide liền nhau; vẫn chỉ gồm dòng liên quan (cửa sổ có chi phí mỗi dòng)
+EVIDENCE_MAX = 900
+
+
+def _sentence_at(text: str, pos: int) -> str:
+    """Câu chứa vị trí `pos` (ranh giới: . ! ? hoặc xuống dòng)."""
+    start = max(text.rfind("\n", 0, pos), *(text.rfind(p, 0, pos) for p in (". ", "! ", "? "))) + 1
+    ends = [i for i in (text.find("\n", pos), *(text.find(p, pos) for p in (". ", "! ", "? "))) if i != -1]
+    return text[start : min(ends) if ends else len(text)]
+
+
+def _terms(text: str) -> tuple[set[str], set[tuple[str, str]]]:
+    """Âm tiết (≥ 3 ký tự) và CẶP âm tiết liền nhau. Tiếng Việt mang nghĩa ở cặp ("bảo trì", "yêu cầu"); âm tiết rời
+    như "các", "được", "của" xuất hiện khắp nơi nên chỉ dùng làm điểm phụ."""
+    toks = _TOKEN.findall(text.casefold())
+    return {t for t in toks if len(t) >= 3}, set(zip(toks, toks[1:], strict=False))
+
+
+def evidence_passage(chunk: Chunk, claim: str, avoid: set[int] | None = None) -> tuple[str, int, int, set[int]]:
+    """Đoạn trích ĐỦ Ý cho một câu trả lời (D-56, sửa D-66): chấm từng dòng theo cặp âm tiết trùng với câu (âm tiết
+    rời là điểm phụ), lấy dòng tốt nhất — dòng đã dùng cho lần [n] trước (`avoid`) bị trừ điểm để các lần trích khác
+    nhau không lặp một đoạn — rồi chỉ mở rộng sang dòng kề CÓ liên quan (dòng không liên quan chỉ thêm khi đoạn còn
+    quá ngắn). Đoạn bắt đầu ở dòng liên quan, trang theo page_map của dòng đầu. Không gọi LLM/embedding.
+    Cửa sổ có thể đi qua nhiều trang liền nhau khi các dòng tiếp theo vẫn liên quan (D-70).
+    Trả (đoạn trích, trang đầu, trang cuối, chỉ số các dòng đã dùng)."""
+    lines = [(m.start(), m.group(0).strip()) for m in _LINE.finditer(chunk.text) if m.group(0).strip()]
+    if not lines:
+        return chunk.text[:EVIDENCE_MAX], chunk.locator_value, chunk.locator_value, set()
+    words, pairs = _terms(claim)
+    terms = [_terms(t) for _, t in lines]
+    # Độ hiếm trong chunk: cặp/âm tiết xuất hiện ở nhiều dòng ("mô hình", "kiểm thử" trong bài về kiểm thử) gần như
+    # không phân biệt được dòng nào đúng ý → trọng số log(N/df) ≈ 0.
+    n = len(lines)
+    df: dict[Any, int] = {}
+    for w, p in terms:
+        for x in w | p:
+            df[x] = df.get(x, 0) + 1
+    idf = {x: math.log((n + 1) / c) for x, c in df.items()}
+    scores = [sum(idf[x] for x in pairs & p) + 0.3 * sum(idf[x] for x in words & w) for w, p in terms]
+    avoid = avoid or set()
+    best = max(range(n), key=lambda i: (scores[i] * (0.6 if i in avoid else 1), -i))
+    # Cửa sổ dòng liên tiếp quanh dòng tốt nhất, tối đa tổng (điểm − ngưỡng): dòng chỉ đáng thêm khi đạt ~1/3 dòng tốt
+    # nhất → lấy trọn cụm liên quan, không kéo theo dòng lạc đề; dòng đầu cửa sổ phải liên quan.
+    cost = max(scores[best] / 3, 1e-6)
+    lens = [len(t) for _, t in lines]
+    # Dòng ranh giới slide là trung tính (không cộng, không trừ): số trang, nhãn biểu đồ một từ, dòng lặp lại sau khi
+    # bỏ số/dấu (tiêu đề slide nối tiếp, chân trang "Bộ môn … 12"). Chân trang = dòng lặp KHÔNG đứng đầu trang.
+    norm = [" ".join(re.findall(r"[^\W\d_]+", t)).casefold() for _, t in lines]
+    norm_count: dict[str, int] = {}
+    for x in norm:
+        norm_count[x] = norm_count.get(x, 0) + 1
+    page_of = [chunk.page_at(o) for o, _ in lines]
+    page_head = [i == 0 or page_of[i] != page_of[i - 1] for i in range(n)]
+    one_word = [len(t.split()) < 2 or len(re.findall(r"[^\W\d_]{2,}", t)) < 2 for _, t in lines]
+    footer = [norm_count[norm[i]] > 1 and not page_head[i] for i in range(n)]
+    neutral = [one_word[i] or norm_count[norm[i]] > 1 for i in range(n)]
+    gain = [0.0 if neutral[i] else scores[i] - cost for i in range(n)]
+    lo, hi, top = best, best, None
+    for a in range(max(0, best - 12), best + 1):
+        if a != best and (neutral[a] or scores[a] < cost):  # đoạn trích mở đầu bằng dòng liên quan
+            continue
+        for b in range(best, min(n, best + 25)):
+            if sum(lens[a : b + 1]) > EVIDENCE_MAX:
+                break
+            if b != best and neutral[b]:  # không kết thúc bằng số trang / chân trang
+                continue
+            value = (sum(gain[a : b + 1]), b - a)
+            if top is None or value > top:
+                lo, hi, top = a, b, value
+    lo, hi = _extend_continuation(chunk, lines, scores, cost, lens, lo, hi)
+    # hiển thị: bỏ số trang, nhãn biểu đồ, chân trang; giữ tiêu đề slide (kể cả lặp) làm mốc khi nối nhiều slide
+    shown = [lines[i][1] for i in range(lo, hi + 1) if not one_word[i] and not footer[i]]
+    quote = "\n".join(shown or [lines[best][1]])[:EVIDENCE_MAX]
+    return quote, chunk.page_at(lines[lo][0]), chunk.page_at(lines[hi][0]), set(range(lo, hi + 1))
+
+
+_CONT_SUFFIX = re.compile(r"\s*\((?:tiếp|tt|cont\.?|continued|\d+)\)\s*$", re.I)
+
+
+def _extend_continuation(
+    chunk: Chunk, lines: list[tuple[int, str]], scores: list[float], cost: float, lens: list[int], lo: int, hi: int
+) -> tuple[int, int]:
+    """D-70: nội dung trải nhiều slide liền nhau. Nếu slide kế trước / kế sau là slide NỐI TIẾP (cùng tiêu đề, hoặc
+    tiêu đề thêm "(tiếp)", "(2)") và có dòng liên quan (≥ ngưỡng), nối đoạn trích tới dòng liên quan xa nhất của slide
+    đó. Chỉ nối slide nối tiếp — slide khác chủ đề dù có từ trùng (vd "Vận hành và bảo trì") không bị kéo vào."""
+    pages = [chunk.page_at(o) for o, _ in lines]
+    title: dict[int, str] = {}
+    for i, (_, t) in enumerate(lines):
+        title.setdefault(pages[i], _CONT_SUFFIX.sub("", t).casefold())
+
+    def rows(pg: int) -> list[int]:
+        return [i for i in range(len(lines)) if pages[i] == pg and scores[i] >= cost]
+
+    for step in (1, -1):
+        while True:
+            edge = hi if step == 1 else lo
+            nxt = pages[edge] + step
+            if nxt not in title or title[nxt] != title[pages[edge]]:
+                break
+            relevant = rows(nxt)
+            if not relevant:
+                break
+            new_lo, new_hi = (lo, max(relevant)) if step == 1 else (min(relevant), hi)
+            if sum(lens[new_lo : new_hi + 1]) > EVIDENCE_MAX:
+                break
+            lo, hi = new_lo, new_hi
+    return lo, hi
+
+
+def occurrence_evidence(content: str, used: list[tuple[int, Hit]]) -> dict[str, list[dict[str, Any]]]:
+    """Đoạn trích riêng cho TỪNG lần [n] xuất hiện (theo thứ tự) — mỗi câu có dẫn chứng của chính nó, không lặp một
+    đoạn chung cho mọi [n] (D-56). Frontend đếm lần xuất hiện theo cùng regex."""
+    hits = {str(n): h for n, h in used}
+    out: dict[str, list[dict[str, Any]]] = {}
+    taken: dict[str, set[int]] = {}  # dòng đã dùng cho mỗi [n] → lần sau ưu tiên dòng khác (D-66)
+    for m in CITE_GROUP_RE.finditer(content):
+        ns = [x.strip() for x in m.group(1).split(",")]
+        if not all(n in hits for n in ns):
+            continue
+        claim = _sentence_at(content, m.start())
+        for n in ns:
+            quote, page, page_end, rows = evidence_passage(hits[n].chunk, claim, taken.get(n))
+            taken.setdefault(n, set()).update(rows)
+            out.setdefault(n, []).append({"quote": quote, "page": page, "page_end": page_end})
+    return out
+
+
+# "nguồn 1", "Nguồn số 2", "tài liệu [3]", "NGUỒN 1" — model nhắc nguồn bằng số mà người học không biết là sách nào
+_SOURCE_BY_NUMBER = re.compile(r"\b(?:nguồn|tài liệu)\s+(?:số\s+)?(\[)?(\d{1,2})\]?", re.I)
+
+
+def name_sources(text: str, used: list[tuple[int, Hit]]) -> str:
+    """Đổi "nguồn n" thành tên tài liệu thật (giữ nhãn [n] nếu có để vẫn bấm xem được)."""
+    titles = {str(n): h.document.title for n, h in used}
+
+    def sub(m: re.Match[str]) -> str:
+        title = titles.get(m.group(2))
+        if not title:
+            return m.group(0)
+        return f"tài liệu “{title}”" + (f" [{m.group(2)}]" if m.group(1) else "")
+
+    return _SOURCE_BY_NUMBER.sub(sub, text)
+
+
+def _cited_parts(node: Any) -> list[dict[str, Any]]:
+    """Mọi mục trong payload có trường "sources" (thẻ, câu hỏi, mục cấp cứu…), ở bất kỳ độ sâu nào."""
+    if isinstance(node, list):
+        return [d for v in node for d in _cited_parts(v)]
+    if not isinstance(node, dict):
+        return []
+    own = [node] if isinstance(node.get("sources"), list) else []
+    return own + [d for v in node.values() for d in _cited_parts(v)]
+
+
+def _part_text(part: dict[str, Any]) -> str:
+    texts = [v for v in part.values() if isinstance(v, str)]
+    texts += [x for v in part.values() if isinstance(v, list) for x in v if isinstance(x, str)]  # options trắc nghiệm
+    return " ".join(texts)
+
+
+def attach_evidence(payload: dict[str, Any], used: list[tuple[int, Hit]]) -> str:
+    """Hoạt động học (flashcard, điền khuyết, trắc nghiệm, quiz, cấp cứu…) gắn nguồn ở từng mục chứ không ở câu trong
+    nội dung tin nhắn (D-57). Mỗi mục được gắn `evidence = {n: {quote, page}}` (đoạn trích + trang theo chính nội dung
+    mục). Trả về các ý dạng "nội dung [n]." để tính trang và đoạn trích chung của citation; nếu không có các ý này, trang
+    mặc định là trang đầu chunk (sai)."""
+    hits = {str(n): h for n, h in used}
+    claims = []
+    taken: dict[str, set[int]] = {}  # các mục cùng nguồn ưu tiên đoạn khác nhau (D-66)
+    for part in _cited_parts(payload):
+        for k, v in part.items():  # "nguồn 1" trong câu hỏi/thẻ/đáp án → tên tài liệu
+            if isinstance(v, str):
+                part[k] = name_sources(v, used)
+            elif isinstance(v, list) and all(isinstance(x, str) for x in v):
+                part[k] = [name_sources(x, used) for x in v]
+        text = _part_text(part)
+        ev = {}
+        for n in map(str, part["sources"]):
+            if n in hits:
+                quote, page, page_end, rows = evidence_passage(hits[n].chunk, text, taken.get(n))
+                taken.setdefault(n, set()).update(rows)
+                ev[n] = {"quote": quote, "page": page, "page_end": page_end}
+                claims.append(f"{text} [{n}].")
+        if ev:
+            part["evidence"] = ev
+    return "\n".join(claims)
+
+
+def format_sources(hits: list[Hit], focus: str | None = None) -> str:
+    """Khối NGUỒN cho prompt. `focus` (câu hỏi + thuật ngữ): đặt thêm đoạn liên quan nhất của chunk lên đầu (D-68) —
+    chunk lớn nhiều trang khiến model nhỏ bỏ sót vài dòng định nghĩa nằm giữa; toàn văn vẫn giữ nguyên bên dưới."""
     blocks = []
     for i, h in enumerate(hits, start=1):
-        loc = f"{'trang' if h.chunk.locator_type == 'page' else 'slide'} {h.chunk.locator_value}"
+        pages = [p for _, p in h.chunk.page_map or []]
+        span = f"{min(pages)}–{max(pages)}" if len(set(pages)) > 1 else str(h.chunk.locator_value)
+        loc = f"{'trang' if h.chunk.locator_type == 'page' else 'slide'} {span}"
+        focus_part = ""
+        if focus and len(h.chunk.text) > EVIDENCE_MAX:
+            excerpt, page, _end, _ = evidence_passage(h.chunk, focus)
+            focus_part = f"[Đoạn liên quan nhất, trang {page}]\n{excerpt}\n[Toàn văn]\n"
         blocks.append(
             f'<nguon so="{i}" tai_lieu="{h.document.title}" phien_ban="{h.version.version_label}" vi_tri="{loc}">\n'
-            f"{h.chunk.text}\n</nguon>"
+            f"{focus_part}{h.chunk.text}\n</nguon>"
         )
     return "\n\n".join(blocks)
 
@@ -124,6 +382,32 @@ def _latex_safe(text: str) -> str:
     return _BAD_ESCAPE.sub(r"\\\\", _LATEX_CMD.sub(r"\\\\", text))
 
 
+# D-60: token của mọi lần gọi LLM trong một yêu cầu → usage_events (chi phí cho admin). Hộp [vào, ra] dùng chung theo
+# tham chiếu nên vẫn cộng đúng khi LangGraph chạy node trong context sao chép.
+_usage: ContextVar[list[int] | None] = ContextVar("llm_usage", default=None)
+
+
+@contextmanager
+def track_usage() -> Iterator[list[int]]:
+    """Đếm token [vào, ra] của các lần gọi call_json bên trong khối."""
+    box = [0, 0]
+    token = _usage.set(box)
+    try:
+        yield box
+    finally:
+        _usage.reset(token)
+
+
+def _count_usage(resp: Any, prompt_chars: int, output: str) -> None:
+    box = _usage.get()
+    if box is None:
+        return
+    meta = getattr(resp, "usage_metadata", None) or {}
+    # provider không trả usage → ước lượng ~4 ký tự/token
+    box[0] += int(meta.get("input_tokens") or prompt_chars // 4)
+    box[1] += int(meta.get("output_tokens") or len(output) // 4)
+
+
 def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any]:
     """Gọi LLM, lấy JSON. Lỗi provider → LlmError ngay; JSON hỏng/thiếu → thử lại ĐÚNG 1 lần rồi mới LlmError."""
     from src.services.llm import get_llm
@@ -132,16 +416,22 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
         try:
             resp = get_llm(temperature=temperature).invoke([SystemMessage(content=system), HumanMessage(content=user)])
         except Exception as e:  # noqa: BLE001 — timeout/401/5xx của provider
-            logger.warning("LLM provider lỗi: %s: %s", type(e).__name__, str(e)[:300])
+            # chỉ metadata — thông báo lỗi provider có thể lặp lại nội dung prompt (dữ liệu học tập)
+            status_code = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", None)
+            logger.warning("LLM provider lỗi: %s", type(e).__name__, extra={
+                "event": "llm.provider_error", "error_type": type(e).__name__, "provider_status": status_code,
+                "attempt": attempt + 1})  # fmt: skip
             raise LlmError(type(e).__name__) from e
         text = resp.content if isinstance(resp.content, str) else str(resp.content)
+        _count_usage(resp, len(system) + len(user), text)
         match = re.search(r"\{.*\}", text, re.S)
         if match:
             try:
                 return json.loads(_latex_safe(match.group(0)))
             except json.JSONDecodeError:
                 pass
-        logger.warning("LLM trả JSON không hợp lệ (lần %d): %r", attempt + 1, text[:200])
+        logger.warning("LLM trả JSON không hợp lệ (lần %d)", attempt + 1, extra={
+            "event": "llm.invalid_json", "attempt": attempt + 1, "output_chars": len(text)})  # fmt: skip
         if attempt == 1:
             raise LlmError("INVALID_JSON")
     raise LlmError("INVALID_JSON")  # không tới được; giữ cho kiểu trả về rõ ràng

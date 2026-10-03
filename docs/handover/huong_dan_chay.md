@@ -33,25 +33,13 @@ copy .env.example .env            # macOS/Linux: cp .env.example .env
 
 `DATABASE_URL=sqlite:///./data/app.db` (mặc định, D-20). DB tạo tự động khi chạy seed hoặc khởi động backend.
 
-Tạo môn + tài khoản + quyền theo môn vào DB (đọc `data/eval/fixtures/local.json` + `.env`, mật khẩu chỉ lưu dạng hash):
+Demo hiện tại **chỉ môn SE101 Công nghệ phần mềm** (D-47/D-48), dữ liệu thật ở `data/artifacts` (PDF gốc trong `data/artifacts/pdf`, chunk trong `data/artifacts/chunks`). Một lệnh tạo môn, 3 tài khoản demo và đưa 15 bộ slide qua **đúng luồng** tải lên → trích xuất → thay bằng chunk artifacts → gửi duyệt → người duyệt khác duyệt → embedding → Published. Cờ `--confirm-demo-usage` là bắt buộc (metadata ghi quyền sử dụng `unknown`; việc xác nhận được ghi audit). Script cũng ghi `data/manifest.cnpm.json` cho eval / `seed_users.py` / `import_books.py`:
 
 ```bash
-python scripts/seed_users.py
+python scripts/seed_cnpm.py --confirm-demo-usage          # thêm --reset để gỡ bản SE101 cũ và nạp lại
 ```
 
-Đưa sách dev vào kho qua **đúng luồng** upload → trích xuất → gửi duyệt → người duyệt khác duyệt → index → Published. Cờ `--confirm-dev-usage` là bắt buộc, vì sách trong manifest chưa được xác nhận quyền chính thức (Q-09); việc xác nhận được ghi vào audit:
-
-```bash
-python scripts/import_books.py --course COURSE-01 --source-id TRR-07 --confirm-dev-usage
-```
-
-Text được làm sạch tự động khi trích xuất (bỏ header/footer, số trang, mục lục/chỉ mục, tàn dư hình vẽ; tách ligature; nối từ bị ngắt). Sau khi đổi quy tắc làm sạch, xử lý lại tài liệu đã phát hành bằng version mới (đủ luồng duyệt, bản cũ tự lưu trữ):
-
-```bash
-python scripts/reprocess_books.py --course COURSE-01 --reason "Làm sạch text (D-29)"
-```
-
-Mỗi cuốn khoảng 150–200 trang mất vài phút để embedding (Gemini free tier giới hạn lượng chữ mỗi phút, script tự chờ và thử lại). Hiện chỉ COURSE-01 có tài khoản người duyệt (`reviewer_course_01`). Muốn phát hành cho COURSE-02/03 cần thêm người duyệt cho môn đó (Quản trị → Quyền môn, hoặc thêm vào fixtures).
+Thiếu mật khẩu trong `.env` thì script tự sinh ngẫu nhiên và ghi vào `.env` (`DEMO_CNPM_*`), không in ra màn hình. `kiemduyet01` (`DEMO_KIEMDUYET01_*`) phải có sẵn để làm người duyệt.
 
 Chạy backend:
 
@@ -63,16 +51,16 @@ Kiểm tra: mở <http://localhost:8000/health>, kết quả phải là `{"statu
 
 ## 3. Tài khoản
 
-Mỗi tài khoản trong `data/eval/fixtures/local.json` lấy `login_id` và mật khẩu từ biến `EVAL_*` trong `.env`:
+`login_id` và mật khẩu nằm trong `.env`; fixtures `data/eval/fixtures/demo.json` / `local.json` trỏ tới các biến này:
 
 | Tài khoản | Vai trò | Môn |
 |---|---|---|
-| `student_course_01/02/03` | Sinh viên | COURSE-01 Toán rời rạc / COURSE-02 CTDL&GT / COURSE-03 PT&TK thuật toán |
-| `lecturer_course_01/02/03` | Giảng viên | như trên |
-| `reviewer_course_01` | Giảng viên duyệt | COURSE-01 |
-| `admin` | Quản trị | không có quyền nội dung; dùng trang Quản trị |
+| `sinhvien` | Sinh viên | SE101 Công nghệ phần mềm |
+| `giangvien` | Giảng viên | SE101 (tải lên, soạn đề) |
+| `quantri` | Quản trị | không có quyền nội dung; dùng trang Quản trị |
+| `kiemduyet01` | Người duyệt | SE101 — dùng ngầm cho bước duyệt, không cần khi demo |
 
-Đổi tài khoản hoặc mật khẩu trong `.env` thì phải chạy lại `python scripts/seed_users.py`.
+Đổi tài khoản hoặc mật khẩu trong `.env` thì chạy lại `python scripts/seed_users.py --fixtures demo`.
 
 ## 4. Frontend
 

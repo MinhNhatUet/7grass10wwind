@@ -6,6 +6,7 @@ cosine bằng numpy → top-k. Không bao giờ tính similarity trên toàn kho
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -20,7 +21,9 @@ from src.config import get_settings
 from src.models.orm import PUBLISHED, Chunk, Document, DocumentVersion, User
 from src.services import acl
 
-_cache: dict[str, tuple[list[str], np.ndarray]] = {}  # version_id → (chunk_ids, ma trận đã chuẩn hóa)
+# version_id → (chunk_ids, ma trận đã chuẩn hóa, tập từ của từng chunk — cho điểm khớp từ khóa D-68)
+_cache: dict[str, tuple[list[str], np.ndarray, list[set[str]]]] = {}
+_WORD = re.compile(r"\w{4,}")
 _cache_lock = threading.Lock()
 _document_scope: ContextVar[str | None] = ContextVar("document_scope", default=None)
 
@@ -111,18 +114,21 @@ def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[Doc
     return [(v, d) for v, d in rows if acl.role_can_see_version(user, v) and (scope is None or d.id == scope)]
 
 
-def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray]:
+def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray, list[set[str]]]:
     with _cache_lock:
         if version_id in _cache:
             return _cache[version_id]
     rows = db.execute(
-        select(Chunk.id, Chunk.embedding).where(Chunk.version_id == version_id, Chunk.embedding.is_not(None))
+        select(Chunk.id, Chunk.embedding, Chunk.text).where(
+            Chunk.version_id == version_id, Chunk.embedding.is_not(None)
+        )
     ).all()
     ids = [r[0] for r in rows]
     mat = np.vstack([np.frombuffer(r[1], dtype=np.float32) for r in rows]) if rows else np.zeros((0, 1), np.float32)
+    words = [set(_WORD.findall(r[2].casefold())) for r in rows]
     with _cache_lock:
-        _cache[version_id] = (ids, mat)
-    return ids, mat
+        _cache[version_id] = (ids, mat, words)
+    return ids, mat, words
 
 
 @dataclass
@@ -138,14 +144,16 @@ def search(db: Session, user: User, course_id: str, query: str, k: int | None = 
     if not allowed:
         return []
     q = embed_query(query)
+    data = [(version.id, *_matrix(db, version.id)) for version, _doc in allowed]
+    data = [d for d in data if d[1] and d[2].shape[1] == q.shape[0]]
+    bonus = _keyword_bonus(query, [w for d in data for w in d[3]])
     scored: list[tuple[float, str, str]] = []
-    for version, _doc in allowed:
-        ids, mat = _matrix(db, version.id)
-        if not ids or mat.shape[1] != q.shape[0]:
-            continue
-        sims = mat @ q
+    offset = 0
+    for version_id, ids, mat, _words in data:
+        sims = mat @ q + bonus[offset : offset + len(ids)]
+        offset += len(ids)
         top = np.argsort(-sims)[: (k or get_settings().retrieval_top_k)]
-        scored += [(float(sims[i]), ids[i], version.id) for i in top]
+        scored += [(float(sims[i]), ids[i], version_id) for i in top]
     scored.sort(reverse=True)
     by_version = {v.id: (v, d) for v, d in allowed}
     hits = []
@@ -156,6 +164,26 @@ def search(db: Session, user: User, course_id: str, query: str, k: int | None = 
         v, d = by_version[version_id]
         hits.append(Hit(chunk=chunk, version=v, document=d, score=score))
     return hits
+
+
+def _keyword_bonus(query: str, chunk_words: list[set[str]]) -> np.ndarray:
+    """D-68 — truy xuất lai tối thiểu: chunk lớn (nhiều trang) làm embedding "loãng" một khái niệm nhỏ (vd slide
+    "Cohesion" chỉ là một phần chunk ~2.000 ký tự → cosine 0,51 < ngưỡng). Chunk chứa ĐÚNG thuật ngữ HIẾM của câu
+    hỏi (độ hiếm log(N/df) chuẩn hóa ≥ 0,5, tính trên các chunk được phép đọc) được cộng tối đa +0,1. Từ phổ biến
+    ("kiểm thử" trong môn kiểm thử) không được cộng; ngưỡng bằng chứng giữ nguyên (Q-17)."""
+    n = len(chunk_words)
+    out = np.zeros(n, dtype=np.float32)
+    if n == 0:
+        return out
+    norm = np.log(n + 1)
+    rare = {}
+    for term in set(_WORD.findall(query.casefold())):
+        df = sum(term in w for w in chunk_words)
+        if df and (weight := float(np.log((n + 1) / df) / norm)) >= 0.5:
+            rare[term] = weight
+    for i, words in enumerate(chunk_words):
+        out[i] = min(0.1, 0.08 * sum(wt for t, wt in rare.items() if t in words))
+    return out
 
 
 def still_servable(db: Session, user: User, version_id: str) -> bool:

@@ -13,6 +13,9 @@ def get_llm(temperature: float | None = None) -> ChatOpenAI:
         api_key=settings.llm_api_key,
         base_url=settings.ai_base_url or None,
         temperature=settings.llm_temperature if temperature is None else temperature,
+        # D-64: mặc định của client là 600 s × 3 lần thử → một câu hỏi có thể treo hàng chục phút khi provider chập chờn
+        timeout=settings.llm_timeout_seconds,
+        max_retries=1,  # thử lại 1 lần với lỗi tạm thời (5xx/timeout) của provider
     )
 
 

@@ -125,6 +125,17 @@ class Chunk(Base):
     text: Mapped[str] = mapped_column(Text)
     extraction_quality: Mapped[str] = mapped_column(String(20), default="ok")
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Chunk nhiều trang (nhập sẵn từ pipeline, D-49): [[vị trí ký tự bắt đầu, trang], …] tăng dần; None = cả chunk 1 trang
+    page_map: Mapped[list[list[int]] | None] = mapped_column(JSON)
+
+    def page_at(self, offset: int) -> int:
+        """Trang chứa ký tự ở vị trí `offset` của text chunk (trích dẫn mở đúng trang, không phải trang đầu chunk)."""
+        page = self.locator_value
+        for start, p in self.page_map or []:
+            if start > offset:
+                break
+            page = p
+        return page
 
 
 class IngestionJob(Base):
@@ -207,6 +218,7 @@ class Citation(Base):
     document_id: Mapped[str] = mapped_column(String(40))
     locator_type: Mapped[str] = mapped_column(String(10))
     locator_value: Mapped[int] = mapped_column(Integer)
+    locator_end: Mapped[int | None] = mapped_column(Integer)  # D-50: trang cuối khi ý được hỗ trợ bởi nhiều trang liền
     quote: Mapped[str] = mapped_column(Text)
     source_revision: Mapped[int] = mapped_column(Integer)
 

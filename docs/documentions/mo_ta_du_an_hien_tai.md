@@ -2,7 +2,7 @@
 
 Cập nhật: 2026-09-30 · Nhánh `ndmnhat` · Nhóm "7 cỏ 10 gió" (AI20K Build Phase)
 
-Tài liệu này mô tả **trạng thái thực tế của mã nguồn** tại thời điểm cập nhật. Có thể dùng để giới thiệu dự án hoặc bàn giao.
+Tài liệu này mô tả **trạng thái thực tế của mã nguồn** tại thời điểm cập nhật. Phạm vi MVP và các điểm cần cải tiến: `PRD_v2_MVP_edu04.md`. Có thể dùng để giới thiệu dự án hoặc bàn giao.
 - Yêu cầu gốc: `PRD_edu04.md`, `backlog_edu04.md`, `wireframe&UIflow_edu04.md`.
 - Các chỗ lệch so với PRD: `docs/decisions/decision_log.md` (D-xx).
 - Cách chạy chi tiết: `docs/handover/huong_dan_chay.md`.
@@ -31,25 +31,18 @@ Người dùng **không cần chọn môn hay trợ lý**. Router (LLM) tự ch�
 | `student` | Chat, thư viện, học tập, lộ trình, làm đề của các môn được ghi danh |
 | `lecturer` | Như sinh viên + tải tài liệu, quản lý phiên bản, soạn đề cho môn mình phụ trách |
 | `reviewer` | Duyệt / từ chối / thu hồi tài liệu các môn được giao |
-| `admin` | Quản lý người dùng, quyền, audit, số liệu. **Không** truy cập nội dung học tập |
+| `admin` | Quản lý người dùng, quyền, audit, số liệu, chi phí AI. **Không** dùng Hỏi đáp và không truy cập nội dung học tập (D-61) |
 
-Tài khoản demo được tạo bằng `python scripts/seed_users.py --fixtures demo`. Mật khẩu chỉ nằm trong `.env` (`DEMO_*_PASSWORD`), không ghi ở đây.
+**Demo hiện tại chỉ dùng môn SE101 Công nghệ phần mềm** (D-47, D-48). Dữ liệu thật nằm ở `data/artifacts` (output pipeline MinerU: inventory/metadata, chunk, trang, ảnh công thức; PDF gốc môn CNPM ở `data/artifacts/pdf`). Nạp bằng `python scripts/seed_cnpm.py --confirm-demo-usage [--reset]`: 15 bộ slide qua luồng tải lên → duyệt → phát hành, **chunk lấy từ artifacts** (76 chunk), app tự embedding (artifacts không có embedding). Script cũng ghi `data/manifest.cnpm.json` dùng cho eval, `seed_users.py` và `import_books.py`. Mật khẩu chỉ nằm trong `.env` (`DEMO_CNPM_*_PASSWORD`, `DEMO_KIEMDUYET01_PASSWORD`), không ghi ở đây.
 
 | login_id | Vai trò | Môn |
 |---|---|---|
-| sinhvien01 | student | COURSE-01, COURSE-02 |
-| sinhvien02 | student | COURSE-02, COURSE-03 |
-| giangvien01 | lecturer | COURSE-01 |
-| giangvien02 | lecturer | COURSE-02, COURSE-03 |
-| kiemduyet01 | reviewer | COURSE-01, 02, 03 |
-| admin01 | admin | — |
+| sinhvien | student | SE101 |
+| giangvien | lecturer | SE101 |
+| quantri | admin | — |
+| kiemduyet01 | reviewer | SE101 (người duyệt phía sau, cần cho luồng HITL — không dùng khi demo) |
 
-Các môn tạm dùng cho MVP:
-- COURSE-01 Toán rời rạc
-- COURSE-02 Cấu trúc dữ liệu và giải thuật
-- COURSE-03 Phân tích và thiết kế thuật toán
-
-Dữ liệu dev là sách thật có giấy phép tự do, đặt tên file theo tựa sách. Hiện 2 cuốn đã phát hành ở COURSE-01 (*Elementary Number Theory*, *An Introduction to Combinatorics and Graph Theory*). Hai môn còn lại chưa có tài liệu đã phát hành.
+Dữ liệu dev cũ (3 môn tạm COURSE-01..03, sách dev, tài khoản và hội thoại cũ) đã được gỡ khỏi `data/` và DB; bản sao nằm trong `backup/` (gitignore). Audit log giữ nguyên (BR-11).
 
 ## 3. Kiến trúc
 
@@ -106,7 +99,6 @@ Tải lên → trích xuất + chia đoạn (~2400 ký tự, chồng lấn 300) 
 | Đề giảng viên | `/course-quizzes` CRUD + `/status` + `/results`, `/course-quizzes/{id}/attempts`, `/quiz-attempts/{id}/submit` |
 | Tài liệu | `/documents` (+ versions, lock, download), `/versions/{id}/submit | decision | withdraw | retry`, `/manage/versions`, `/review/versions/{id}/preview|original`, `/jobs/{id}` |
 | Dashboard / Admin | `/dashboard/*` (tổng quan, lịch sử, feedback), `/users`, `/courses`, `/audit`, `/metrics` |
-| Mẫu template | `POST /chat`, `GET /status` — frontend không dùng; dự kiến gỡ (xem `docs/file-cleanup-review-2026-09-30.md`) |
 
 ## 6. Frontend (`frontend/`, Next.js 16 + React 19 + Tailwind 4, giao diện của TV4)
 
@@ -117,9 +109,9 @@ Tải lên → trích xuất + chia đoạn (~2400 ký tự, chồng lấn 300) 
 | `/library` | Thư viện tài liệu được phép đọc, đọc trang gốc (cuộn dọc), nút "Hỏi về tài liệu này" |
 | `/learning` | Sinh viên: Trung tâm học (bắt đầu nhanh, ôn tập theo chủ đề — chọn mục từ tài liệu, chọn hình thức và số câu, đề giảng viên giao có đếm giờ, lịch sử tự kiểm tra). Giảng viên / reviewer: Quiz Builder |
 | `/learning/plans` | Lộ trình học: tạo bằng AI, tiến độ, xác nhận, ôn tập theo từng buổi, Google Calendar / `.ics` |
-| `/hub`, `/hub/manage`, `/hub/review` | Không gian làm việc của giảng viên / reviewer: quản lý tài liệu, duyệt |
+| `/hub/manage`, `/hub/review`, `/dashboard` | Giảng viên / reviewer: quản lý tài liệu, duyệt, tổng quan (trong khung chung, D-59) |
 | `/dashboard`, `/admin/*` | Tổng quan giảng viên; quản trị người dùng, giám sát, quota |
-| `/profile` | Hồ sơ cá nhân |
+| `/admin/costs` | Chi phí AI (D-60) |
 
 Về hiển thị nguồn trong bài tập: khi vừa tạo đề hay lộ trình thì **không hiện nguồn**. Dẫn chứng (đoạn trích, tài liệu, trang, nút mở nguồn) chỉ hiện **sau khi** người học chọn đáp án, lật thẻ hoặc bấm "Kiểm tra".
 
@@ -128,7 +120,7 @@ Về hiển thị nguồn trong bài tập: khi vừa tạo đề hay lộ trìn
 ```bash
 # Backend (Python 3.11+, .venv)
 pip install -r requirements.txt && cp .env.example .env
-python scripts/seed_users.py --fixtures demo
+python scripts/seed_cnpm.py --confirm-demo-usage   # môn SE101 + 3 tài khoản demo + tài liệu (D-47)
 uvicorn src.main:app --reload --port 8000        # GET /health
 
 # Frontend
@@ -150,10 +142,8 @@ Cấu hình chính (`src/config.py` / `.env`):
 ## 8. Hạn chế và việc còn mở
 
 - Gemini embedding free tier giới hạn khoảng 1000 request/ngày. Hết quota thì trả 503 `EMBEDDING_QUOTA`, chat vẫn báo lỗi rõ ràng.
-- Chỉ COURSE-01 có tài liệu đã phát hành, nên các môn khác sẽ trả lời "chưa có tài liệu".
+- Chỉ môn SE101 có dữ liệu; 8 môn thật còn lại trong `data/artifacts` chưa nạp vì chưa có PDF gốc. Chunk artifacts lớn (~2.000 ký tự, nhiều trang); trang trích dẫn được suy ra theo `page_map` (D-49, D-50, D-57).
 - Google Calendar là link thêm sự kiện + file `.ics`, **không** đồng bộ OAuth hai chiều (D-37).
 - Quiz Builder là tính năng ngoài PRD 7.2 (D-38), cần báo nhóm.
-- Nhóm code mẫu của template (`api/routes.py`, `agents/graph.py`, `state.py`, `nodes/example_node.py`, `tools/example_tool.py`) còn trong repo; gỡ trong một thay đổi riêng.
 - Các prototype độc lập của TV4 (`frontend/luno-admin-dashboard/`, `paper-document-editor/`, `transform.js`) chờ TV4 xác nhận trước khi xoá.
-- `page.tsx` (chat, code TV4) còn 8 lỗi ESLint kiểu `any` / hook có sẵn; `tsc` và build vẫn chạy.
 - Nhánh `ndmnhat` trên remote chưa được force-push sau khi gỡ `data/` khỏi lịch sử (người dùng tự chạy).

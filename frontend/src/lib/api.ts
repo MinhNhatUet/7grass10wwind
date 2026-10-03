@@ -1,6 +1,7 @@
 // Client gọi API FastAPI (PRD 11.2) qua rewrite /api/* của Next. Role và quyền chỉ lấy từ server (BR-02).
 import { API } from "./api-errors";
 import { clearToken, getToken } from "./session";
+import { errorMessage } from "./messages";
 
 export type Role = "student" | "lecturer" | "reviewer" | "admin";
 
@@ -37,9 +38,11 @@ export interface CourseItem {
 export interface Locator {
   type: "page" | "slide";
   value: number;
+  end?: number | null; // D-50: khoảng trang
 }
 
 export interface Citation {
+  document_title?: string;
   id: string;
   citation_id: string;
   document_id: string;
@@ -119,12 +122,14 @@ export interface StudyItem {
   correct?: number;
   explanation?: string;
   sources: number[];
+  evidence?: ItemEvidence; // đoạn trích riêng của thẻ này theo từng [n] (D-57)
 }
+export type ItemEvidence = Record<string, { quote: string; page: number; page_end?: number }>;
 
 export interface TriageSections {
-  definitions: { term?: string; text: string; sources: number[] }[];
-  pitfalls: { text: string; sources: number[] }[];
-  examples: { title?: string; text: string; sources: number[] }[];
+  definitions: { term?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
+  pitfalls: { text: string; sources: number[]; evidence?: ItemEvidence }[];
+  examples: { title?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
 }
 
 export interface Plan {
@@ -253,7 +258,10 @@ async function raw(path: string, init: RequestOptions = {}): Promise<Response> {
     const err = body?.error;
     const code = typeof err?.code === "string" ? err.code : `HTTP_${resp.status}`;
     if (resp.status === 401 && auth) clearToken();
-    throw new ApiError(resp.status, code, Boolean(err?.retryable), err?.message);
+    // Lỗi máy chủ: kèm mã hỗ trợ (X-Request-ID) để tra log; lỗi nghiệp vụ 4xx giữ nguyên thông báo
+    const rid = resp.headers.get("X-Request-ID") || err?.request_id;
+    const detail = resp.status >= 500 && rid ? `${err?.message || errorMessage(code)} (Mã hỗ trợ: ${rid})` : err?.message;
+    throw new ApiError(resp.status, code, Boolean(err?.retryable), detail);
   }
   return resp;
 }

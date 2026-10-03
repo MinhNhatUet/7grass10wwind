@@ -35,9 +35,8 @@ CI (`.github/workflows/ci.yml`) runs `ruff check src/ tests/` and `pytest tests/
 
 Layered FastAPI + LangGraph backend. All imports are absolute from the `src.` package.
 
-- `src/main.py`: creates the FastAPI app with CORS (origins come from the comma-separated `CORS_ORIGINS`), mounts `src/api/routes.py` under `/api/v1`, and exposes `/health`.
-- `src/api/routes.py`: `POST /api/v1/chat` calls `agent.ainvoke({"query": ...})` and maps the resulting state's `response`/`analysis` fields into `ChatResponse` (`src/models/schemas.py`).
-- `src/agents/`: LangGraph graph. `state.py` defines `AgentState`, a `TypedDict` with `total=False`. Nodes are async functions that take the state and return a partial-state dict. `graph.py` wires `analyze → (conditional on state["error"]) → respond → END` and compiles it once at import time into the module-level `agent`. Tools in `agents/tools/` are `@tool` functions; they are not yet bound to the graph.
+- `src/main.py`: creates the FastAPI app with CORS (origins come from the comma-separated `CORS_ORIGINS`), mounts the product routers in `src/api/` (auth, conversations, documents, sources, dashboard, admin, quizzes) under `/api/v1`, and exposes `/health`. The template sample (`POST /api/v1/chat`, `agents/graph.py`, example node/tool) was removed (D-63); chat goes through `POST /api/v1/conversations/{id}/messages`.
+- `src/agents/`: LangGraph orchestrator (`orchestrator.py`, `orchestrator_state.py`, `nodes/orchestration.py`): policy → router (picks course + assistant) → academic | learning | hub | clarify. Assistants live in `src/services/assistants/`.
 - `src/services/llm.py`: `get_llm()` builds a `ChatOpenAI` from settings. Obtain the LLM through this function instead of constructing clients inside nodes.
 - `src/config.py`: pydantic-settings `Settings`, read from `.env` and cached by `get_settings()` (`lru_cache`). Settings changes do not take effect until the process restarts or the cache is cleared.
 - Tests: `tests/conftest.py` provides an httpx `AsyncClient` over `ASGITransport(app=app)` (`client` fixture) and a `mock_llm` fixture. Async tests use `@pytest.mark.asyncio`. Tests must not call the real LLM.

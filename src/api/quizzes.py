@@ -5,16 +5,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import current_user
+from src.config import get_settings
 from src.db import get_db
-from src.models.orm import Chunk, Conversation, Message, StudyPlan, User
+from src.models.orm import Chunk, Conversation, Course, Message, StudyPlan, User
 from src.services import course_quiz as svc
 from src.services import page_render
+from src.services.errors import AppError
 from src.services.retrieval import servable_versions
 
 router = APIRouter()
@@ -65,6 +67,24 @@ def update_quiz(
     quiz_id: str, body: QuizIn, user: User = Depends(current_user), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     return svc.view(svc.update(db, user, quiz_id, body.model_dump()), staff=True)
+
+
+@router.post("/course-quizzes/{quiz_id}/generate")
+def generate_quiz(
+    quiz_id: str,
+    file: UploadFile = File(...),
+    count: int = Form(10),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Giảng viên tải PDF (đề có sẵn hoặc tài liệu) → LLM tạo câu hỏi A–D vào đề Nháp. Hàm sync: chạy trong threadpool,
+    gọi LLM không chặn event loop."""
+    limit = get_settings().upload_max_mb * 1024 * 1024
+    data = file.file.read(limit + 1)
+    if len(data) > limit:
+        raise AppError("FILE_TOO_LARGE", 413)
+    quiz, added = svc.generate_from_pdf(db, user, quiz_id, data, count)
+    return svc.view(quiz, staff=True) | {"added": added}
 
 
 @router.post("/course-quizzes/{quiz_id}/status")
@@ -170,10 +190,54 @@ def course_topics(course_id: str, user: User = Depends(current_user), db: Sessio
                 toc = page_render.chapters(version.storage_key)
             except Exception:  # noqa: BLE001 — mục lục hỏng → dùng tiêu đề trong text
                 toc = ()
+        if document.doc_type == "slide":  # bộ slide = MỘT bài; mục lục slide là từng trang "Slide N: …" → làm mục con
+            course = db.get(Course, document.course_id)
+            items.append(_slide_lesson(db, version.id, document.title, course.name if course else "", toc))
+            continue
         chapters = [dict(c) for c in toc] or _chapters_from_text(db, version.id)
         items += [{**c, "document": document.title} for c in chapters]
     items.sort(key=lambda t: (t["document"], int(t["chapter"]) if t["chapter"].isdigit() else 999))
     return {"items": items}
+
+
+_LESSON_NO = re.compile(r"^(\d{1,2})\s*[-_.\s]\s*(.+)$")
+_SLIDE_TITLE = re.compile(r"^Slide\s+\d+\s*:\s*", re.I)
+_GENERIC_SLIDE = {"nội dung", "tổng kết", "mục tiêu", "câu hỏi", "thảo luận", "tài liệu tham khảo", "bài tập"}
+
+
+def _slide_lesson(
+    db: Session, version_id: str, title: str, course_name: str, toc: tuple[dict[str, Any], ...]
+) -> dict[str, Any]:
+    """Một bộ slide → một bài ôn tập (D-47). Tên bài = tiêu đề trang bìa (chunk đầu, bỏ dòng tên môn / "Chapter N");
+    mục con = gạch đầu dòng của slide "Nội dung", không có thì lấy tiêu đề slide trong mục lục. Số bài theo tên file."""
+    m = _LESSON_NO.match(title)
+    first = db.scalar(select(Chunk.text).where(Chunk.version_id == version_id).order_by(Chunk.ordinal).limit(1)) or ""
+    lines = [ln.strip().lstrip("◼").strip() for ln in first.splitlines() if ln.strip()]
+    name = next(
+        (ln for ln in lines[:4] if ln.lower() != course_name.lower() and not re.match(r"(?i)^chapter \d+$", ln)), None
+    )
+    sections: list[str] = []
+    if "Nội dung" in lines:
+        for ln in lines[lines.index("Nội dung") + 1 :]:
+            if not ln.startswith(("•", "-", "§")):
+                break
+            sections.append(ln.lstrip("•-§ ").strip())
+    if not sections:
+        for c in toc:
+            t = _SLIDE_TITLE.sub("", c["title"]).strip()
+            if (
+                t
+                and t.lower() not in _GENERIC_SLIDE
+                and t not in sections
+                and t.lower() != course_name.lower()
+                and not t.lower().startswith("chapter ")
+            ):
+                sections.append(t)
+    lesson = re.sub(r"(?i)^bài\s*\d+\s*:\s*", "", name) if name else (m.group(2).strip() if m else title)
+    return {
+        "chapter": str(int(m.group(1))) if m else "0", "title": lesson,
+        "page": 1, "sections": sections[:20], "document": "Bài giảng (slide)", "kind": "lesson",
+    }  # fmt: skip
 
 
 def _chapters_from_text(db: Session, version_id: str) -> list[dict[str, Any]]:

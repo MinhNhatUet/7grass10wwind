@@ -8,6 +8,7 @@ Job chạy nền bằng thread riêng, có DB session riêng; lỗi giữ stage/
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 from dataclasses import dataclass
@@ -138,6 +139,68 @@ def upload(
     db.commit()
     start_job(job.id)
     return version, job
+
+
+def import_prechunked(
+    db: Session,
+    user: User,
+    course_id: str,
+    content: bytes,
+    filename: str,
+    meta: VersionMeta,
+    page_count: int,
+    chunks: list[dict],
+    source: str,
+) -> DocumentVersion:
+    """Nhập tài liệu ĐÃ được pipeline dữ liệu chunk sẵn (D-49): lưu tệp gốc (xem trang/tải về), KHÔNG trích xuất lại.
+
+    Cùng kiểm tra như upload (quyền tải lên, metadata, loại tệp theo nội dung, trùng checksum, audit). Bản vào Draft
+    kèm chunk {text, page, page_map}; sau đó vẫn phải gửi duyệt → người duyệt khác duyệt → index (embedding đúng các
+    chunk này) → Published.
+    """
+    if not acl.can_upload(db, user, course_id):
+        raise forbidden("UPLOAD_NOT_ALLOWED")
+    meta.validate()
+    if not chunks:
+        raise bad_request("NO_CHUNKS")
+    try:
+        file_type = ingestion.detect_file_type(content)
+    except ingestion.IngestionError as e:
+        raise bad_request(e.code) from e
+    checksum, key = storage.save_bytes(content)
+    dup = db.scalar(
+        select(DocumentVersion)
+        .join(Document)
+        .where(Document.course_id == course_id, DocumentVersion.checksum == checksum)
+        .where(DocumentVersion.state.not_in((WITHDRAWN, ARCHIVED)))
+    )
+    if dup is not None:
+        raise AppError("DUPLICATE_FILE", 409, message=f"Tệp đã có trong môn (phiên bản {dup.id})")
+    document = Document(course_id=course_id, owner_id=user.id, title=meta.title.strip(), doc_type=meta.doc_type)
+    db.add(document)
+    db.flush()
+    version = DocumentVersion(
+        document_id=document.id, version_label=meta.version_label.strip(), state=DRAFT, file_type=file_type,
+        original_filename=filename[:500], checksum=checksum, storage_key=key, size_bytes=len(content),
+        authors=meta.authors, provenance=meta.provenance.strip(), usage_permission=meta.usage_permission,
+        acl_roles=sorted(set(meta.acl_roles)), download_allowed=meta.download_allowed,
+        integrity_label=meta.integrity_label, chapter=meta.chapter, uploader_id=user.id, page_count=page_count,
+    )  # fmt: skip
+    db.add(version)
+    db.flush()
+    for i, c in enumerate(chunks):
+        db.add(
+            Chunk(
+                version_id=version.id, ordinal=i, locator_type="page", locator_value=int(c["page"]),
+                text=c["text"], page_map=c.get("page_map"),
+            )
+        )  # fmt: skip
+    audit.record(
+        db, actor_id=user.id, action="upload", object_type="version", object_id=version.id, course_id=course_id,
+        detail={"prechunked": len(chunks), "source": source},
+    )  # fmt: skip
+    db.commit()
+    return version
 
 
 def reprocess(db: Session, user: User, version_id: str, reason: str) -> tuple[DocumentVersion, IngestionJob]:
@@ -328,7 +391,9 @@ def _run_job(job_id: str) -> None:
 
 
 def start_job(job_id: str) -> None:
-    threading.Thread(target=_run_job, args=(job_id,), daemon=True, name=f"job-{job_id}").start()
+    # thread không tự mang context của request → sao chép để log của job giữ http_request_id đã khởi tạo nó
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(_run_job, job_id), daemon=True, name=f"job-{job_id}").start()
 
 
 def resume_interrupted_jobs() -> None:

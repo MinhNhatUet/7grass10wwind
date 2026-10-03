@@ -5,9 +5,11 @@
 // Nội dung & nguồn do backend tạo và kiểm tra; UI chỉ hiển thị + tương tác.
 
 import { useState } from "react";
-import { ApiError, type ChatMessage, type HubResult, type PlanSession, api, downloadFile, json } from "@/lib/api";
+import { ApiError, type ChatMessage, type HubResult, type ItemEvidence, type PlanSession, api, downloadFile, json } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { M } from "@/components/math-text";
+import { CitationBadge } from "@/components/chat/CitationBadge";
+import type { Source } from "@/types/chat";
 
 type Meta = ChatMessage["metadata"];
 const card = "mt-3 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 p-4 text-[14px]";
@@ -23,38 +25,27 @@ export const HIDE_SOURCE_KINDS = ["quiz", "diagnose", "mcq", "flashcards", "cloz
 /** Bỏ nhãn [n] / [1, 3] khỏi văn bản hiển thị. */
 export const noCite = (t: string) => t.replace(/\s*\[\d+(?:\s*,\s*\d+)*\]/g, "").replace(/,(\s*)(?=[.;,)]|$)/g, "");
 
-export type EvidenceSource = { id: string; title: string; page: number; content: string };
+/** Nguồn của tin nhắn + mở trang nguồn ở khung bên phải. */
+type CiteCtx = { sources: Source[]; onSource: (s: Source) => void };
 
-/** Dẫn chứng: đoạn trích trong tài liệu + tên, trang, nút mở đúng trang nguồn. */
-function Evidence({ ns, sources, onCite }: { ns: number[]; sources: EvidenceSource[]; onCite: (n: number) => void }) {
-  const list = ns.map((n) => sources.find((s) => String(s.id) === String(n))).filter((s): s is EvidenceSource => !!s);
-  if (!list.length) return null;
+/** Badge [n] như trong chat (D-55): rê chuột hiện đoạn trích + trang; bấm mở trang nguồn. D-57: ưu tiên đoạn trích
+ *  và trang riêng của mục (ev) — mục cùng nguồn không lặp một đoạn chung, không rơi về trang đầu chunk. */
+function Cites({ ns, ev, cx }: { ns: number[]; ev?: ItemEvidence; cx: CiteCtx }) {
   return (
-    <div className="mt-2 space-y-1.5">
-      {list.map((s) => (
-        <div key={s.id} className="rounded-lg border-l-4 border-amber-400 bg-amber-50/70 dark:bg-amber-950/30 px-3 py-2 text-[13px]">
-          <span className="font-semibold">Dẫn chứng: </span>
-          {s.content ? <span className="italic">“{s.content.length > 320 ? `${s.content.slice(0, 320)}…` : s.content}”</span> : null}
-          <span className={`block mt-1 text-[12px] ${muted}`}>
-            — {s.title}, trang {s.page}{" "}
-            <button type="button" onClick={() => onCite(Number(s.id))} className="ml-1 underline cursor-pointer bg-transparent border-0 p-0 text-inherit">Mở nguồn</button>
-          </span>
-        </div>
-      ))}
-    </div>
+    <>
+      {ns.map((n) => {
+        const s = cx.sources.find((x) => String(x.id) === String(n));
+        const own = ev?.[String(n)];
+        return s ? <CitationBadge key={n} source={own ? { ...s, content: own.quote, page: own.page, pageEnd: own.page_end ?? null } : s} onClick={cx.onSource} /> : null;
+      })}
+    </>
   );
 }
 
-function Cites({ ns, onCite }: { ns: number[]; onCite: (n: number) => void }) {
-  return (
-    <>
-      {ns.map((n) => (
-        <button key={n} type="button" onClick={() => onCite(n)} className="ml-1 rounded-full border border-black/10 dark:border-white/15 px-1.5 text-[11px] font-semibold cursor-pointer bg-white/80 dark:bg-white/10 hover:bg-black hover:text-white">
-          {n}
-        </button>
-      ))}
-    </>
-  );
+/** Dẫn chứng dưới mục (hiện sau khi lật / trả lời / kiểm tra). */
+function Evidence(props: { ns: number[]; ev?: ItemEvidence; cx: CiteCtx }) {
+  if (!props.ns.some((n) => props.cx.sources.some((x) => String(x.id) === String(n)))) return null;
+  return <div className="mt-2 flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">Nguồn: <Cites {...props} /></div>;
 }
 
 function useCall(onChanged: () => void) {
@@ -79,7 +70,7 @@ const ErrLine = ({ err }: { err: string | null }) =>
   err ? <p className="mt-2 rounded-lg bg-red-50 dark:bg-red-950 px-3 py-2 text-red-700 dark:text-red-200">{err}</p> : null;
 
 /* ---------- Tự kiểm tra / chẩn đoán ---------- */
-function QuizCard({ meta, messageId, onChanged, onCite }: { meta: Meta; messageId: string; onChanged: () => void; onCite: (n: number) => void }) {
+function QuizCard({ meta, messageId, onChanged, cx }: { meta: Meta; messageId: string; onChanged: () => void; cx: CiteCtx }) {
   const qs = meta.questions ?? [];
   const [answers, setAnswers] = useState<Record<string, string>>(meta.answers ?? {});
   const { err, busy, call } = useCall(onChanged);
@@ -111,7 +102,7 @@ function QuizCard({ meta, messageId, onChanged, onCite }: { meta: Meta; messageI
               <li key={i}>
                 <strong>{t.topic}</strong>: {LEVEL_LABEL[t.level] ?? t.level}{t.rationale && <> — <M>{t.rationale}</M></>}
                 {t.review && <div className={`text-[12px] ${muted}`}>Xem lại: {t.review}</div>}
-                {!!t.review_citations?.length && <div className="text-[12px]">Đọc đoạn này trước rồi quay lại: <Cites ns={t.review_citations} onCite={onCite} /></div>}
+                {!!t.review_citations?.length && <div className="text-[12px]">Đọc đoạn này trước rồi quay lại: <Cites ns={t.review_citations} cx={cx} /></div>}
               </li>
             ))}
           </ul>
@@ -350,7 +341,7 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
 }
 
 /* ---------- Flashcard / điền khuyết / cấp cứu ---------- */
-function Flashcards({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => void; sources: EvidenceSource[] }) {
+function Flashcards({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
   const items = meta.items ?? [];
   const [i, setI] = useState(0);
   const [flip, setFlip] = useState(false);
@@ -372,13 +363,13 @@ function Flashcards({ meta, onCite, sources }: { meta: Meta; onCite: (n: number)
           <button type="button" className={btn2} onClick={() => go(1)} aria-label="Thẻ sau">›</button>
         </div>
       </div>
-      {flip && <Evidence ns={c.sources} sources={sources} onCite={onCite} />}
+      {flip && <Evidence ns={c.sources} ev={c.evidence} cx={cx} />}
     </div>
   );
 }
 
 /* ---------- Trắc nghiệm A–D tự ôn: chọn là biết đúng/sai + giải thích + nguồn ---------- */
-function Mcq({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => void; sources: EvidenceSource[] }) {
+function Mcq({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
   const items = meta.items ?? [];
   const [picked, setPicked] = useState<Record<number, number>>({});
   const answered = Object.keys(picked).length;
@@ -420,7 +411,7 @@ function Mcq({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => voi
                   </span>{" "}
                   {it.explanation && <span className={muted}><M>{noCite(it.explanation)}</M></span>}
                 </p>
-                <Evidence ns={it.sources} sources={sources} onCite={onCite} />
+                <Evidence ns={it.sources} ev={it.evidence} cx={cx} />
               </>
             )}
           </div>
@@ -438,7 +429,7 @@ function Mcq({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => voi
 
 const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
 
-function Cloze({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => void; sources: EvidenceSource[] }) {
+function Cloze({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
   const items = meta.items ?? [];
   const [vals, setVals] = useState<Record<number, string>>({});
   const [checked, setChecked] = useState(false);
@@ -456,7 +447,7 @@ function Cloze({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => v
             <M>{rest.join("____")}</M>
             {it.hint && !checked && <div className={`text-[12px] ${muted}`}>Gợi ý: <M>{it.hint}</M></div>}
             {checked && !ok && <div className="text-[12px] text-red-600">Đáp án: <M>{it.answer}</M></div>}
-            {checked && <Evidence ns={it.sources} sources={sources} onCite={onCite} />}
+            {checked && <Evidence ns={it.sources} ev={it.evidence} cx={cx} />}
           </div>
         );
       })}
@@ -471,18 +462,18 @@ function Cloze({ meta, onCite, sources }: { meta: Meta; onCite: (n: number) => v
   );
 }
 
-function Triage({ meta, onCite }: { meta: Meta; onCite: (n: number) => void }) {
+function Triage({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
   const s = meta.sections;
   if (!s) return null;
   return (
     <div className={card}>
       <p className="font-semibold">1. Định nghĩa bắt buộc phải thuộc</p>
-      <ul className="mb-3 ml-5 list-disc">{s.definitions.map((d, k) => <li key={k}>{d.term && <strong><M>{d.term}</M>: </strong>}<M>{d.text}</M> <Cites ns={d.sources} onCite={onCite} /></li>)}</ul>
+      <ul className="mb-3 ml-5 list-disc">{s.definitions.map((d, k) => <li key={k}>{d.term && <strong><M>{d.term}</M>: </strong>}<M>{d.text}</M> <Cites ns={d.sources} ev={d.evidence} cx={cx} /></li>)}</ul>
       <p className="font-semibold">2. Sai lầm / lưu ý cần tránh</p>
       {s.pitfalls.length === 0 ? <p className={`mb-3 ${muted}`}>Tài liệu không nêu rõ — không tự bịa thêm.</p> :
-        <ul className="mb-3 ml-5 list-disc">{s.pitfalls.map((p, k) => <li key={k}><M>{p.text}</M> <Cites ns={p.sources} onCite={onCite} /></li>)}</ul>}
+        <ul className="mb-3 ml-5 list-disc">{s.pitfalls.map((p, k) => <li key={k}><M>{p.text}</M> <Cites ns={p.sources} ev={p.evidence} cx={cx} /></li>)}</ul>}
       <p className="font-semibold">3. Ví dụ cốt lõi</p>
-      <ol className="ml-5 list-decimal">{s.examples.map((e, k) => <li key={k}>{e.title && <strong><M>{e.title}</M>. </strong>}<M>{e.text}</M> <Cites ns={e.sources} onCite={onCite} /></li>)}</ol>
+      <ol className="ml-5 list-decimal">{s.examples.map((e, k) => <li key={k}>{e.title && <strong><M>{e.title}</M>. </strong>}<M>{e.text}</M> <Cites ns={e.sources} ev={e.evidence} cx={cx} /></li>)}</ol>
       {(meta.notes ?? []).map((n, k) => <p key={k} className="mt-2 text-[12px] text-amber-700">⚠ {n}</p>)}
     </div>
   );
@@ -504,22 +495,22 @@ function HubResults({ meta, onOpenHub }: { meta: Meta; onOpenHub: (r: HubResult)
 export function LearningCards(props: {
   meta: Meta | undefined;
   messageId: string;
-  onCite: (n: number) => void;
+  onSource: (s: Source) => void;
   onChanged: () => void;
   onSend: (content: string, body: Record<string, unknown>) => void;
   onOpenHub: (r: HubResult) => void;
-  sources?: EvidenceSource[]; // nguồn của câu trả lời — chỉ dùng làm dẫn chứng SAU khi người học trả lời
+  sources?: Source[]; // nguồn của câu trả lời — chỉ dùng làm dẫn chứng SAU khi người học trả lời
 }) {
   const { meta } = props;
-  const sources = props.sources ?? [];
+  const cx: CiteCtx = { sources: props.sources ?? [], onSource: props.onSource };
   if (!meta) return null;
   if ((meta.kind === "quiz" || meta.kind === "diagnose") && meta.questions?.length)
-    return <QuizCard meta={meta} messageId={props.messageId} onChanged={props.onChanged} onCite={props.onCite} />;
+    return <QuizCard meta={meta} messageId={props.messageId} onChanged={props.onChanged} cx={cx} />;
   if (meta.kind === "plan" && meta.plan) return <PlanCard meta={meta} onChanged={props.onChanged} onSend={props.onSend} />;
-  if (meta.kind === "flashcards") return <Flashcards meta={meta} onCite={props.onCite} sources={sources} />;
-  if (meta.kind === "cloze") return <Cloze meta={meta} onCite={props.onCite} sources={sources} />;
-  if (meta.kind === "mcq") return <Mcq meta={meta} onCite={props.onCite} sources={sources} />;
-  if (meta.kind === "triage") return <Triage meta={meta} onCite={props.onCite} />;
+  if (meta.kind === "flashcards") return <Flashcards meta={meta} cx={cx} />;
+  if (meta.kind === "cloze") return <Cloze meta={meta} cx={cx} />;
+  if (meta.kind === "mcq") return <Mcq meta={meta} cx={cx} />;
+  if (meta.kind === "triage") return <Triage meta={meta} cx={cx} />;
   if (meta.kind === "hub" && meta.results?.length) return <HubResults meta={meta} onOpenHub={props.onOpenHub} />;
   return null;
 }

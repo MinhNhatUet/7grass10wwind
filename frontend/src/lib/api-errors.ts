@@ -20,7 +20,10 @@ export async function responseError(response: Response): Promise<Error> {
   if (response.status === 401) return new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
   if (response.status === 404 || response.status === 403) return new Error("Không tìm thấy hoặc bạn không có quyền truy cập nội dung này.");
   const data = await response.json().catch(() => ({}));
-  return new Error(data.error?.message || errorCodeMessage(data.error?.code));
+  const message = data.error?.message || errorCodeMessage(data.error?.code);
+  // lỗi máy chủ: kèm mã hỗ trợ để tra log (X-Request-ID)
+  const rid = response.headers.get("X-Request-ID") || data.error?.request_id;
+  return new Error(response.status >= 500 && rid ? `${message} (Mã hỗ trợ: ${rid})` : message);
 }
 
 export function authHeaders() {

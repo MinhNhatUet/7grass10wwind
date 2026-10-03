@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Script Node rời của TV4 (CommonJS), không thuộc ứng dụng — chờ TV4 xác nhận xoá
+    "transform.js",
   ]),
 ]);
 

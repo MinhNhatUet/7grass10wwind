@@ -5,6 +5,9 @@ Evidence gate trước khi gọi LLM: không có đoạn nào vượt ngưỡng 
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
@@ -32,12 +35,39 @@ INSTRUCTION = """Trả lời CÂU HỎI chỉ dựa trên NGUỒN. Trả về DU
  "clarification": "câu hỏi làm rõ ngắn (chỉ khi needs_clarification)"}
 - "partial": chỉ một số phần có căn cứ — liệt kê phần thiếu trong "missing".
 - "needs_clarification": câu hỏi mơ hồ về phạm vi/chủ thể/viết tắt.
-- "insufficient_evidence": nguồn không đủ để trả lời."""
+- "insufficient_evidence": CHỈ khi không NGUỒN nào nói về điều được hỏi. Nếu có nguồn định nghĩa/mô tả trực tiếp khái
+  niệm được hỏi (kể cả bằng tiếng Anh hoặc chỉ một phần) thì trả lời "answered"/"partial" dựa trên phần đó."""
+
+
+_topic_queries: ContextVar[list[str] | None] = ContextVar("topic_queries", default=None)
+
+
+@contextmanager
+def multi_topic(queries: list[str] | None):
+    """Ôn tập nhiều chủ đề (D-51): trong khối này, evidence() truy xuất RIÊNG từng chủ đề rồi gộp xen kẽ, để nguồn
+    (và câu hỏi) trải đều các chủ đề thay vì dồn vào chủ đề gần câu truy vấn gộp nhất. Mỗi chủ đề 1 embedding truy vấn."""
+    token = _topic_queries.set(queries if queries and len(queries) > 1 else None)
+    try:
+        yield
+    finally:
+        _topic_queries.reset(token)
 
 
 def evidence(db: Session, user: User, course_id: str, query: str) -> list[Hit]:
-    hits = search(db, user, course_id, query)
-    return [h for h in hits if h.score >= get_settings().retrieval_min_score]
+    floor = get_settings().retrieval_min_score
+    queries = _topic_queries.get()
+    if not queries:
+        return [h for h in search(db, user, course_id, query) if h.score >= floor]
+    # ít chủ đề → vài đoạn mỗi chủ đề; nhiều chủ đề (lộ trình cả môn) → ít nhất 1 đoạn mỗi chủ đề, prompt không phình
+    k = max(1, round(get_settings().retrieval_top_k * 1.5 / len(queries)))
+    per_topic = [[h for h in search(db, user, course_id, q, k) if h.score >= floor] for q in queries]
+    merged, seen = [], set()
+    for rank in range(k):  # xen kẽ: hạng 1 của mọi chủ đề, rồi hạng 2… — không chủ đề nào bị lấn át
+        for hits in per_topic:
+            if rank < len(hits) and hits[rank].chunk.id not in seen:
+                seen.add(hits[rank].chunk.id)
+                merged.append(hits[rank])
+    return merged
 
 
 def answer(
@@ -56,7 +86,8 @@ def answer(
     data = call_json(
         BASE_POLICY,
         f"{INSTRUCTION}{style_line}\n\nLỊCH SỬ (chỉ để hiểu ngữ cảnh, KHÔNG phải nguồn):\n{format_history(history)}"
-        f"\n\nNGUỒN:\n{format_sources(hits)}\n\nCÂU HỎI: {question}",
+        f"\n\nNGUỒN:\n{format_sources(hits, retrieval_query or question)}\n\nCÂU HỎI: {question}",
+        temperature=0,  # D-68: cùng nguồn, cùng câu hỏi → cùng kết luận (gpt-4o-mini lúc trả lời lúc từ chối)
     )
     status = data.get("status") if data.get("status") in ALLOWED else "insufficient_evidence"
     if status == "needs_clarification":
