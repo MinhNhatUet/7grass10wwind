@@ -1,5 +1,7 @@
 # Review các file có thể xóa khỏi dự án
 
+> **Báo cáo lịch sử (lưu trữ 2026-10-03), không phải hiện trạng.** Nhiều mục đã được xử lý sau ngày rà soát; hiện trạng xem [mô tả dự án hiện tại](../../documentions/mo_ta_du_an_hien_tai.md) và [PRD v2](../../documentions/PRD_v2_MVP_edu04.md).
+
 Ngày review: 2026-09-30.
 
 ## Phạm vi và kết quả
