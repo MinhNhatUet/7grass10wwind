@@ -213,7 +213,9 @@ def no_secret(body: Any) -> bool:
 
 def setup() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    src = sqlite3.connect(f"file:{ROOT / 'data' / 'app.db'}?mode=ro", uri=True)
+    # UAT_SOURCE_DB: chạy UAT trên DB khác (vd. bản thử reindex) — mặc định data/app.db; luôn chép ra bản riêng
+    source = Path(os.environ.get("UAT_SOURCE_DB") or ROOT / "data" / "app.db")
+    src = sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)
     dst = sqlite3.connect(DB)
     src.backup(dst)
     dst.close()
@@ -1104,7 +1106,7 @@ def ops_01(c: Case) -> None:
     c.check("Response không lộ key/stack trace", no_secret(b))
     s, b = sv("GET", f"/documents?course_id={COURSE}")
     c.check("Thư viện vẫn dùng được khi LLM lỗi", s == 200 and b["items"], s)
-    Server.start({"GEMINI_API_KEY": "invalid-uat-key"}, tag="embed_down")
+    Server.start({"GEMINI_API_KEY": "invalid-uat-key", "EMBEDDING_API_KEY": "invalid-uat-key"}, tag="embed_down")
     sv = login("sinhvien", CTX["pw"]["CNPM_SINHVIEN"])
     _, s, b = ask(sv, "Kiểm thử hộp đen là gì?")
     c.evidence["embed_down"] = {"status": s, "body": b}

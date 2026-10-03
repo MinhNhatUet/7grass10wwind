@@ -1,0 +1,112 @@
+[
+  {
+    "chunk_id": "c-avl-old-definition",
+    "version_id": "avl-v1",
+    "text": "Bản cũ: cây AVL là cây nhị phân tự cân bằng.",
+    "slide": 8,
+    "section": "Khái niệm"
+  },
+  {
+    "chunk_id": "c-avl-old-balance",
+    "version_id": "avl-v1",
+    "text": "Bản cũ mô tả height imbalance và hệ số cân bằng AVL.",
+    "slide": 9,
+    "section": "Cân bằng"
+  },
+  {
+    "chunk_id": "c-avl-definition",
+    "version_id": "avl-v2",
+    "text": "Cây AVL là cây tìm kiếm nhị phân tự cân bằng, chênh lệch chiều cao hai cây con không quá một.",
+    "slide": 10,
+    "section": "Định nghĩa"
+  },
+  {
+    "chunk_id": "c-avl-balance",
+    "version_id": "avl-v2",
+    "text": "Hệ số cân bằng của một nút AVL được tính từ chiều cao cây con trái và cây con phải.",
+    "slide": 11,
+    "section": "Hệ số cân bằng"
+  },
+  {
+    "chunk_id": "c-avl-rotations",
+    "version_id": "avl-v2",
+    "text": "Các phép quay trái, quay phải, quay kép LR và RL khôi phục cân bằng cho cây AVL.",
+    "slide": 12,
+    "section": "Phép quay"
+  },
+  {
+    "chunk_id": "c-bst-definition",
+    "version_id": "bst-v1",
+    "text": "Cây tìm kiếm nhị phân có khóa cây con trái nhỏ hơn khóa gốc và cây con phải lớn hơn.",
+    "page": 21,
+    "section": "Định nghĩa BST"
+  },
+  {
+    "chunk_id": "c-bst-search",
+    "version_id": "bst-v1",
+    "text": "Tìm kiếm trên cây nhị phân đi sang trái hoặc phải dựa trên phép so sánh khóa.",
+    "page": 22,
+    "section": "Tìm kiếm"
+  },
+  {
+    "chunk_id": "c-bst-traversal",
+    "version_id": "bst-v1",
+    "text": "Duyệt cây theo thứ tự giữa cho dãy khóa tăng dần.",
+    "page": 24,
+    "section": "Duyệt cây"
+  },
+  {
+    "chunk_id": "c-sort-merge",
+    "version_id": "sorting-v1",
+    "text": "Merge sort chia mảng thành hai nửa rồi trộn các dãy đã sắp xếp.",
+    "slide": 5,
+    "section": "Merge sort"
+  },
+  {
+    "chunk_id": "c-sort-quick",
+    "version_id": "sorting-v1",
+    "text": "Quick sort chọn pivot và phân hoạch dữ liệu quanh pivot.",
+    "slide": 8,
+    "section": "Quick sort"
+  },
+  {
+    "chunk_id": "c-sort-complexity",
+    "version_id": "sorting-v1",
+    "text": "Độ phức tạp trung bình của nhiều thuật toán sắp xếp so sánh là n log n.",
+    "slide": 12,
+    "section": "Độ phức tạp"
+  },
+  {
+    "chunk_id": "c-db-old",
+    "version_id": "db-v0",
+    "text": "Bản cơ sở dữ liệu cũ đã bị thu hồi.",
+    "page": 10
+  },
+  {
+    "chunk_id": "c-db-relational",
+    "version_id": "db-v1",
+    "text": "Mô hình quan hệ tổ chức dữ liệu thành bảng, hàng và cột.",
+    "page": 15,
+    "section": "Mô hình quan hệ"
+  },
+  {
+    "chunk_id": "c-db-sql",
+    "version_id": "db-v1",
+    "text": "SQL được dùng để truy vấn và biến đổi dữ liệu quan hệ.",
+    "page": 18,
+    "section": "SQL"
+  },
+  {
+    "chunk_id": "c-pending-tree",
+    "version_id": "pending-v1",
+    "text": "Nội dung cây nhiều nhánh chưa được giảng viên phê duyệt.",
+    "slide": 2
+  },
+  {
+    "chunk_id": "c-private-graph",
+    "version_id": "private-v1",
+    "text": "Đồ thị gồm tập đỉnh và tập cạnh, nhưng version này không thuộc access scope.",
+    "slide": 3,
+    "section": "Khái niệm đồ thị"
+  }
+]

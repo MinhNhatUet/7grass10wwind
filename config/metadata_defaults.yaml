@@ -1,0 +1,31 @@
+course_defaults:
+  SE101: &default_course
+    owner_id: teacher_unassigned
+    document_type: lecture_slide
+    language: vi
+    source:
+      origin: lecturer_material
+      provider: unknown
+      received_at: null
+    rights:
+      usage_status: unknown
+      ai_processing_allowed: false
+      note: null
+    acl:
+      allowed_roles: []
+      allowed_groups: []
+      download_allowed: false
+    integrity:
+      type: restricted
+      assessment_id: null
+      effective_period:
+        from: null
+        to: null
+      assigned_by: null
+  DB101: *default_course
+  MATH101: *default_course
+  PHIL101: *default_course
+  SIG101: *default_course
+  HCM101: *default_course
+  PHY101: *default_course
+  MATH102: *default_course

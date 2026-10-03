@@ -59,6 +59,7 @@ def init_db() -> None:
     _migrate_nullable_conversation_course(engine)
     _migrate_conversation_document(engine)
     _migrate_chunk_page_map(engine)
+    _migrate_chunk_section(engine)
     _migrate_citation_locator_end(engine)
     _migrate_usage_tokens(engine)
 
@@ -84,6 +85,13 @@ def _migrate_chunk_page_map(engine: Engine) -> None:
     with engine.begin() as conn:
         if "page_map" not in {c["name"] for c in inspect(conn).get_columns("chunks")}:
             conn.exec_driver_sql("ALTER TABLE chunks ADD COLUMN page_map JSON")
+
+
+def _migrate_chunk_section(engine: Engine) -> None:
+    """Section hierarchy extracted from structured parsers; old chunks remain NULL."""
+    with engine.begin() as conn:
+        if "section" not in {c["name"] for c in inspect(conn).get_columns("chunks")}:
+            conn.exec_driver_sql("ALTER TABLE chunks ADD COLUMN section VARCHAR(1000)")
 
 
 def _migrate_conversation_document(engine: Engine) -> None:

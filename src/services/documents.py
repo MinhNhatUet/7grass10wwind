@@ -192,7 +192,7 @@ def import_prechunked(
         db.add(
             Chunk(
                 version_id=version.id, ordinal=i, locator_type="page", locator_value=int(c["page"]),
-                text=c["text"], page_map=c.get("page_map"),
+                section=c.get("section"), text=c["text"], page_map=c.get("page_map"),
             )
         )  # fmt: skip
     audit.record(
@@ -233,6 +233,92 @@ def reprocess(db: Session, user: User, version_id: str, reason: str) -> tuple[Do
     db.commit()
     start_job(job.id)
     return version, job
+
+
+def reprocess_prechunked(
+    db: Session,
+    user: User,
+    version_id: str,
+    reason: str,
+    page_count: int,
+    chunks: list[dict],
+    source: str,
+) -> DocumentVersion:
+    """Create a safe draft revision from externally prepared chunks.
+
+    The current Published version and its embeddings stay untouched.  The new
+    revision must still pass submit -> approval -> index; only a successful
+    index job swaps ``Document.current_version_id`` and archives the old
+    Published version.
+    """
+    old, document = get_version(db, version_id)
+    if not acl.can_upload(db, user, document.course_id):
+        raise forbidden("UPLOAD_NOT_ALLOWED")
+    if not reason.strip():
+        raise bad_request("REASON_REQUIRED")
+    if not source.strip():
+        raise bad_request("SOURCE_REQUIRED")
+    if page_count < 1:
+        raise bad_request("INVALID_PAGE_COUNT")
+    if not chunks:
+        raise bad_request("NO_CHUNKS")
+
+    prepared: list[dict] = []
+    for item in chunks:
+        text = str(item.get("text") or "").strip()
+        try:
+            page = int(item["page"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise bad_request("INVALID_CHUNK_LOCATOR") from exc
+        if not text:
+            raise bad_request("EMPTY_CHUNK")
+        if page < 1 or page > page_count:
+            raise bad_request("INVALID_CHUNK_LOCATOR")
+        section = item.get("section")
+        if section is not None:
+            section = str(section).strip() or None
+            if section and len(section) > 1000:
+                raise bad_request("SECTION_TOO_LONG")
+        page_map = item.get("page_map")
+        if page_map is not None:
+            try:
+                page_map = [[int(offset), int(mapped_page)] for offset, mapped_page in page_map]
+            except (TypeError, ValueError) as exc:
+                raise bad_request("INVALID_PAGE_MAP") from exc
+            if any(offset < 0 or mapped_page < 1 or mapped_page > page_count for offset, mapped_page in page_map):
+                raise bad_request("INVALID_PAGE_MAP")
+            if page_map != sorted(page_map, key=lambda pair: pair[0]):
+                raise bad_request("INVALID_PAGE_MAP")
+        prepared.append({"text": text, "page": page, "section": section, "page_map": page_map})
+
+    version = DocumentVersion(
+        document_id=document.id, version_label=old.version_label, state=DRAFT, file_type=old.file_type,
+        original_filename=old.original_filename, checksum=old.checksum, storage_key=old.storage_key,
+        size_bytes=old.size_bytes, page_count=page_count, authors=old.authors, provenance=old.provenance,
+        usage_permission=old.usage_permission, acl_roles=list(old.acl_roles), download_allowed=old.download_allowed,
+        integrity_label=old.integrity_label, chapter=old.chapter, uploader_id=user.id,
+    )  # fmt: skip
+    db.add(version)
+    db.flush()
+    for ordinal, item in enumerate(prepared):
+        db.add(
+            Chunk(
+                version_id=version.id,
+                ordinal=ordinal,
+                locator_type="page",
+                locator_value=item["page"],
+                section=item["section"],
+                text=item["text"],
+                page_map=item["page_map"],
+            )
+        )
+    audit.record(
+        db, actor_id=user.id, action="reprocess_prechunked", object_type="version", object_id=version.id,
+        course_id=document.course_id, reason=reason,
+        detail={"from_version": old.id, "chunks": len(prepared), "source": source},
+    )  # fmt: skip
+    db.commit()
+    return version
 
 
 def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
@@ -278,7 +364,7 @@ PRE_EMBED_STATES = (DRAFT, NEEDS_REVIEW, PENDING)
 def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
     """D-34: embedding trước duyệt. Không bao giờ đổi trạng thái bản/phát hành; lỗi (vd. hết quota) chỉ đánh dấu job —
     job index sau duyệt làm tiếp. Tự dừng khi bản đã rời trạng thái chờ duyệt."""
-    from src.services.retrieval import embed_texts
+    from src.services.retrieval import chunk_embedding_text, embed_texts
 
     chunks = [c for c in db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal))]
     todo = [c for c in chunks if c.embedding is None]
@@ -289,7 +375,7 @@ def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None
             if version.state not in PRE_EMBED_STATES:
                 break
             part = todo[i : i + batch]
-            for c, blob in zip(part, embed_texts([c.text for c in part]), strict=True):
+            for c, blob in zip(part, embed_texts([chunk_embedding_text(c) for c in part]), strict=True):
                 c.embedding = blob
             job.progress = min(1.0, (len(chunks) - len(todo) + i + len(part)) / max(len(chunks), 1))
             db.commit()
@@ -338,7 +424,7 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
     db.commit()
     chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)))
     try:
-        from src.services.retrieval import embed_texts
+        from src.services.retrieval import chunk_embedding_text, embed_texts
 
         todo = [c for c in chunks if c.embedding is None]
         done = len(chunks) - len(todo)
@@ -351,9 +437,8 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
                 _stop_index(db, job, version)
                 return
             part = todo[i : i + batch]
-            texts = [c.text for c in part]
             db.commit()  # No DB transaction/lock held across the provider call.
-            blobs = embed_texts(texts)
+            blobs = embed_texts([chunk_embedding_text(c) for c in part])
             if not _index_current(db, version, revision):
                 _stop_index(db, job, version)
                 return

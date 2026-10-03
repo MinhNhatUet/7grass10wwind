@@ -38,6 +38,11 @@ def document_scope(document_id: str | None):
         _document_scope.reset(token)
 
 
+def current_document_scope() -> str | None:
+    """Expose the request-local document boundary to retrieval adapters."""
+    return _document_scope.get()
+
+
 class EmbeddingUnavailableError(Exception):
     def __init__(self, rate_limited: bool):
         self.rate_limited = rate_limited
@@ -85,6 +90,12 @@ def embed_texts(texts: list[str]) -> list[bytes]:
         if s.embedding_pause_seconds:
             time.sleep(s.embedding_pause_seconds)  # giãn nhịp giữa các lô để không chạm giới hạn/phút
     return out
+
+
+def chunk_embedding_text(chunk: Chunk) -> str:
+    """Include section hierarchy in embeddings without polluting the source excerpt."""
+    text = chunk.text.strip()
+    return f"Section: {chunk.section.strip()}\n\n{text}" if chunk.section and chunk.section.strip() else text
 
 
 def embed_query(text: str) -> np.ndarray:

@@ -22,15 +22,25 @@ router = APIRouter()
 
 
 def _source(db: Session, user: User, chunk: Chunk, version: DocumentVersion, document: Document) -> dict[str, Any]:
+    pages = [chunk.locator_value]
+    if chunk.locator_type == "page":
+        pages.extend(int(page) for _, page in chunk.page_map or [])
+    first, last = min(pages), max(pages)
     return {
         "document_id": document.id,
         "version_id": version.id,
+        "chunk_id": chunk.id,
         "title": document.title,
         "version_label": version.version_label,
         "doc_type": document.doc_type,
         "file_type": version.file_type,
         "page_count": version.page_count,
-        "locator": {"type": chunk.locator_type, "value": chunk.locator_value},
+        "locator": {
+            "type": chunk.locator_type,
+            "value": first,
+            "end": last if last != first else None,
+            "section": chunk.section,
+        },
         "excerpt": chunk.text,
         "can_download": acl.can_download_version(db, user, version, document),
     }
@@ -56,6 +66,7 @@ def citation_source(
         "type": cit.locator_type,
         "value": cit.locator_value,
         "end": cit.locator_end,
+        "section": chunk.section,
     }  # D-49/D-50: trang (khoảng trang) của ý được trích, không phải trang đầu chunk
     return {**src, "quote": cit.quote}  # đoạn hỗ trợ ý (FR-10.1)
 

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.agents import orchestrator
 from src.config import get_settings
+from src.knowledge_hub import RetrievalError as KnowledgeHubRetrievalError
 from src.models.orm import (
     Chunk,
     Citation,
@@ -156,6 +157,7 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
         if not still_servable(db, user, c.version_id):
             masked = True
             break
+        chunk = db.get(Chunk, c.chunk_id)
         citations.append(
             {
                 "id": str(c.ordinal),
@@ -164,7 +166,12 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
                 "document_title": db.get(Document, c.document_id).title,
                 "version_id": c.version_id,
                 "chunk_id": c.chunk_id,
-                "locator": {"type": c.locator_type, "value": c.locator_value, "end": c.locator_end},
+                "locator": {
+                    "type": c.locator_type,
+                    "value": c.locator_value,
+                    "end": c.locator_end,
+                    "section": chunk.section if chunk is not None else None,
+                },
                 "quote": c.quote,
             }
         )
@@ -388,6 +395,9 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
             db.rollback()
             code = "EMBEDDING_RATE_LIMITED" if e.rate_limited else "EMBEDDING_UNAVAILABLE"
             raise AppError(code, 503, retryable=True) from e
+        except KnowledgeHubRetrievalError as e:
+            db.rollback()
+            raise AppError("RETRIEVAL_UNAVAILABLE", 503, retryable=True) from e
         except LlmError as e:
             db.rollback()
             raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e

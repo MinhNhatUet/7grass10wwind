@@ -14,10 +14,11 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key
 from src.db import get_db
+from src.knowledge_hub import HubConfig, HubSearchRequest, InvalidRequest, RetrievalError, ScopeDenied, SearchFilters
 from src.models.orm import Approval, Chunk, Document, DocumentVersion, IngestionJob, User
 from src.services import acl, documents, storage
 from src.services.errors import AppError, bad_request, not_found
-from src.services.retrieval import servable_versions
+from src.services.knowledge_hub_database import hub_response_view, search_database_session
 
 router = APIRouter()
 
@@ -66,30 +67,109 @@ def version_view(v: DocumentVersion, d: Document, *, full: bool) -> dict[str, An
 # ---------------------------------------------------------------- Hub (khám phá tài liệu, KHÔNG phải RAG)
 
 
+def _hub_search(
+    db: Session,
+    user: User,
+    *,
+    course_id: str,
+    q: str | None,
+    doc_type: str | None,
+    topic: str | None,
+    chapter: str | None,
+    semester: str | None,
+    version: str | None,
+    page: int,
+    page_size: int,
+    include_trace: bool = False,
+) -> dict[str, Any]:
+    try:
+        response = search_database_session(
+            db,
+            user,
+            HubSearchRequest(
+                query=q,
+                course_id=course_id,
+                filters=SearchFilters(
+                    document_type=doc_type,
+                    topic=topic,
+                    chapter=chapter,
+                    semester=semester,
+                    version=version,
+                ),
+                page=page,
+                page_size=page_size,
+            ),
+            # Giới hạn page_size do Query của từng route kiểm (thư viện 100 như hợp đồng cũ, /knowledge-hub/search 50)
+            config=HubConfig(max_page_size=100),
+        )
+    except ScopeDenied as exc:
+        raise not_found() from exc
+    except InvalidRequest as exc:
+        raise bad_request("INVALID_HUB_REQUEST", str(exc)) from exc
+    except RetrievalError as exc:
+        raise AppError("RETRIEVAL_UNAVAILABLE", 503, retryable=True) from exc
+    return hub_response_view(db, response, include_trace=include_trace)
+
+
 @router.get("/documents")
 def list_documents(
     course_id: str,
     doc_type: str | None = None,
     q: str | None = None,
+    topic: str | None = None,
+    chapter: str | None = None,
+    semester: str | None = None,
+    version: str | None = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=100),  # giữ hợp đồng cũ của thư viện (tối đa 100)
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Flow: Filter → Auth → Candidate → Count → Paginate; count chỉ trên tập đúng quyền (AC-04.1/04.2)."""
-    rows = servable_versions(db, user, course_id)  # rỗng nếu không có quyền môn → không lộ gì
-    items = [version_view(v, d, full=False) for v, d in rows]
-    if doc_type:
-        items = [i for i in items if i["doc_type"] == doc_type]
-    if q:
-        items = [i for i in items if q.casefold() in i["title"].casefold()]
-    for i in items:
-        v = db.get(DocumentVersion, i["version_id"])
-        i["can_download"] = acl.can_download_version(db, user, v, db.get(Document, i["document_id"]))
-    items.sort(key=lambda i: i["title"].casefold())
-    total = len(items)
-    start = (page - 1) * page_size
-    return {"items": items[start : start + page_size], "total": total, "page": page, "page_size": page_size}
+    """Browse without q; with q run vector + BM25 + RRF + reranker on the authorized scope."""
+    return _hub_search(
+        db,
+        user,
+        course_id=course_id,
+        q=q,
+        doc_type=doc_type,
+        topic=topic,
+        chapter=chapter,
+        semester=semester,
+        version=version,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/knowledge-hub/search")
+def knowledge_hub_search(
+    course_id: str,
+    q: str | None = None,
+    doc_type: str | None = None,
+    topic: str | None = None,
+    chapter: str | None = None,
+    semester: str | None = None,
+    version: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Explicit Knowledge Hub BE endpoint with authoritative citation metadata."""
+    return _hub_search(
+        db,
+        user,
+        course_id=course_id,
+        q=q,
+        doc_type=doc_type,
+        topic=topic,
+        chapter=chapter,
+        semester=semester,
+        version=version,
+        page=page,
+        page_size=page_size,
+        include_trace=True,
+    )
 
 
 @router.get("/documents/{document_id}/versions/{version_id}/download")

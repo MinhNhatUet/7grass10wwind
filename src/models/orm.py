@@ -122,6 +122,7 @@ class Chunk(Base):
     ordinal: Mapped[int] = mapped_column(Integer)
     locator_type: Mapped[str] = mapped_column(String(10))  # page | slide
     locator_value: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str | None] = mapped_column(String(1000))
     text: Mapped[str] = mapped_column(Text)
     extraction_quality: Mapped[str] = mapped_column(String(20), default="ok")
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
