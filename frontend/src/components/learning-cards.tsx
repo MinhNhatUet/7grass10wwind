@@ -12,10 +12,10 @@ import { CitationBadge } from "@/components/chat/CitationBadge";
 import type { Source } from "@/types/chat";
 
 type Meta = ChatMessage["metadata"];
-const card = "mt-3 rounded-2xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/20 p-4 text-[14px]";
-const btn = "rounded-full px-4 py-1.5 text-[13px] font-medium cursor-pointer border-0 bg-black text-white dark:bg-white dark:text-black hover:opacity-80 disabled:opacity-40";
-const btn2 = "rounded-full px-3 py-1.5 text-[13px] cursor-pointer border border-black/10 dark:border-white/15 bg-transparent hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40";
-const muted = "text-black/50 dark:text-white/50";
+const card = "mt-3.5 rounded-2xl border border-border/80 bg-card/85 backdrop-blur-xl p-4.5 text-[14px] shadow-ambient transition-all";
+const btn = "rounded-xl px-4 py-2 text-[13px] font-semibold cursor-pointer border-0 bg-primary text-primary-foreground shadow-xs hover:opacity-90 active:scale-95 disabled:opacity-40 transition-all";
+const btn2 = "rounded-xl px-3.5 py-1.5 text-[13px] font-medium cursor-pointer border border-border/80 bg-secondary/60 hover:bg-secondary text-foreground active:scale-95 disabled:opacity-40 transition-all";
+const muted = "text-muted-foreground";
 
 /** Khoá sessionStorage của yêu cầu học tập chờ trang chat gửi (D-45). */
 export const PENDING_SEND = "pendingLearningSend";
@@ -574,7 +574,7 @@ export function QuickStart({ onSend, onFill }: { onSend: (text: string) => void;
     <div className="mt-4 flex flex-wrap justify-center gap-2">
       {QUICK.map((q) => (
         <button key={q.label} type="button" onClick={() => ("send" in q ? onSend(q.send) : onFill(q.fill))}
-          className="rounded-full border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/5 px-3.5 py-1.5 text-[13px] cursor-pointer hover:bg-black/5 dark:hover:bg-white/10 backdrop-blur">
+          className="rounded-xl border border-border/80 bg-card/75 dark:bg-card/60 px-3.5 py-2 text-[12.5px] font-medium text-foreground/85 cursor-pointer hover:bg-secondary/80 hover:text-foreground hover:border-primary/30 active:scale-95 backdrop-blur-md shadow-2xs transition-all">
           <span aria-hidden="true">{q.icon}</span> {q.label}
         </button>
       ))}

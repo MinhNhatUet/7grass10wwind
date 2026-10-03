@@ -230,10 +230,10 @@ function UnifiedChat() {
   }, []);
 
   return (
-    <div className="flex h-full bg-white dark:bg-[#081018] text-black dark:text-[#f7f7f8] font-sans overflow-hidden isolate relative">
+    <div className="flex h-full bg-background text-foreground font-sans overflow-hidden isolate relative bg-mesh-radial">
       
-      <div className="hidden dark:block fixed inset-0 z-[-2] pointer-events-none" style={{ background: 'radial-gradient(circle at 72% 47%, rgba(255,180,112,.14), transparent 28%), linear-gradient(180deg, rgba(5,10,16,.34), rgba(3,7,12,.43) 55%, rgba(3,7,12,.63))' }} />
-      <div className="block dark:hidden fixed inset-0 z-[-2] pointer-events-none bg-white/20" />
+      <div className="hidden dark:block fixed inset-0 z-[-2] pointer-events-none" style={{ background: 'radial-gradient(circle at 72% 47%, rgba(99,102,241,.08), transparent 35%), linear-gradient(180deg, rgba(7,9,14,.4), rgba(7,9,14,.6) 55%, rgba(7,9,14,.8))' }} />
+      <div className="block dark:hidden fixed inset-0 z-[-2] pointer-events-none bg-white/40" />
 
       <section className="flex-1 flex flex-col relative min-w-0 h-full overflow-hidden">
         
@@ -241,24 +241,24 @@ function UnifiedChat() {
 
         {documentScope && (
           <div className="w-full shrink-0 px-4 pb-2 pt-2 sm:px-8">
-            <section aria-label="Phạm vi hỏi đáp" className="mx-auto flex max-w-[768px] flex-wrap items-center gap-3 rounded-2xl border border-black/[0.06] bg-white/85 px-3.5 py-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-[#151619]/85">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:bg-[#c69aff]/10 dark:text-[#c69aff]" aria-hidden="true"><FileText size={19} strokeWidth={1.7} /></span>
+            <section aria-label="Phạm vi hỏi đáp" className="mx-auto flex max-w-[768px] flex-wrap items-center gap-3.5 rounded-2xl border border-border/80 bg-card/85 px-4 py-3 shadow-ambient backdrop-blur-xl">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary" aria-hidden="true"><FileText size={19} strokeWidth={1.7} /></span>
               <div className="min-w-0 flex-1">
-                <p className="mb-0.5 flex items-center gap-1.5 text-[11px] font-medium text-black/50 dark:text-white/50"><span className="h-1.5 w-1.5 rounded-full bg-violet-500 dark:bg-[#c69aff]" aria-hidden="true" />Đang hỏi đáp trong tài liệu</p>
-                <p title={documentScope.title} className="truncate text-[13px] font-semibold leading-5 text-black/85 dark:text-white/85">{documentScope.title}</p>
+                <p className="mb-0.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />Đang hỏi đáp trong tài liệu</p>
+                <p title={documentScope.title} className="truncate text-[13.5px] font-semibold leading-5 text-foreground">{documentScope.title}</p>
               </div>
               <button
                 disabled={isLoading || conversationLoading}
                 title="Bắt đầu cuộc trò chuyện mới với tất cả tài liệu được phép đọc"
                 onClick={() => { setDocumentScope(null); setMessages([]); setActiveConversationId(null); setActiveSource(null); window.history.replaceState(null, "", "/"); }}
-                className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-black/[0.06] bg-black/[0.03] px-3 py-2 text-[12px] font-medium text-black/60 transition-colors hover:bg-black/[0.07] hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-white/60 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                className="ml-auto inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-border/80 bg-secondary/60 px-3.5 py-2 text-[12.5px] font-medium text-foreground/80 transition-all hover:bg-secondary hover:text-foreground active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <BookOpen size={14} aria-hidden="true" />Tất cả tài liệu<ChevronRight size={13} aria-hidden="true" />
               </button>
             </section>
           </div>
         )}
-        {conversationLoading && <p role="status" className="px-4 text-sm">Đang tải hội thoại…</p>}
+        {conversationLoading && <p role="status" className="px-4 text-sm text-muted-foreground">Đang tải hội thoại…</p>}
         {/* BODY - Morphing Layout */}
         <div className="flex-1 flex flex-col relative w-full h-full overflow-hidden">
           
@@ -328,7 +328,7 @@ function UnifiedChat() {
                    transition={{ duration: 0.3 }}
                    className="overflow-hidden flex flex-col items-center justify-center"
                  >
-                   <h1 className="m-0 text-[32px] font-medium text-center text-black dark:text-white/90 drop-shadow-xl [text-shadow:0_0_20px_rgba(255,255,255,0.8)] dark:[text-shadow:0_2px_10px_rgba(0,0,0,0.8)]">
+                   <h1 className="m-0 text-[clamp(28px,3.2vw,36px)] font-bold tracking-[-0.035em] text-center text-foreground">
                      Bạn đã sẵn sàng chưa?
                    </h1>
                  </motion.div>
@@ -339,7 +339,7 @@ function UnifiedChat() {
              <motion.form 
                layout 
                onSubmit={handleSend} 
-               className={`w-full relative flex items-end gap-2 bg-white/90 dark:bg-[#212121]/90 backdrop-blur-xl border border-black/10 dark:border-white/10 overflow-hidden transition-all duration-300 rounded-[26px] shadow-lg ${hasMessages ? 'px-3 py-2' : 'px-4 py-3 max-w-[650px] mx-auto'}`}
+               className={`w-full relative flex items-end gap-2 bg-card/90 backdrop-blur-2xl border border-border/80 overflow-hidden transition-all duration-300 rounded-[24px] shadow-ambient focus-within:shadow-elevated focus-within:border-primary/40 ${hasMessages ? 'px-3 py-2' : 'px-4 py-3 max-w-[680px] mx-auto'}`}
              >
                <button type="button" className="p-2 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 rounded-full border-0 cursor-pointer shrink-0 transition-colors flex items-center justify-center mb-1">
                   <Plus size={20} />
@@ -348,7 +348,7 @@ function UnifiedChat() {
                <textarea 
                  value={prompt} 
                  onChange={e => setPrompt(e.target.value)}
-                 placeholder="Message EDU-04..."
+                 placeholder="Hỏi EDU-04 hoặc bắt đầu bằng câu hỏi học thuật..."
                  rows={1}
                  className="flex-1 bg-transparent border-0 outline-none text-black dark:text-white/90 resize-none py-2 px-1 text-[16px] placeholder:text-black/40 dark:placeholder:text-white/40 max-h-[120px] min-h-[40px] leading-relaxed mb-0.5"
                  onKeyDown={(e) => {
@@ -359,7 +359,7 @@ function UnifiedChat() {
                  }}
                />
                
-               <button type="submit" disabled={!prompt.trim() || isLoading || conversationLoading} className={`p-2.5 shrink-0 rounded-full border-0 cursor-pointer transition-colors flex items-center justify-center mb-1 ${prompt.trim() && !isLoading ? 'bg-black text-white dark:bg-white dark:text-black hover:opacity-80' : 'bg-black/10 dark:bg-white/10 text-black/30 dark:text-white/30'}`}>
+               <button type="submit" disabled={!prompt.trim() || isLoading || conversationLoading} className={`p-2.5 shrink-0 rounded-full border-0 cursor-pointer transition-colors flex items-center justify-center mb-1 ${prompt.trim() && !isLoading ? 'bg-primary text-primary-foreground shadow-xs hover:opacity-90 active:scale-95' : 'bg-muted text-muted-foreground cursor-not-allowed opacity-50'}`}>
                   <ArrowUp size={20} strokeWidth={3} />
                </button>
              </motion.form>
@@ -394,10 +394,10 @@ function UnifiedChat() {
             animate={{ width: 480, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-            className="bg-white/95 dark:bg-[#0c1219]/95 backdrop-blur-xl border-l border-black/10 dark:border-white/10 flex flex-col shrink-0 z-20 overflow-hidden"
+            className="bg-card/95 backdrop-blur-2xl border-l border-border/80 shadow-floating flex flex-col shrink-0 z-20 overflow-hidden"
           >
             <div className="w-full flex flex-col h-full">
-              <header className="h-[60px] shrink-0 border-b border-black/10 dark:border-white/10 flex items-center justify-between px-4">
+              <header className="h-[60px] shrink-0 border-b border-border/70 flex items-center justify-between px-4">
                 <span className="font-semibold text-[14px]">Trích dẫn nguồn</span>
                 <button onClick={() => setActiveSource(null)} className="p-1 text-black/60 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
                   <X size={18} />

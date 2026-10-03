@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-sidebar-ring: hsl(var(--sidebar-ring));
   --color-sidebar-border: hsl(var(--sidebar-border));
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
@@ -35,133 +35,266 @@
   --color-popover: hsl(var(--popover));
   --color-card-foreground: hsl(var(--card-foreground));
   --color-card: hsl(var(--card));
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --radius-sm: calc(var(--radius) * 0.65);
+  --radius-md: calc(var(--radius) * 0.85);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-xl: calc(var(--radius) * 1.35);
+  --radius-2xl: calc(var(--radius) * 1.75);
   --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-4xl: calc(var(--radius) * 2.8);
 }
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
+  /* Editorial & Modern High-End Palette — Light Mode */
+  --background: 220 20% 99%;
+  --foreground: 224 71% 4%;
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
+  --card-foreground: 224 71% 4%;
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
+  --popover-foreground: 224 71% 4%;
+  --primary: 238 82% 59%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 220 40% 13%;
+  --muted: 220 14% 95.5%;
+  --muted-foreground: 220 10% 46%;
+  --accent: 220 14% 95%;
+  --accent-foreground: 224 71% 4%;
+  --destructive: 0 84% 60%;
   --destructive-foreground: 210 40% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 221.2 83.2% 53.3%;
-  --radius: 0.75rem;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 238 82% 59%;
+  --radius: 0.875rem;
 
-  --sidebar-background: 0 0% 98%;
-  --sidebar-foreground: 240 5.3% 26.1%;
-  --sidebar-primary: 240 5.9% 10%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 240 4.8% 95.9%;
-  --sidebar-accent-foreground: 240 5.9% 10%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-ring: 217.2 91.2% 59.8%;
+  --sidebar-background: 220 20% 98%;
+  --sidebar-foreground: 220 30% 20%;
+  --sidebar-primary: 224 71% 4%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 14% 94%;
+  --sidebar-accent-foreground: 224 71% 4%;
+  --sidebar-border: 220 13% 92%;
+  --sidebar-ring: 238 82% 59%;
+
+  /* High-End Motion & Shadow Tokens */
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+  --shadow-ambient: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+  --shadow-elevated: 0 12px 32px -4px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.04);
+  --shadow-floating: 0 24px 48px -12px rgba(15, 23, 42, 0.12), 0 8px 20px -4px rgba(15, 23, 42, 0.05);
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
+  /* OLED Obsidian / Celestial Studio Palette — Dark Mode */
+  --background: 224 71% 4%;
+  --foreground: 210 40% 98%;
+  --card: 224 50% 6.5%;
+  --card-foreground: 210 40% 98%;
+  --popover: 224 50% 6.5%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 238 82% 64%;
+  --primary-foreground: 224 71% 4%;
+  --secondary: 224 35% 11.5%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 224 30% 12%;
+  --muted-foreground: 217 15% 65%;
+  --accent: 224 30% 13.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 217.2 91.2% 59.8%;
+  --border: 224 25% 14.5%;
+  --input: 224 25% 14.5%;
+  --ring: 238 82% 64%;
 
-  --sidebar-background: 240 5.9% 10%;
-  --sidebar-foreground: 240 4.8% 95.9%;
-  --sidebar-primary: 224.3 76.3% 48%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 240 3.7% 15.9%;
-  --sidebar-accent-foreground: 240 4.8% 95.9%;
-  --sidebar-border: 240 3.7% 15.9%;
-  --sidebar-ring: 217.2 91.2% 59.8%;
+  --sidebar-background: 224 60% 4.8%;
+  --sidebar-foreground: 210 25% 85%;
+  --sidebar-primary: 238 82% 64%;
+  --sidebar-primary-foreground: 224 71% 4%;
+  --sidebar-accent: 224 35% 11%;
+  --sidebar-accent-foreground: 210 40% 98%;
+  --sidebar-border: 224 25% 13%;
+  --sidebar-ring: 238 82% 64%;
+
+  --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-ambient: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 2px 8px -1px rgba(0, 0, 0, 0.35);
+  --shadow-elevated: 0 14px 36px -4px rgba(0, 0, 0, 0.65), 0 6px 16px -2px rgba(0, 0, 0, 0.45);
+  --shadow-floating: 0 28px 60px -12px rgba(0, 0, 0, 0.8), 0 10px 24px -4px rgba(0, 0, 0, 0.55);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+  *,
+  *::before,
+  *::after {
+    border-color: hsl(var(--border));
+    outline-color: hsl(var(--ring) / 0.5);
+    box-sizing: border-box;
   }
-  body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
-  }
+
   html {
-    @apply font-sans;
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    letter-spacing: -0.011em;
+    min-height: 100vh;
+  }
+
+  /* Refined Typographic Scale */
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    font-weight: 650;
+    color: hsl(var(--foreground));
+  }
+
+  h1 {
+    letter-spacing: -0.035em;
+    line-height: 1.12;
+  }
+
+  h2 {
+    letter-spacing: -0.028em;
+    line-height: 1.2;
+  }
+
+  p {
+    line-height: 1.62;
+  }
+
+  /* Code & Pre */
+  code, pre, kbd {
+    font-family: var(--font-mono);
+    font-feature-settings: normal;
   }
 }
 
-/* Glassmorphism & Surface Utilities */
+/* =====================================================================
+   HIGH-END SURFACE & ELEVATION UTILITIES
+   ===================================================================== */
+
+/* Ultra-refined Glass Panel with top specular hairline */
 .glass-panel {
-  background: color-mix(in srgb, var(--color-card) 75%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  background: color-mix(in srgb, hsl(var(--card)) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid color-mix(in srgb, hsl(var(--border)) 75%, transparent);
+  box-shadow: var(--shadow-ambient);
 }
 
+.dark .glass-panel {
+  background: color-mix(in srgb, hsl(var(--card)) 72%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), var(--shadow-ambient);
+}
+
+/* Premium Card with depth hierarchy & ambient illumination */
 .glass-card {
-  background: color-mix(in srgb, var(--color-card) 85%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  background: color-mix(in srgb, hsl(var(--card)) 90%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in srgb, hsl(var(--border)) 85%, transparent);
+  box-shadow: var(--shadow-ambient);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-1.5px);
+  box-shadow: var(--shadow-elevated);
+  border-color: color-mix(in srgb, hsl(var(--primary)) 25%, hsl(var(--border)));
 }
 
 .dark .glass-card {
-  background: color-mix(in srgb, var(--color-card) 70%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
-  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.35);
+  background: color-mix(in srgb, hsl(var(--card)) 78%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), var(--shadow-ambient);
 }
 
-/* Subtle background aura */
+.dark .glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), var(--shadow-elevated);
+}
+
+/* Ambient Radial Mesh Gradient Backdrop */
 .bg-mesh-radial {
-  background-image: radial-gradient(
-    circle at 50% 0%,
-    color-mix(in srgb, var(--color-primary) 7%, transparent) 0%,
-    transparent 65%
-  );
+  background-image:
+    radial-gradient(ellipse 65% 50% at 50% -10%, color-mix(in srgb, hsl(var(--primary)) 10%, transparent) 0%, transparent 75%),
+    radial-gradient(circle at 90% 85%, color-mix(in srgb, hsl(var(--primary)) 4%, transparent) 0%, transparent 60%);
 }
 
-/* Scrollbar polish */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.dark .bg-mesh-radial {
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% -15%, color-mix(in srgb, hsl(var(--primary)) 16%, transparent) 0%, transparent 80%),
+    radial-gradient(circle at 85% 90%, color-mix(in srgb, hsl(var(--primary)) 7%, transparent) 0%, transparent 65%);
 }
+
+/* Linear-style Button & Interactive Treatments */
+button,
+a[role="button"],
+.btn-interaction {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s ease,
+              border-color 0.2s ease,
+              color 0.2s ease,
+              opacity 0.2s ease;
+  will-change: transform;
+}
+
+button:active:not(:disabled),
+a[role="button"]:active {
+  transform: scale(0.985);
+}
+
+/* Focus Ring Polish */
+:focus-visible {
+  outline: 2px solid hsl(var(--primary) / 0.65) !important;
+  outline-offset: 2px !important;
+}
+
+/* High-precision Input Elements */
+input, select, textarea {
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: hsl(var(--primary)) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, hsl(var(--primary)) 18%, transparent) !important;
+}
+
+/* Custom Scrollbar - Sleek Studio Pill */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--color-muted-foreground) 25%, transparent);
+  background: color-mix(in srgb, hsl(var(--muted-foreground)) 22%, transparent);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-muted-foreground) 40%, transparent);
+  background: color-mix(in srgb, hsl(var(--muted-foreground)) 38%, transparent);
+  background-clip: padding-box;
+}
+
+/* Selection Color */
+::selection {
+  background: color-mix(in srgb, hsl(var(--primary)) 24%, transparent);
+  color: inherit;
 }

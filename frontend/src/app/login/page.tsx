@@ -135,20 +135,20 @@ export default function LoginPage() {
       <main className="w-full h-full md:grid md:grid-cols-[57.2%_42.8%] overflow-hidden bg-background flex flex-col">
         
         {/* LEFT: logo (video login-left.mp4 bị .gitignore nên không có trong repo) */}
-        <section className="relative overflow-hidden bg-white h-[34vh] min-h-[210px] md:h-full md:min-h-0 flex items-center justify-center" aria-label="EDU-04 product visual">
+        <section className="relative overflow-hidden bg-gradient-to-br from-secondary/50 via-background to-secondary/30 border-b md:border-b-0 md:border-r border-border/70 h-[34vh] min-h-[210px] md:h-full md:min-h-0 flex items-center justify-center bg-mesh-radial" aria-label="EDU-04 product visual">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/vedu-logo.png" alt="Vedu" className="max-w-[40%] max-h-[40%] object-contain" />
+          <img src="/vedu-logo.png" alt="Vedu" className="max-w-[40%] max-h-[40%] object-contain drop-shadow-[0_12px_24px_rgba(0,0,0,0.08)] dark:drop-shadow-[0_12px_28px_rgba(255,255,255,0.06)] hover:scale-105 transition-transform duration-500" />
         </section>
 
         {/* RIGHT: clean HTML form */}
-        <section className="relative bg-card flex justify-center items-center shadow-[-12px_0_34px_rgba(0,0,0,0.06)] flex-1 overflow-y-auto">
+        <section className="relative bg-card/95 backdrop-blur-xl flex justify-center items-center shadow-floating flex-1 overflow-y-auto">
           <div className="w-[min(88%,525px)] py-[30px] md:w-[min(83%,525px)] md:py-[40px]">
-            <header className="text-center mb-[32px] md:mb-[42px] login-fade-up">
-              <h1 className="m-0 mb-[8px] text-[clamp(30px,3vw,40px)] leading-[1.08] tracking-[-0.045em] font-bold text-foreground">
-                {isLoginView ? "Welcome Back!" : "Tham gia EDU-04"}
+            <header className="text-center mb-[32px] md:mb-[40px] login-fade-up">
+              <h1 className="m-0 mb-[8px] text-[clamp(28px,2.8vw,38px)] leading-[1.1] tracking-[-0.035em] font-bold text-foreground">
+                {isLoginView ? "Welcome Back" : "Tham gia EDU-04"}
               </h1>
-              <p className="m-0 text-muted-foreground text-[14px] md:text-[16px] leading-[1.45]">
-                {isLoginView ? "Đăng nhập để tiếp tục khám phá tri thức." : "Tạo tài khoản để bắt đầu trải nghiệm học thuật."}
+              <p className="m-0 text-muted-foreground text-[14px] md:text-[15.5px] leading-[1.5]">
+                {isLoginView ? "Đăng nhập để tiếp tục khám phá tri thức học thuật." : "Tạo tài khoản để bắt đầu trải nghiệm học thuật."}
               </p>
             </header>
 
@@ -162,7 +162,7 @@ export default function LoginPage() {
                     type="text"
                     autoComplete="name"
                     placeholder="Eg. Nguyễn Văn A"
-                    className="w-full h-[48px] md:h-[54px] border-border rounded-xl px-4 text-foreground bg-secondary/30 text-[15px] md:text-[16px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
+                    className="w-full h-[48px] md:h-[52px] border-border/80 rounded-xl px-4 text-foreground bg-secondary/40 text-[14.5px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -177,7 +177,7 @@ export default function LoginPage() {
                   type="text"
                   autoComplete="username"
                   placeholder="Định danh đăng nhập (vd. sinhvien)"
-                  className="w-full h-[48px] md:h-[54px] border-border rounded-xl px-4 text-foreground bg-secondary/30 text-[15px] md:text-[16px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
+                  className="w-full h-[48px] md:h-[52px] border-border/80 rounded-xl px-4 text-foreground bg-secondary/40 text-[14.5px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -191,7 +191,7 @@ export default function LoginPage() {
                   type="password"
                   autoComplete={isLoginView ? "current-password" : "new-password"}
                   placeholder="Password"
-                  className="w-full h-[48px] md:h-[54px] border-border rounded-xl px-4 text-foreground bg-secondary/30 text-[15px] md:text-[16px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
+                  className="w-full h-[48px] md:h-[52px] border-border/80 rounded-xl px-4 text-foreground bg-secondary/40 text-[14.5px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -206,7 +206,7 @@ export default function LoginPage() {
                     type="password"
                     autoComplete="new-password"
                     placeholder="Xác nhận Password"
-                    className="w-full h-[48px] md:h-[54px] border-border rounded-xl px-4 text-foreground bg-secondary/30 text-[15px] md:text-[16px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
+                    className="w-full h-[48px] md:h-[52px] border-border/80 rounded-xl px-4 text-foreground bg-secondary/40 text-[14.5px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                   />
@@ -216,7 +216,7 @@ export default function LoginPage() {
               <Button 
                 type="submit" 
                 disabled={isLoading}
-                className="login-fade-up w-full h-[50px] md:h-[56px] rounded-full bg-primary hover:bg-primary/90 text-primary-foreground text-[16px] flex items-center justify-center gap-3 shadow-md hover:-translate-y-0.5 active:translate-y-0 transition-all font-medium"
+                className="login-fade-up w-full h-[48px] md:h-[52px] rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[15px] font-semibold flex items-center justify-center gap-2.5 shadow-ambient hover:shadow-elevated active:scale-[0.985] transition-all"
               >
                 <span>
                   {isLoading 
@@ -231,27 +231,27 @@ export default function LoginPage() {
               {/* D-71: đăng nhập demo theo vai trò — server tự đăng nhập tài khoản demo, mật khẩu không xuống trình duyệt;
                   chỉ hiện khi server bật DEMO_LOGIN_ENABLED */}
               {demoEnabled && (<>
-              <div className="my-[24px] md:my-[32px] grid grid-cols-[1fr_auto_1fr] items-center gap-[20px] md:gap-[31px]" aria-hidden="true">
-                <span className="h-px bg-border"></span>
-                <b className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">HOẶC</b>
-                <span className="h-px bg-border"></span>
+              <div className="my-[22px] md:my-[28px] grid grid-cols-[1fr_auto_1fr] items-center gap-[18px]" aria-hidden="true">
+                <span className="h-px bg-border/80"></span>
+                <b className="text-[11.5px] font-semibold text-muted-foreground uppercase tracking-wider">HOẶC</b>
+                <span className="h-px bg-border/80"></span>
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowDemo((v) => !v)}
                 aria-expanded={showDemo}
-                className="flex h-[48px] md:h-[54px] w-full cursor-pointer items-center justify-center gap-[12px] rounded-full border border-border bg-card hover:bg-secondary text-foreground text-[14px] md:text-[15px] font-medium shadow-sm transition-all hover:border-primary/30"
+                className="flex h-[46px] md:h-[50px] w-full cursor-pointer items-center justify-center gap-[10px] rounded-xl border border-border/80 bg-card hover:bg-secondary/70 text-foreground text-[14px] font-medium shadow-2xs active:scale-[0.985] transition-all hover:border-primary/40"
               >
-                <PlayCircle size={20} className="shrink-0 text-primary" aria-hidden="true" />
+                <PlayCircle size={18} className="shrink-0 text-primary" aria-hidden="true" />
                 <span>Đăng nhập demo</span>
               </button>
               {showDemo && (
                 <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Chọn vai trò demo">
                   {DEMO_ROLES.map(({ role, label, Icon }) => (
                     <button key={role} type="button" disabled={isLoading} onClick={() => void demoLogin(role)}
-                      className="flex flex-col items-center gap-1.5 rounded-2xl border border-border bg-card px-2 py-3 text-[13px] font-medium text-foreground shadow-sm transition-all hover:border-primary/40 hover:bg-secondary cursor-pointer disabled:opacity-50">
-                      <Icon size={20} className="text-primary" aria-hidden="true" />
+                      className="flex flex-col items-center gap-1.5 rounded-xl border border-border/80 bg-card px-2 py-3 text-[13px] font-medium text-foreground shadow-2xs transition-all hover:border-primary/40 hover:bg-secondary/70 active:scale-[0.98] cursor-pointer disabled:opacity-50">
+                      <Icon size={19} className="text-primary" aria-hidden="true" />
                       {label}
                     </button>
                   ))}
@@ -272,7 +272,7 @@ export default function LoginPage() {
             </p>
 
             {error && (
-              <p className="login-fade-up min-h-[20px] mt-4 text-center text-[13px] text-destructive bg-destructive/10 px-4 py-2 rounded-lg font-medium" role="status" aria-live="polite">
+              <p className="login-fade-up min-h-[20px] mt-4 text-center text-[13px] text-destructive bg-destructive/10 border border-destructive/20 px-4 py-2.5 rounded-xl font-medium" role="status" aria-live="polite">
                 {error}
               </p>
             )}
