@@ -1,5 +1,7 @@
 // Client gọi API FastAPI (PRD 11.2) qua rewrite /api/* của Next. Role và quyền chỉ lấy từ server (BR-02).
+import { API } from "./api-errors";
 import { clearToken, getToken } from "./session";
+import { errorMessage } from "./messages";
 
 export type Role = "student" | "lecturer" | "reviewer" | "admin";
 
@@ -36,9 +38,11 @@ export interface CourseItem {
 export interface Locator {
   type: "page" | "slide";
   value: number;
+  end?: number | null; // D-50: khoảng trang
 }
 
 export interface Citation {
+  document_title?: string;
   id: string;
   citation_id: string;
   document_id: string;
@@ -113,13 +117,19 @@ export interface StudyItem {
   sentence?: string;
   answer?: string;
   hint?: string;
+  question?: string; // trắc nghiệm (mcq)
+  options?: string[];
+  correct?: number;
+  explanation?: string;
   sources: number[];
+  evidence?: ItemEvidence; // đoạn trích riêng của thẻ này theo từng [n] (D-57)
 }
+export type ItemEvidence = Record<string, { quote: string; page: number }>;
 
 export interface TriageSections {
-  definitions: { term?: string; text: string; sources: number[] }[];
-  pitfalls: { text: string; sources: number[] }[];
-  examples: { title?: string; text: string; sources: number[] }[];
+  definitions: { term?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
+  pitfalls: { text: string; sources: number[]; evidence?: ItemEvidence }[];
+  examples: { title?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
 }
 
 export interface Plan {
@@ -134,6 +144,7 @@ export interface Plan {
   warnings: string[];
   total_minutes: number;
   budget_minutes: number;
+  dates?: string[] | null; // D-46: ngày học cụ thể; ngày k của lộ trình = dates[k-1]
 }
 
 export interface ChatMessage {
@@ -149,7 +160,7 @@ export interface ChatMessage {
   created_at: string;
   metadata: {
     course_id: string;
-    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage";
+    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage" | "mcq";
     items?: StudyItem[];
     sections?: TriageSections;
     notes?: string[];
@@ -213,7 +224,8 @@ export class ApiError extends Error {
   }
 }
 
-const BASE = "/api/v1";
+// Cùng địa chỉ backend với các trang TV4 (NEXT_PUBLIC_API_URL) — next.config của TV4 không còn rewrite /api/*
+const BASE = API;
 
 export function newRequestId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -246,7 +258,10 @@ async function raw(path: string, init: RequestOptions = {}): Promise<Response> {
     const err = body?.error;
     const code = typeof err?.code === "string" ? err.code : `HTTP_${resp.status}`;
     if (resp.status === 401 && auth) clearToken();
-    throw new ApiError(resp.status, code, Boolean(err?.retryable), err?.message);
+    // Lỗi máy chủ: kèm mã hỗ trợ (X-Request-ID) để tra log; lỗi nghiệp vụ 4xx giữ nguyên thông báo
+    const rid = resp.headers.get("X-Request-ID") || err?.request_id;
+    const detail = resp.status >= 500 && rid ? `${err?.message || errorMessage(code)} (Mã hỗ trợ: ${rid})` : err?.message;
+    throw new ApiError(resp.status, code, Boolean(err?.retryable), detail);
   }
   return resp;
 }

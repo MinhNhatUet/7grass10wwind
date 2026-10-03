@@ -15,9 +15,69 @@ import zipfile
 from dataclasses import dataclass, field
 
 from src.config import get_settings
-from src.services.text_cleaning import clean_pages
+from src.services.text_cleaning import SUB, SUP, clean_pages
 
 MIN_TEXT_CHARS = 40  # dưới ngưỡng này coi là trang gần rỗng (đề xuất)
+
+BIG_OPS = set("∑∏∫∮⋃⋂⨁⨂")  # toán tử lớn có baseline riêng — không dùng làm baseline dòng
+
+
+def _font_name(pdfium_c, raw, index: int) -> str:  # noqa: ANN001
+    import ctypes
+
+    buf = ctypes.create_string_buffer(128)
+    flags = ctypes.c_int()
+    size = pdfium_c.FPDFText_GetFontInfo(raw, index, buf, 128, flags)
+    return buf.raw[: max(size - 1, 0)].decode("latin-1", "ignore")
+
+
+def _pdfium_page_text(textpage) -> str:  # noqa: ANN001 — pypdfium2.PdfTextPage
+    """Text trang từ pdfium, chữ cỡ nhỏ lệch baseline → chỉ số dưới/trên; bỏ xuống dòng sinh ra giữa công thức."""
+    import ctypes
+    import statistics
+
+    import pypdfium2.raw as pdfium_c
+
+    n = textpage.count_chars()
+    raw = textpage.raw
+    sizes = [pdfium_c.FPDFText_GetFontSize(raw, i) for i in range(n)]
+    real = [s for s in sizes if s > 1.5]  # ký tự khoảng trắng pdfium tự sinh có cỡ 1
+    if not real:
+        return textpage.get_text_range()
+    body = statistics.median(real)
+    x, y = ctypes.c_double(), ctypes.c_double()
+    out: list[str] = []
+    kinds: list[str] = []  # "n" thường, "s" dưới, "p" trên, "b" xuống dòng
+    base: float | None = None
+    for i in range(n):
+        ch = chr(pdfium_c.FPDFText_GetUnicode(raw, i))
+        if ch in "\r\n":
+            out.append(ch)
+            kinds.append("b")
+            continue
+        pdfium_c.FPDFText_GetCharOrigin(raw, i, x, y)
+        kind = "n"
+        if 1.5 < sizes[i] < 0.85 * body and base is not None and abs(y.value - base) < 0.8 * body:
+            if y.value - base > 0.5:
+                kind = "p"
+            elif y.value - base < -0.5:
+                kind = "s"
+        elif sizes[i] > 1.5 and ch not in BIG_OPS and not ch.isspace():
+            base = y.value
+        if kind == "p" and ch == "0" and "CMSY" in _font_name(pdfium_c, raw, i):
+            ch = "′"  # dấu phẩy trên (prime) của TeX nằm ở mã "0" trong font CMSY: a′, f′(x)
+        out.append((SUP if kind == "p" else SUB).get(ch, ch) if kind in "ps" else ch)
+        kinds.append(kind)
+    # Xuống dòng nằm sát chỉ số (giới hạn của ∑ bị trích thành dòng riêng) → bỏ
+    text = []
+    for i, ch in enumerate(out):
+        if kinds[i] == "b":
+            prev = next((kinds[j] for j in range(i - 1, -1, -1) if kinds[j] != "b"), "n")
+            nxt = next((kinds[j] for j in range(i + 1, len(kinds)) if kinds[j] != "b"), "n")
+            if prev in "ps" or nxt in "ps":
+                continue
+        text.append(ch)
+    return "".join(text)
 
 
 class IngestionError(Exception):
@@ -115,13 +175,36 @@ def extract_pdf(content: bytes) -> Extraction:
         raise IngestionError("CORRUPT_FILE") from e
     if count > get_settings().upload_max_pages:
         raise IngestionError("TOO_MANY_PAGES")
+    # Text lấy bằng pdfium: đọc đúng font toán của TeX (≥, ∪, ·, dấu phẩy); pypdf trả ký tự rác (\x15, ";") → mất
+    # ký hiệu trong trích dẫn (D-41). Trang pdfium lỗi → dùng pypdf cho trang đó.
+    try:
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(content)
+    except Exception:  # noqa: BLE001
+        pdf = None
     raw_pages = []
     for i, page in enumerate(pages, start=1):
-        try:
-            raw = page.extract_text() or ""
-        except Exception:  # noqa: BLE001 — một trang lỗi không làm hỏng cả file; đánh dấu vị trí
-            raw = ""
+        raw = ""
+        if pdf is not None:
+            try:
+                pdf_page = pdf[i - 1]
+                textpage = pdf_page.get_textpage()
+                try:
+                    raw = _pdfium_page_text(textpage)
+                finally:
+                    textpage.close()
+                    pdf_page.close()
+            except Exception:  # noqa: BLE001
+                raw = ""
+        if not raw.strip():
+            try:
+                raw = page.extract_text() or ""
+            except Exception:  # noqa: BLE001 — một trang lỗi không làm hỏng cả file; đánh dấu vị trí
+                raw = ""
         raw_pages.append(("page", i, raw))
+    if pdf is not None:
+        pdf.close()
     return _build("pdf", count, raw_pages)
 
 

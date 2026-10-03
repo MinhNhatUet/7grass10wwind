@@ -122,9 +122,21 @@ class Chunk(Base):
     ordinal: Mapped[int] = mapped_column(Integer)
     locator_type: Mapped[str] = mapped_column(String(10))  # page | slide
     locator_value: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str | None] = mapped_column(String(1000))
     text: Mapped[str] = mapped_column(Text)
     extraction_quality: Mapped[str] = mapped_column(String(20), default="ok")
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Chunk nhiều trang (nhập sẵn từ pipeline, D-49): [[vị trí ký tự bắt đầu, trang], …] tăng dần; None = cả chunk 1 trang
+    page_map: Mapped[list[list[int]] | None] = mapped_column(JSON)
+
+    def page_at(self, offset: int) -> int:
+        """Trang chứa ký tự ở vị trí `offset` của text chunk (trích dẫn mở đúng trang, không phải trang đầu chunk)."""
+        page = self.locator_value
+        for start, p in self.page_map or []:
+            if start > offset:
+                break
+            page = p
+        return page
 
 
 class IngestionJob(Base):
@@ -207,6 +219,7 @@ class Citation(Base):
     document_id: Mapped[str] = mapped_column(String(40))
     locator_type: Mapped[str] = mapped_column(String(10))
     locator_value: Mapped[int] = mapped_column(Integer)
+    locator_end: Mapped[int | None] = mapped_column(Integer)  # D-50: trang cuối khi ý được hỗ trợ bởi nhiều trang liền
     quote: Mapped[str] = mapped_column(Text)
     source_revision: Mapped[int] = mapped_column(Integer)
 
@@ -278,3 +291,36 @@ class UsageEvent(Base):
     tokens_output: Mapped[int | None] = mapped_column(Integer)
     estimated_cost: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+# ---------------------------------------------------------------- Đề trắc nghiệm do giảng viên soạn (D-38, ngoài PRD 7.2)
+QUIZ_KINDS = ("practice", "exam", "midterm", "final")  # chỉ "practice" được xem đáp án sau khi nộp (BR-06)
+QUIZ_STATES = ("Draft", "Published", "Closed")
+
+
+class CourseQuiz(Base):
+    __tablename__ = "course_quizzes"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cq"))
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(20), default="practice")
+    time_limit_s: Mapped[int | None] = mapped_column(Integer)  # None = không giới hạn
+    status: Mapped[str] = mapped_column(String(20), default="Draft")
+    # [{"id","text","options":[4 chuỗi],"correct":0..3,"explanation"}] — đáp án KHÔNG bao giờ gửi cho SV trước khi nộp
+    questions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("qa"))
+    quiz_id: Mapped[str] = mapped_column(ForeignKey("course_quizzes.id"), index=True)
+    student_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    answers: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    score: Mapped[int | None] = mapped_column(Integer)
+    total: Mapped[int | None] = mapped_column(Integer)
+    late: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -22,6 +22,7 @@ class Element(BaseModel):
     type: ElementType
     bbox: list[float] | None = None
     order: int
+    heading_level: int | None = Field(default=None, ge=1)
     source: str = "native"
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     coordinate_system: str = "source_native"

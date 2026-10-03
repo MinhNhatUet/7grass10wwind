@@ -5,7 +5,7 @@ Mọi thay đổi lưu actor, thời gian, lý do (BR-11). Quản trị không �
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -14,8 +14,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import require_role
+from src.config import get_settings
 from src.db import get_db
-from src.models.orm import ROLES, AuditEvent, Course, Document, Membership, User
+from src.models.orm import ROLES, AuditEvent, Course, Document, Membership, UsageEvent, User
 from src.services import audit, documents
 from src.services.auth import get_auth_service, hash_password
 from src.services.errors import bad_request, conflict, not_found
@@ -239,3 +240,60 @@ def audit_log(
             for e in rows
         ]
     }  # fmt: skip
+
+
+@router.get("/costs")
+def costs(
+    days: int = Query(30, ge=1, le=365), admin: User = Depends(admin_only), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Chi phí AI ước tính (D-60): token × bảng giá trong cấu hình, gộp theo ngày / trợ lý / môn / người dùng.
+    Chỉ số liệu vận hành — không đọc nội dung hội thoại (AC-01.6)."""
+    s = get_settings()
+    since = datetime.now(UTC) - timedelta(days=days)
+    rows = db.execute(
+        select(UsageEvent.created_at, UsageEvent.user_id, UsageEvent.course_id, UsageEvent.assistant,
+               UsageEvent.status, UsageEvent.tokens_input, UsageEvent.tokens_output, UsageEvent.estimated_cost)
+        .where(UsageEvent.created_at >= since)
+    ).all()  # fmt: skip
+    users = {u.id: f"{u.display_name} ({u.login_id})" for u in db.scalars(select(User))}
+    courses = {c.id: c.name for c in db.scalars(select(Course))}
+
+    def bucket() -> dict[str, Any]:
+        return {"requests": 0, "tokens_input": 0, "tokens_output": 0, "cost_usd": 0.0}
+
+    total, by_day = bucket(), {}
+    groups: dict[str, dict[str, dict[str, Any]]] = {"assistant": {}, "course": {}, "user": {}}
+    untracked = 0
+    for r in rows:
+        tin, tout, cost = r.tokens_input or 0, r.tokens_output or 0, r.estimated_cost or 0.0
+        untracked += not (tin or tout)  # lượt ghi trước D-60 (chưa đếm token)
+        keys = {"assistant": r.assistant or "khác", "course": courses.get(r.course_id or "", "Chưa xác định môn"),
+                "user": users.get(r.user_id, r.user_id)}  # fmt: skip
+        day = r.created_at.date().isoformat()
+        for b in (
+            total,
+            by_day.setdefault(day, bucket()),
+            *(groups[g].setdefault(k, bucket()) for g, k in keys.items()),
+        ):
+            b["requests"] += 1
+            b["tokens_input"] += tin
+            b["tokens_output"] += tout
+            b["cost_usd"] += cost
+
+    def ranked(g: str, limit: int = 20) -> list[dict[str, Any]]:
+        return sorted(({"name": k, **v} for k, v in groups[g].items()), key=lambda x: -x["cost_usd"])[:limit]
+
+    return {
+        "days": days,
+        "pricing": {
+            "model": s.llm_model,
+            "input_per_1m_usd": s.llm_price_input_per_1m,
+            "output_per_1m_usd": s.llm_price_output_per_1m,
+            "usd_to_vnd": s.usd_to_vnd,
+        },
+        "total": total | {"cost_vnd": total["cost_usd"] * s.usd_to_vnd, "untracked_requests": untracked},
+        "by_day": [{"date": d, **v} for d, v in sorted(by_day.items())],
+        "by_assistant": ranked("assistant"),
+        "by_course": ranked("course"),
+        "top_users": ranked("user", 10),
+    }

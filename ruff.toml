@@ -1,5 +1,7 @@
 target-version = "py311"
 line-length = 120
+# .agents: skill AI vendored từ nhánh quanghung; scripts: hook/log của template (đồng bộ upstream) — không sửa tay
+extend-exclude = [".agents", "scripts"]
 
 [lint]
 select = ["E", "F", "I", "N", "W", "UP"]

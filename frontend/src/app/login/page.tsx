@@ -34,8 +34,9 @@ export default function LoginPage() {
       return;
     }
 
-    if (!email || !email.includes("@")) {
-      setError("Vui lòng nhập địa chỉ email hợp lệ.");
+    // login_id là định danh bất kỳ (PRD 9.1, D-17) — không bắt buộc email; server tự kiểm tra tài khoản
+    if (!email.trim()) {
+      setError("Vui lòng nhập định danh đăng nhập.");
       return;
     }
 
@@ -53,7 +54,7 @@ export default function LoginPage() {
 
     try {
       const endpoint = isLoginView ? "/api/v1/auth/login" : "/api/v1/auth/register";
-      const payload: any = { login_id: email, password };
+      const payload: { login_id: string; password: string; display_name?: string } = { login_id: email.trim(), password };
       if (!isLoginView) {
         payload.display_name = name;
       }
@@ -80,7 +81,7 @@ export default function LoginPage() {
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("user", JSON.stringify(data.user));
       
-      router.push("/");
+      router.push(data.user?.role === "admin" ? "/admin" : "/"); // D-61: admin vào thẳng khu quản trị
     } catch (err) {
       setError(err instanceof Error ? err.message : (isLoginView ? "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin." : "Đăng ký thất bại. Vui lòng thử lại."));
     } finally {
@@ -92,19 +93,10 @@ export default function LoginPage() {
     <div className="h-screen w-full bg-background overflow-hidden text-foreground">
       <main className="w-full h-full md:grid md:grid-cols-[57.2%_42.8%] overflow-hidden bg-background flex flex-col">
         
-        {/* LEFT: actual moving video */}
-        <section className="relative overflow-hidden bg-secondary h-[34vh] min-h-[210px] md:h-full md:min-h-0" aria-label="EDU-04 product visual">
-          <video 
-            autoPlay 
-            muted 
-            loop 
-            playsInline 
-            preload="auto" 
-            className="absolute inset-0 w-full h-full object-cover object-center"
-          >
-            <source src="/assets/login-left.mp4" type="video/mp4" />
-          </video>
-          <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent"></div>
+        {/* LEFT: logo (video login-left.mp4 bị .gitignore nên không có trong repo) */}
+        <section className="relative overflow-hidden bg-white h-[34vh] min-h-[210px] md:h-full md:min-h-0 flex items-center justify-center" aria-label="EDU-04 product visual">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/vedu-logo.png" alt="Vedu" className="max-w-[40%] max-h-[40%] object-contain" />
         </section>
 
         {/* RIGHT: clean HTML form */}
@@ -137,13 +129,13 @@ export default function LoginPage() {
               )}
 
               <div className="mb-[12px] login-fade-up">
-                <label className="sr-only" htmlFor="email">Email</label>
+                <label className="sr-only" htmlFor="email">Định danh đăng nhập</label>
                 <Input 
                   id="email" 
                   name="email" 
-                  type="email"
-                  autoComplete="email"
-                  placeholder="Eg. sinhvien@school.edu.vn"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="Định danh đăng nhập (vd. sinhvien)"
                   className="w-full h-[48px] md:h-[54px] border-border rounded-xl px-4 text-foreground bg-secondary/30 text-[15px] md:text-[16px] placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0 transition-all"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

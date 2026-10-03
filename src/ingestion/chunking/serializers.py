@@ -7,7 +7,8 @@ def serialize_element(element: Element) -> str:
     if element.type == ElementType.TABLE:
         lines = [" | ".join(element.headers)] if element.headers else []
         lines.extend(" | ".join(row) for row in element.rows)
-        return "\n".join(line for line in lines if line.strip())
+        table = "\n".join(line for line in lines if line.strip())
+        return f"[TABLE]\n{table}" if table else (element.text or "")
     if element.type == ElementType.FORMULA:
         if element.latex:
             return f"[FORMULA] {element.latex}"

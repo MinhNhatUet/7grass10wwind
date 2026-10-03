@@ -1,0 +1,100 @@
+{
+  "embedding_model": "text-embedding-3-small",
+  "embedding_version": "v1",
+  "configured_dimension": 1536,
+  "chunks_dir": "D:\\Working\\AI-ThucChien\\P-134\\artifacts\\chunks",
+  "out_dir": "D:\\Working\\AI-ThucChien\\P-134\\embedding_tmp",
+  "files": [
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_2623948f5dd3_r1.json",
+      "output": "embedding_tmp\\ver_se101_2623948f5dd3_r1.jsonl",
+      "chunks": 4,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_30bd286f0f69_r1.json",
+      "output": "embedding_tmp\\ver_se101_30bd286f0f69_r1.jsonl",
+      "chunks": 7,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_38c32060cf5d_r1.json",
+      "output": "embedding_tmp\\ver_se101_38c32060cf5d_r1.jsonl",
+      "chunks": 6,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_452c2c105b13_r1.json",
+      "output": "embedding_tmp\\ver_se101_452c2c105b13_r1.jsonl",
+      "chunks": 4,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_62c4d6c0a3b5_r1.json",
+      "output": "embedding_tmp\\ver_se101_62c4d6c0a3b5_r1.jsonl",
+      "chunks": 5,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_64f1f2369495_r1.json",
+      "output": "embedding_tmp\\ver_se101_64f1f2369495_r1.jsonl",
+      "chunks": 4,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_9211231cda83_r1.json",
+      "output": "embedding_tmp\\ver_se101_9211231cda83_r1.jsonl",
+      "chunks": 4,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_aa3b137d0ade_r1.json",
+      "output": "embedding_tmp\\ver_se101_aa3b137d0ade_r1.jsonl",
+      "chunks": 5,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_ac364dfc740b_r1.json",
+      "output": "embedding_tmp\\ver_se101_ac364dfc740b_r1.jsonl",
+      "chunks": 4,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_b09b28b4c3d8_r1.json",
+      "output": "embedding_tmp\\ver_se101_b09b28b4c3d8_r1.jsonl",
+      "chunks": 4,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_c95fbef676c9_r1.json",
+      "output": "embedding_tmp\\ver_se101_c95fbef676c9_r1.jsonl",
+      "chunks": 5,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_cefbb2090b8d_r1.json",
+      "output": "embedding_tmp\\ver_se101_cefbb2090b8d_r1.jsonl",
+      "chunks": 6,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_ea8d1331e35b_r1.json",
+      "output": "embedding_tmp\\ver_se101_ea8d1331e35b_r1.jsonl",
+      "chunks": 7,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_f0edda1d413b_r1.json",
+      "output": "embedding_tmp\\ver_se101_f0edda1d413b_r1.jsonl",
+      "chunks": 7,
+      "detected_dimension": 1536
+    },
+    {
+      "artifact": "artifacts\\chunks\\ver_se101_fc3be7cd8f53_r1.json",
+      "output": "embedding_tmp\\ver_se101_fc3be7cd8f53_r1.jsonl",
+      "chunks": 6,
+      "detected_dimension": 1536
+    }
+  ],
+  "total_chunks": 78
+}

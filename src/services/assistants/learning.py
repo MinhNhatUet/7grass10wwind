@@ -57,17 +57,19 @@ def _source_refs(raw: Any, hits: list[Hit], db: Session, user: User) -> list[int
     return refs
 
 
-def quiz(db: Session, user: User, course_id: str, topic: str, retrieval_query: str | None = None) -> AssistantResult:
+def quiz(
+    db: Session, user: User, course_id: str, topic: str, retrieval_query: str | None = None, n: int | None = None
+) -> AssistantResult:
     """FR-03.2: câu tự kiểm tra lấy từ nguồn hợp lệ, mỗi câu có chủ đề, mục tiêu và nguồn."""
     hits = evidence(db, user, course_id, retrieval_query or topic)
     if not hits:
         return AssistantResult(status="insufficient_evidence", content=INSUFFICIENT_MESSAGE, payload={"kind": "quiz"})
-    n = get_settings().learning_quiz_questions
+    n = min(n or get_settings().learning_quiz_questions, 20)
     data = call_json(
         BASE_POLICY,
         f"Tạo {n} câu hỏi tự kiểm tra ngắn (không phải bài tính điểm) về CHỦ ĐỀ, chỉ dựa trên NGUỒN. "
         'Trả về JSON {"questions":[{"topic":"...","objective":"mục tiêu kiểm tra","question":"...","source":n}]}. '
-        f"KHÔNG kèm đáp án.\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
+        f"KHÔNG kèm đáp án. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. \n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
         temperature=0.3,
     )
     questions, used_n = [], set()

@@ -58,6 +58,40 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _migrate_nullable_conversation_course(engine)
     _migrate_conversation_document(engine)
+    _migrate_chunk_page_map(engine)
+    _migrate_chunk_section(engine)
+    _migrate_citation_locator_end(engine)
+    _migrate_usage_tokens(engine)
+
+
+def _migrate_usage_tokens(engine: Engine) -> None:
+    """D-53 (nhánh quanghung): usage_events lưu số token + chi phí ước tính; DB cũ thêm cột, dòng cũ = NULL."""
+    with engine.begin() as conn:
+        have = {c["name"] for c in inspect(conn).get_columns("usage_events")}
+        for name, sql_type in (("tokens_input", "INTEGER"), ("tokens_output", "INTEGER"), ("estimated_cost", "FLOAT")):
+            if name not in have:
+                conn.exec_driver_sql(f"ALTER TABLE usage_events ADD COLUMN {name} {sql_type}")
+
+
+def _migrate_citation_locator_end(engine: Engine) -> None:
+    """D-50: trích dẫn có thể là một khoảng trang (vd. 4–6); DB cũ thêm cột, trích dẫn cũ = NULL (một trang)."""
+    with engine.begin() as conn:
+        if "locator_end" not in {c["name"] for c in inspect(conn).get_columns("citations")}:
+            conn.exec_driver_sql("ALTER TABLE citations ADD COLUMN locator_end INTEGER")
+
+
+def _migrate_chunk_page_map(engine: Engine) -> None:
+    """D-49: bản đồ vị trí → trang cho chunk nhiều trang; DB cũ thêm cột, dữ liệu cũ giữ nguyên (NULL)."""
+    with engine.begin() as conn:
+        if "page_map" not in {c["name"] for c in inspect(conn).get_columns("chunks")}:
+            conn.exec_driver_sql("ALTER TABLE chunks ADD COLUMN page_map JSON")
+
+
+def _migrate_chunk_section(engine: Engine) -> None:
+    """Section hierarchy extracted from structured parsers; old chunks remain NULL."""
+    with engine.begin() as conn:
+        if "section" not in {c["name"] for c in inspect(conn).get_columns("chunks")}:
+            conn.exec_driver_sql("ALTER TABLE chunks ADD COLUMN section VARCHAR(1000)")
 
 
 def _migrate_conversation_document(engine: Engine) -> None:

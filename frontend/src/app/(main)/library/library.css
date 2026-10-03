@@ -1,0 +1,95 @@
+.library-page {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color-scheme: light;
+}
+
+.library-page button:not(:disabled),
+.library-page select:not(:disabled) {
+  cursor: pointer;
+}
+
+.library-page :is(a, button, select, input):focus-visible {
+  outline: 2px solid #64748b;
+  outline-offset: 3px;
+}
+
+.library-page .scroll-reader-viewport {
+  position: relative;
+  height: calc(100dvh - 200px);
+  min-height: 360px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 20px 12px;
+  background: #e8ecf0;
+}
+
+.library-page .scroll-reader-pages {
+  margin-inline: auto;
+}
+
+.library-page .scroll-reader-sheet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1.4142;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 2px 10px #0f172a15;
+}
+
+/* Scoped palette keeps the library and its reader consistent with the app theme. */
+.dark .library-page {
+  color-scheme: dark;
+  background: #101114;
+  color: #f1f5f9;
+}
+.dark .library-page .bg-white { background-color: #191b20; }
+.dark .library-page .bg-slate-50 { background-color: #151619; }
+.dark .library-page .bg-slate-100 { background-color: #252830; }
+.dark .library-page .bg-slate-900 { background-color: #343044; }
+.dark .library-page :is(.border-slate-100, .border-slate-200) { border-color: #ffffff14; }
+.dark .library-page .border-slate-800 { border-color: #a78bfa; }
+.dark .library-page :is(.text-slate-900, .text-slate-700) { color: #e2e8f0; }
+.dark .library-page .text-slate-600 { color: #b5bfce; }
+.dark .library-page .text-slate-500 { color: #a0aec0; }
+.dark .library-page .text-slate-400 { color: #94a3b8; }
+.dark .library-page .text-slate-300 { color: #64748b; }
+.dark .library-page :is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-200):hover { background-color: #ffffff0d; }
+.dark .library-page .hover\:bg-slate-700:hover { background-color: #49405f; }
+.dark .library-page :is(.hover\:text-black, .hover\:text-slate-900, .hover\:text-slate-700):hover { color: #f8fafc; }
+.dark .library-page .bg-blue-50 { background-color: #3b82f61a; }
+.dark .library-page .text-blue-600 { color: #60a5fa; }
+.dark .library-page .bg-violet-50 { background-color: #8b5cf61a; }
+.dark .library-page .text-violet-600 { color: #a78bfa; }
+.dark .library-page :is(.bg-emerald-50, .bg-emerald-50\/60) { background-color: #10b98112; }
+.dark .library-page .border-emerald-100 { border-color: #10b98130; }
+.dark .library-page :is(.text-emerald-600, .text-emerald-700, .text-emerald-800) { color: #6ee7b7; }
+.dark .library-page .bg-red-50 { background-color: #ef444419; }
+.dark .library-page .border-red-200 { border-color: #ef444440; }
+.dark .library-page .text-red-700 { color: #fca5a5; }
+.dark .library-page .text-amber-700 { color: #fcd34d; }
+.dark .library-page .scroll-reader-viewport { background: #0d0f12; }
+/* Original document pages stay white and readable in either theme. */
+.library-page .scroll-reader-sheet { color-scheme: light; color: #0f172a; }
+.dark .library-page .scroll-reader-sheet :is(.text-slate-400, .text-slate-500) { color: #64748b; }
+.dark .library-page .scroll-reader-sheet .text-red-700 { color: #b91c1c; }
+.dark .library-page .scroll-reader-sheet .text-amber-700 { color: #b45309; }
+
+@media (max-width: 640px) {
+  .library-page .scroll-reader-viewport {
+    height: 70dvh;
+    padding: 12px 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-page *,
+  .library-page *::before,
+  .library-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

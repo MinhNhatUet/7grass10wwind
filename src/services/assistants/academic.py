@@ -5,6 +5,9 @@ Evidence gate trước khi gọi LLM: không có đoạn nào vượt ngưỡng 
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
@@ -35,9 +38,35 @@ INSTRUCTION = """Trả lời CÂU HỎI chỉ dựa trên NGUỒN. Trả về DU
 - "insufficient_evidence": nguồn không đủ để trả lời."""
 
 
+_topic_queries: ContextVar[list[str] | None] = ContextVar("topic_queries", default=None)
+
+
+@contextmanager
+def multi_topic(queries: list[str] | None):
+    """Ôn tập nhiều chủ đề (D-51): trong khối này, evidence() truy xuất RIÊNG từng chủ đề rồi gộp xen kẽ, để nguồn
+    (và câu hỏi) trải đều các chủ đề thay vì dồn vào chủ đề gần câu truy vấn gộp nhất. Mỗi chủ đề 1 embedding truy vấn."""
+    token = _topic_queries.set(queries if queries and len(queries) > 1 else None)
+    try:
+        yield
+    finally:
+        _topic_queries.reset(token)
+
+
 def evidence(db: Session, user: User, course_id: str, query: str) -> list[Hit]:
-    hits = search(db, user, course_id, query)
-    return [h for h in hits if h.score >= get_settings().retrieval_min_score]
+    floor = get_settings().retrieval_min_score
+    queries = _topic_queries.get()
+    if not queries:
+        return [h for h in search(db, user, course_id, query) if h.score >= floor]
+    # ít chủ đề → vài đoạn mỗi chủ đề; nhiều chủ đề (lộ trình cả môn) → ít nhất 1 đoạn mỗi chủ đề, prompt không phình
+    k = max(1, round(get_settings().retrieval_top_k * 1.5 / len(queries)))
+    per_topic = [[h for h in search(db, user, course_id, q, k) if h.score >= floor] for q in queries]
+    merged, seen = [], set()
+    for rank in range(k):  # xen kẽ: hạng 1 của mọi chủ đề, rồi hạng 2… — không chủ đề nào bị lấn át
+        for hits in per_topic:
+            if rank < len(hits) and hits[rank].chunk.id not in seen:
+                seen.add(hits[rank].chunk.id)
+                merged.append(hits[rank])
+    return merged
 
 
 def answer(

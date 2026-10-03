@@ -8,6 +8,7 @@ persist assistant message → return. LLM/RAG lỗi: user message vẫn lưu, KH
 
 from __future__ import annotations
 
+import copy
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.agents import orchestrator
 from src.config import get_settings
+from src.knowledge_hub import RetrievalError as KnowledgeHubRetrievalError
 from src.models.orm import (
     Chunk,
     Citation,
@@ -30,8 +32,18 @@ from src.models.orm import (
     User,
     new_id,
 )
-from src.services import acl
-from src.services.assistants import AssistantResult, LlmError, learning
+from src.services import acl, audit, usage
+from src.services.assistants import (
+    AssistantResult,
+    LlmError,
+    attach_evidence,
+    cited_pages,
+    learning,
+    name_sources,
+    occurrence_evidence,
+    supporting_quotes,
+    track_usage,
+)
 from src.services.errors import AppError, bad_request, forbidden, not_found
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import EmbeddingUnavailableError, document_scope, still_servable
@@ -144,6 +156,7 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
         if not still_servable(db, user, c.version_id):
             masked = True
             break
+        chunk = db.get(Chunk, c.chunk_id)
         citations.append(
             {
                 "id": str(c.ordinal),
@@ -152,7 +165,12 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
                 "document_title": db.get(Document, c.document_id).title,
                 "version_id": c.version_id,
                 "chunk_id": c.chunk_id,
-                "locator": {"type": c.locator_type, "value": c.locator_value},
+                "locator": {
+                    "type": c.locator_type,
+                    "value": c.locator_value,
+                    "end": c.locator_end,
+                    "section": chunk.section if chunk is not None else None,
+                },
                 "quote": c.quote,
             }
         )
@@ -234,7 +252,11 @@ def _check_quota(db: Session, user: User) -> None:
     n = db.scalar(
         select(func.count())
         .select_from(UsageEvent)
-        .where(UsageEvent.user_id == user.id, UsageEvent.created_at >= since)
+        .where(
+            UsageEvent.user_id == user.id,
+            UsageEvent.created_at >= since,
+            UsageEvent.assistant.is_(None) | UsageEvent.assistant.notin_(usage.NON_CHAT),  # chỉ đếm câu hỏi chat
+        )
     )
     if (n or 0) >= get_settings().daily_question_quota:
         raise AppError("QUOTA_EXCEEDED", 429, retryable=True, retry_after=3600)
@@ -243,6 +265,14 @@ def _check_quota(db: Session, user: User) -> None:
 def _persist_answer(
     db: Session, conv: Conversation, request_id: str, assistant: str, result: AssistantResult
 ) -> Message:
+    payload = copy.deepcopy(result.payload or {})
+    result.content = name_sources(result.content, result.used)  # D-58: "nguồn 1" → tên tài liệu
+    answer = result.content
+    if result.used:  # D-56: đoạn trích riêng cho từng lần [n] xuất hiện, hiện ngay tại [n] trong chat
+        payload["evidence"] = occurrence_evidence(result.content, result.used)
+        # D-57: hoạt động học gắn [n] ở từng mục → dẫn chứng riêng từng mục, và lấy các mục đó làm "ý" để tính trang
+        answer = f"{result.content}\n{attach_evidence(payload, result.used)}"
+    fallback_quotes = supporting_quotes(answer, result.used, {}) if result.used else {}
     msg = Message(
         conversation_id=conv.id,
         role="assistant",
@@ -250,11 +280,13 @@ def _persist_answer(
         status=result.status,
         assistant=assistant,
         request_id=request_id,
-        payload=result.payload,
+        payload=payload,
     )
     db.add(msg)
     db.flush()
     for n, hit in result.used:
+        quote = result.quotes.get(n) or fallback_quotes.get(n) or hit.chunk.text[:QUOTE_CHARS]
+        first, last = cited_pages(hit.chunk, quote, answer, n)  # D-50: ý có thể trải nhiều trang
         db.add(
             Citation(
                 message_id=msg.id,
@@ -263,8 +295,9 @@ def _persist_answer(
                 version_id=hit.version.id,
                 document_id=hit.document.id,
                 locator_type=hit.chunk.locator_type,
-                locator_value=hit.chunk.locator_value,
-                quote=result.quotes.get(n) or hit.chunk.text[:QUOTE_CHARS],
+                locator_value=first,  # D-49: trang thật trong chunk nhiều trang, không phải trang đầu chunk
+                locator_end=last if last != first else None,
+                quote=quote,
                 source_revision=hit.version.revision,
             )
         )
@@ -327,51 +360,51 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
 
     started = time.perf_counter()
     status, chosen, routed_course = "error", mode, None
-    result = None
-    try:
-        with document_scope(conv.document_id):
-            result, trace = orchestrator.run(
-                db=db,
-                user=user,
-                courses=courses,
-                previous_course_id=_previous_course(db, conv, user_msg.id),
-                request_id=request_id,
-                question=content,
-                history=_history(db, conv, user_msg.id),
-                mode=mode,
-                options=body.get("learning") or {},
-            )
-        chosen = trace["assistant"] if trace["assistant"] in ASSISTANTS else "router"
-        routed_course = trace.get("course_id")
-        result.payload["route"] = trace  # trace điều phối (AC-11.5), hiển thị "Router: đã chọn …" (FR-11.5)
-        msg = _persist_answer(db, conv, request_id, chosen, result)
-        if result.payload.get("plan_data") is not None:
-            _attach_plan(db, user, conv, msg, result, routed_course)
-        status = result.status
-        db.commit()
-        return serialize(db, user, msg, conv)
-    except EmbeddingUnavailableError as e:
-        db.rollback()
-        code = "EMBEDDING_RATE_LIMITED" if e.rate_limited else "EMBEDDING_UNAVAILABLE"
-        raise AppError(code, 503, retryable=True) from e
-    except LlmError as e:
-        db.rollback()
-        raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
-    finally:
-        db.add(
-            UsageEvent(
+    with track_usage() as tokens:  # D-60: token của router + trợ lý → chi phí
+        try:
+            with document_scope(conv.document_id):
+                result, trace = orchestrator.run(
+                    db=db,
+                    user=user,
+                    courses=courses,
+                    previous_course_id=_previous_course(db, conv, user_msg.id),
+                    request_id=request_id,
+                    question=content,
+                    history=_history(db, conv, user_msg.id),
+                    mode=mode,
+                    options=body.get("learning") or {},
+                )
+            chosen = trace["assistant"] if trace["assistant"] in ASSISTANTS else "router"
+            routed_course = trace.get("course_id")
+            result.payload["route"] = trace  # trace điều phối (AC-11.5), hiển thị "Router: đã chọn …" (FR-11.5)
+            msg = _persist_answer(db, conv, request_id, chosen, result)
+            if result.payload.get("plan_data") is not None:
+                _attach_plan(db, user, conv, msg, result, routed_course)
+            status = result.status
+            db.commit()
+            return serialize(db, user, msg, conv)
+        except EmbeddingUnavailableError as e:
+            db.rollback()
+            code = "EMBEDDING_RATE_LIMITED" if e.rate_limited else "EMBEDDING_UNAVAILABLE"
+            raise AppError(code, 503, retryable=True) from e
+        except KnowledgeHubRetrievalError as e:
+            db.rollback()
+            raise AppError("RETRIEVAL_UNAVAILABLE", 503, retryable=True) from e
+        except LlmError as e:
+            db.rollback()
+            raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
+        finally:
+            usage.record(
+                db,
                 user_id=user.id,
                 course_id=routed_course,
                 assistant=chosen,
                 status=status,
                 latency_ms=(time.perf_counter() - started) * 1000,
                 request_id=request_id,
-                tokens_input=result.tokens_input if result else 0,
-                tokens_output=result.tokens_output if result else 0,
-                estimated_cost=0.0,
+                tokens=tokens,
             )
-        )
-        db.commit()
+            db.commit()
 
 
 # ---------------------------------------------------------------- lộ trình học (FR-03.5–03.13)
@@ -384,11 +417,14 @@ def _attach_plan(
     plan = StudyPlan(
         owner_id=user.id, course_id=course_id, conversation_id=conv.id, version=d["previous_version"] + 1,
         previous_id=d["previous_id"], status="Draft", goal=d["goal"][:2000], days=d["days"], minutes_per_day=d["minutes"],
-        data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")} | {"message_id": msg.id},
+        data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")}
+        | {"message_id": msg.id}
+        | ({"dates": d["dates"]} if d.get("dates") else {}),
     )  # fmt: skip
     db.add(plan)
     db.flush()
-    msg.payload = {**(msg.payload or {}), "kind": "plan", "plan_id": plan.id}
+    rest = {k: v for k, v in (msg.payload or {}).items() if k != "plan_data"}  # plan_data đã lưu vào study_plans
+    msg.payload = {**rest, "kind": "plan", "plan_id": plan.id}
 
 
 def get_plan(db: Session, user: User, plan_id: str) -> StudyPlan:
@@ -412,7 +448,7 @@ def plan_view(db: Session, user: User, plan: StudyPlan) -> dict[str, Any]:
         "id": plan.id, "version": plan.version, "previous_id": plan.previous_id, "status": plan.status, "goal": plan.goal,
         "days": plan.days, "minutes_per_day": plan.minutes_per_day, "sessions": sessions,
         "warnings": plan.data.get("warnings", []), "total_minutes": plan.data.get("total_minutes"),
-        "budget_minutes": plan.data.get("budget_minutes"),
+        "budget_minutes": plan.data.get("budget_minutes"), "dates": plan.data.get("dates"),
     }  # fmt: skip
 
 
@@ -457,6 +493,51 @@ def set_plan_status(db: Session, user: User, plan_id: str, status: str) -> Study
     return plan
 
 
+EDITABLE_PLAN = ("Draft", "Confirmed", "InProgress", "Paused")
+
+
+def update_plan(db: Session, user: User, plan_id: str, goal: str, sessions: list[dict[str, Any]]) -> StudyPlan:
+    """Người học tự sửa lộ trình của mình (D-43): mục tiêu, thêm/bớt/sửa buổi. Giữ trạng thái + nguồn của buổi cũ."""
+    plan = get_plan(db, user, plan_id)
+    if plan.status not in EDITABLE_PLAN:
+        raise AppError("INVALID_STATE", 409)
+    if not sessions:
+        raise bad_request("PLAN_EMPTY")
+    dates = plan.data.get("dates") or []
+    if dates and any(s["day"] > len(dates) for s in sessions):
+        raise bad_request("PLAN_DAY_OUT_OF_RANGE")
+    old = {s["id"]: s for s in plan.data.get("sessions", [])}
+    taken = {int(k[1:]) for k in old if k[1:].isdigit()}
+    out = []
+    for s in sessions:
+        prev = old.get(s.get("id") or "")
+        if prev is None:  # buổi mới do người học thêm: id mới, chưa có nguồn
+            n = max(taken, default=0) + 1
+            taken.add(n)
+            prev = {"id": f"s{n}", "sources": [], "missing_source": True, "status": "not_started"}
+        out.append({**prev, **{k: s[k] for k in ("day", "title", "objective", "activity", "self_check", "minutes")}})
+    out.sort(key=lambda s: (s["day"], s["id"]))
+    plan.goal = goal
+    plan.days = len(dates) if dates else max(s["day"] for s in out)
+    total = sum(s["minutes"] for s in out)
+    plan.data = {**plan.data, "sessions": out, "total_minutes": total, "edited": True}
+    if plan.status in ("Confirmed", "InProgress"):
+        plan.status = "Completed" if all(s["status"] == "done" for s in out) else plan.status
+    audit.record(db, actor_id=user.id, action="plan_edit", object_type="study_plan", object_id=plan.id,
+                 course_id=plan.course_id, detail={"sessions": len(out)})  # fmt: skip
+    db.commit()
+    return plan
+
+
+def delete_plan(db: Session, user: User, plan_id: str) -> None:
+    """Xoá lộ trình của chính mình (D-43). Tin nhắn chat từng tạo nó chỉ còn nội dung, thẻ lộ trình biến mất."""
+    plan = get_plan(db, user, plan_id)
+    audit.record(db, actor_id=user.id, action="plan_delete", object_type="study_plan", object_id=plan.id,
+                 course_id=plan.course_id, detail={"goal": plan.goal[:200], "status": plan.status})  # fmt: skip
+    db.delete(plan)
+    db.commit()
+
+
 # ---------------------------------------------------------------- tự kiểm tra (FR-03.3–03.4)
 
 
@@ -478,13 +559,18 @@ def save_quiz_answers(
             if still_servable(db, user, c.version_id):
                 ch = db.get(Chunk, c.chunk_id)
                 chunks.append(f"[{c.ordinal}] {ch.text if ch else c.quote}")
-        try:
-            payload["assessment"] = learning.assess(
-                payload.get("questions", []), payload["answers"], "\n\n".join(chunks)
-            )
-        except LlmError as e:
-            db.rollback()
-            raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
+        started = time.perf_counter()
+        with track_usage() as tokens:
+            try:
+                payload["assessment"] = learning.assess(
+                    payload.get("questions", []), payload["answers"], "\n\n".join(chunks)
+                )
+            except LlmError as e:
+                db.rollback()
+                raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
+        usage.record(db, user_id=user.id, course_id=message_course(msg, conv), assistant="quiz_assess",
+                     status="answered", latency_ms=(time.perf_counter() - started) * 1000, request_id=None,
+                     tokens=tokens)  # fmt: skip
     msg.payload = payload
     db.commit()
     return serialize(db, user, msg, conv)

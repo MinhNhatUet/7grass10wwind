@@ -1,5 +1,6 @@
-"""Background jobs for data retention and cleanup (BL-26)."""
+"""Dọn dữ liệu định kỳ (BL-26): xoá hẳn hội thoại đã xoá mềm quá 30 ngày. Audit log giữ nguyên (BR-11)."""
 
+import logging
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -8,7 +9,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.db import get_sessionmaker
-from src.models.orm import Conversation, Message, Citation, AuditEvent
+from src.models.orm import Citation, Conversation, Message
+
+log = logging.getLogger(__name__)
+
 
 def _cleanup_worker() -> None:
     while True:
@@ -17,32 +21,38 @@ def _cleanup_worker() -> None:
             try:
                 # 1. Clean up soft-deleted conversations older than 30 days
                 cutoff_conv = datetime.now(UTC) - timedelta(days=30)
-                expired_convs = db.scalars(
-                    select(Conversation.id)
-                    .where(Conversation.deleted_at < cutoff_conv)
-                ).all()
+                expired_convs = db.scalars(select(Conversation.id).where(Conversation.deleted_at < cutoff_conv)).all()
 
                 if expired_convs:
-                    db.execute(delete(Citation).where(Citation.message_id.in_(
-                        select(Message.id).where(Message.conversation_id.in_(expired_convs))
-                    )))
+                    db.execute(
+                        delete(Citation).where(
+                            Citation.message_id.in_(
+                                select(Message.id).where(Message.conversation_id.in_(expired_convs))
+                            )
+                        )
+                    )
                     db.execute(delete(Message).where(Message.conversation_id.in_(expired_convs)))
                     db.execute(delete(Conversation).where(Conversation.id.in_(expired_convs)))
 
-                # 2. Clean up audit events older than 90 days
-                cutoff_audit = datetime.now(UTC) - timedelta(days=90)
-                db.execute(delete(AuditEvent).where(AuditEvent.created_at < cutoff_audit))
-                
+                # Audit log KHÔNG bao giờ bị xoá: chỉ ghi thêm (BR-11) — bỏ bước xoá audit > 90 ngày của bản gốc (D-53)
+
                 db.commit()
+                log.info(
+                    "retention: dọn %d hội thoại",
+                    len(expired_convs),
+                    extra={"event": "retention.run", "conversations_deleted": len(expired_convs)},
+                )
             except Exception:
                 db.rollback()
+                log.exception("retention lỗi, đã rollback", extra={"event": "retention.failed"})
             finally:
                 db.close()
-        except Exception:
-            pass
-        
+        except Exception:  # không mở được session DB — ghi lại, thử lại ở chu kỳ sau
+            log.exception("retention không chạy được", extra={"event": "retention.failed"})
+
         # Run once a day
         time.sleep(86400)
+
 
 def start_retention_job() -> None:
     threading.Thread(target=_cleanup_worker, daemon=True, name="retention-job").start()

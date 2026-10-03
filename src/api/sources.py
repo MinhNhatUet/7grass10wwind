@@ -22,15 +22,25 @@ router = APIRouter()
 
 
 def _source(db: Session, user: User, chunk: Chunk, version: DocumentVersion, document: Document) -> dict[str, Any]:
+    pages = [chunk.locator_value]
+    if chunk.locator_type == "page":
+        pages.extend(int(page) for _, page in chunk.page_map or [])
+    first, last = min(pages), max(pages)
     return {
         "document_id": document.id,
         "version_id": version.id,
+        "chunk_id": chunk.id,
         "title": document.title,
         "version_label": version.version_label,
         "doc_type": document.doc_type,
         "file_type": version.file_type,
         "page_count": version.page_count,
-        "locator": {"type": chunk.locator_type, "value": chunk.locator_value},
+        "locator": {
+            "type": chunk.locator_type,
+            "value": first,
+            "end": last if last != first else None,
+            "section": chunk.section,
+        },
         "excerpt": chunk.text,
         "can_download": acl.can_download_version(db, user, version, document),
     }
@@ -51,7 +61,14 @@ def citation_source(
     chunk = db.get(Chunk, cit.chunk_id)
     if not (version and document and chunk and acl.can_serve_version(db, user, version, document)):
         raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
-    return {**_source(db, user, chunk, version, document), "quote": cit.quote}  # đoạn hỗ trợ ý (FR-10.1)
+    src = _source(db, user, chunk, version, document)
+    src["locator"] = {
+        "type": cit.locator_type,
+        "value": cit.locator_value,
+        "end": cit.locator_end,
+        "section": chunk.section,
+    }  # D-49/D-50: trang (khoảng trang) của ý được trích, không phải trang đầu chunk
+    return {**src, "quote": cit.quote}  # đoạn hỗ trợ ý (FR-10.1)
 
 
 @router.get("/chunks/{chunk_id}/source")
@@ -134,13 +151,19 @@ def version_pages(
     page_from = max(1, page_from)
     page_to = min(page_to, page_from + MAX_PAGES_PER_CALL - 1, version.page_count or page_to)
     chunks = db.scalars(
-        select(Chunk)
-        .where(Chunk.version_id == version.id, Chunk.locator_value >= page_from, Chunk.locator_value <= page_to)
-        .order_by(Chunk.locator_value, Chunk.ordinal)
+        select(Chunk).where(Chunk.version_id == version.id, Chunk.locator_value <= page_to).order_by(Chunk.ordinal)
     )
     by_page: dict[int, list[Chunk]] = {}
     for c in chunks:
-        by_page.setdefault(c.locator_value, []).append(c)
+        if not c.page_map:
+            if c.locator_value >= page_from:
+                by_page.setdefault(c.locator_value, []).append(c)
+            continue
+        # D-49: chunk nhiều trang → cắt text theo page_map, mỗi trang nhận đúng phần của nó
+        bounds = [*(s for s, _ in c.page_map[1:]), len(c.text)]
+        for (start, page), end in zip(c.page_map, bounds, strict=True):
+            if page_from <= page <= page_to:
+                by_page.setdefault(page, []).append(Chunk(text=c.text[start:end].strip(), locator_value=page))
     loc_type = "slide" if version.file_type == "pptx" else "page"
     return {
         "document_id": document.id,

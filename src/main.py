@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -10,11 +11,12 @@ from src.api.auth import router as auth_router
 from src.api.conversations import router as conversations_router
 from src.api.dashboard import router as dashboard_router
 from src.api.documents import router as documents_router
-from src.api.routes import router
+from src.api.quizzes import router as quizzes_router
 from src.api.sources import router as sources_router
 from src.config import get_settings
 from src.db import get_engine, init_db
 from src.models.schemas import ErrorBody, ErrorDetail
+from src.observability import configure_logging, install, request_id
 from src.services.documents import resume_interrupted_jobs
 from src.services.errors import AppError
 from src.services.retention import start_retention_job
@@ -40,29 +42,47 @@ app = FastAPI(
 )
 
 settings = get_settings()
+configure_logging("edu04-backend", settings.app_env, settings.log_level)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],  # frontend khác origin đọc được mã hỗ trợ
 )
+install(app)  # thêm sau CORS → bọc ngoài cùng, mọi response (kể cả lỗi) đều có X-Request-ID
 
-app.include_router(router, prefix="/api/v1")
-for r in (auth_router, documents_router, conversations_router, sources_router, dashboard_router, admin_router):
+for r in (
+    auth_router,
+    documents_router,
+    conversations_router,
+    sources_router,
+    dashboard_router,
+    admin_router,
+    quizzes_router,
+):
     app.include_router(r, prefix="/api/v1")
 
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     """Lỗi kỹ thuật theo PRD 11.4: {"status": "error", "error": {"code", "retryable"}}."""
-    body = ErrorBody(error=ErrorDetail(code=exc.code, retryable=exc.retryable, message=exc.message))
+    body = ErrorBody(
+        error=ErrorDetail(code=exc.code, retryable=exc.retryable, message=exc.message, request_id=request_id.get())
+    )
+    if exc.http_status >= 500:  # lỗi kỹ thuật: ghi mã lỗi (không ghi nội dung) để tra theo mã hỗ trợ
+        logging.getLogger("edu04.errors").warning(
+            "%s %s", exc.code, request.url.path, extra={"event": "app.error", "error_code": exc.code,
+                                                         "status": exc.http_status, "retryable": exc.retryable})  # fmt: skip
     headers = {}
     if exc.http_status == 401:
         headers["WWW-Authenticate"] = "Bearer"
     if exc.retry_after is not None:
         headers["Retry-After"] = str(exc.retry_after)
-    return JSONResponse(status_code=exc.http_status, content=body.model_dump(exclude_none=True), headers=headers if headers else None)
+    return JSONResponse(
+        status_code=exc.http_status, content=body.model_dump(exclude_none=True), headers=headers if headers else None
+    )
 
 
 @app.get("/health")

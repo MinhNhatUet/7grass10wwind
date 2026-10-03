@@ -8,6 +8,7 @@ Job chạy nền bằng thread riêng, có DB session riêng; lỗi giữ stage/
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 from dataclasses import dataclass
@@ -140,6 +141,68 @@ def upload(
     return version, job
 
 
+def import_prechunked(
+    db: Session,
+    user: User,
+    course_id: str,
+    content: bytes,
+    filename: str,
+    meta: VersionMeta,
+    page_count: int,
+    chunks: list[dict],
+    source: str,
+) -> DocumentVersion:
+    """Nhập tài liệu ĐÃ được pipeline dữ liệu chunk sẵn (D-49): lưu tệp gốc (xem trang/tải về), KHÔNG trích xuất lại.
+
+    Cùng kiểm tra như upload (quyền tải lên, metadata, loại tệp theo nội dung, trùng checksum, audit). Bản vào Draft
+    kèm chunk {text, page, page_map}; sau đó vẫn phải gửi duyệt → người duyệt khác duyệt → index (embedding đúng các
+    chunk này) → Published.
+    """
+    if not acl.can_upload(db, user, course_id):
+        raise forbidden("UPLOAD_NOT_ALLOWED")
+    meta.validate()
+    if not chunks:
+        raise bad_request("NO_CHUNKS")
+    try:
+        file_type = ingestion.detect_file_type(content)
+    except ingestion.IngestionError as e:
+        raise bad_request(e.code) from e
+    checksum, key = storage.save_bytes(content)
+    dup = db.scalar(
+        select(DocumentVersion)
+        .join(Document)
+        .where(Document.course_id == course_id, DocumentVersion.checksum == checksum)
+        .where(DocumentVersion.state.not_in((WITHDRAWN, ARCHIVED)))
+    )
+    if dup is not None:
+        raise AppError("DUPLICATE_FILE", 409, message=f"Tệp đã có trong môn (phiên bản {dup.id})")
+    document = Document(course_id=course_id, owner_id=user.id, title=meta.title.strip(), doc_type=meta.doc_type)
+    db.add(document)
+    db.flush()
+    version = DocumentVersion(
+        document_id=document.id, version_label=meta.version_label.strip(), state=DRAFT, file_type=file_type,
+        original_filename=filename[:500], checksum=checksum, storage_key=key, size_bytes=len(content),
+        authors=meta.authors, provenance=meta.provenance.strip(), usage_permission=meta.usage_permission,
+        acl_roles=sorted(set(meta.acl_roles)), download_allowed=meta.download_allowed,
+        integrity_label=meta.integrity_label, chapter=meta.chapter, uploader_id=user.id, page_count=page_count,
+    )  # fmt: skip
+    db.add(version)
+    db.flush()
+    for i, c in enumerate(chunks):
+        db.add(
+            Chunk(
+                version_id=version.id, ordinal=i, locator_type="page", locator_value=int(c["page"]),
+                section=c.get("section"), text=c["text"], page_map=c.get("page_map"),
+            )
+        )  # fmt: skip
+    audit.record(
+        db, actor_id=user.id, action="upload", object_type="version", object_id=version.id, course_id=course_id,
+        detail={"prechunked": len(chunks), "source": source},
+    )  # fmt: skip
+    db.commit()
+    return version
+
+
 def reprocess(db: Session, user: User, version_id: str, reason: str) -> tuple[DocumentVersion, IngestionJob]:
     """Xử lý lại cùng tệp gốc bằng pipeline hiện tại (vd sau khi thêm bước làm sạch, D-29).
 
@@ -172,6 +235,92 @@ def reprocess(db: Session, user: User, version_id: str, reason: str) -> tuple[Do
     return version, job
 
 
+def reprocess_prechunked(
+    db: Session,
+    user: User,
+    version_id: str,
+    reason: str,
+    page_count: int,
+    chunks: list[dict],
+    source: str,
+) -> DocumentVersion:
+    """Create a safe draft revision from externally prepared chunks.
+
+    The current Published version and its embeddings stay untouched.  The new
+    revision must still pass submit -> approval -> index; only a successful
+    index job swaps ``Document.current_version_id`` and archives the old
+    Published version.
+    """
+    old, document = get_version(db, version_id)
+    if not acl.can_upload(db, user, document.course_id):
+        raise forbidden("UPLOAD_NOT_ALLOWED")
+    if not reason.strip():
+        raise bad_request("REASON_REQUIRED")
+    if not source.strip():
+        raise bad_request("SOURCE_REQUIRED")
+    if page_count < 1:
+        raise bad_request("INVALID_PAGE_COUNT")
+    if not chunks:
+        raise bad_request("NO_CHUNKS")
+
+    prepared: list[dict] = []
+    for item in chunks:
+        text = str(item.get("text") or "").strip()
+        try:
+            page = int(item["page"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise bad_request("INVALID_CHUNK_LOCATOR") from exc
+        if not text:
+            raise bad_request("EMPTY_CHUNK")
+        if page < 1 or page > page_count:
+            raise bad_request("INVALID_CHUNK_LOCATOR")
+        section = item.get("section")
+        if section is not None:
+            section = str(section).strip() or None
+            if section and len(section) > 1000:
+                raise bad_request("SECTION_TOO_LONG")
+        page_map = item.get("page_map")
+        if page_map is not None:
+            try:
+                page_map = [[int(offset), int(mapped_page)] for offset, mapped_page in page_map]
+            except (TypeError, ValueError) as exc:
+                raise bad_request("INVALID_PAGE_MAP") from exc
+            if any(offset < 0 or mapped_page < 1 or mapped_page > page_count for offset, mapped_page in page_map):
+                raise bad_request("INVALID_PAGE_MAP")
+            if page_map != sorted(page_map, key=lambda pair: pair[0]):
+                raise bad_request("INVALID_PAGE_MAP")
+        prepared.append({"text": text, "page": page, "section": section, "page_map": page_map})
+
+    version = DocumentVersion(
+        document_id=document.id, version_label=old.version_label, state=DRAFT, file_type=old.file_type,
+        original_filename=old.original_filename, checksum=old.checksum, storage_key=old.storage_key,
+        size_bytes=old.size_bytes, page_count=page_count, authors=old.authors, provenance=old.provenance,
+        usage_permission=old.usage_permission, acl_roles=list(old.acl_roles), download_allowed=old.download_allowed,
+        integrity_label=old.integrity_label, chapter=old.chapter, uploader_id=user.id,
+    )  # fmt: skip
+    db.add(version)
+    db.flush()
+    for ordinal, item in enumerate(prepared):
+        db.add(
+            Chunk(
+                version_id=version.id,
+                ordinal=ordinal,
+                locator_type="page",
+                locator_value=item["page"],
+                section=item["section"],
+                text=item["text"],
+                page_map=item["page_map"],
+            )
+        )
+    audit.record(
+        db, actor_id=user.id, action="reprocess_prechunked", object_type="version", object_id=version.id,
+        course_id=document.course_id, reason=reason,
+        detail={"from_version": old.id, "chunks": len(prepared), "source": source},
+    )  # fmt: skip
+    db.commit()
+    return version
+
+
 def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
     content = storage.path_of(version.storage_key).read_bytes()
     try:
@@ -197,6 +346,10 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
     version.quality_warnings = ext.warnings
     version.state = NEEDS_REVIEW if ingestion.needs_review(ext) else DRAFT
     job.status, job.stage, job.progress = "succeeded", "extracted", 1.0
+    if ext.chunks and get_settings().embed_on_upload:
+        # D-34: embedding sẵn ngay khi tải lên. Chỉ mục tạm KHÔNG tham gia tìm kiếm (retrieval chỉ lấy bản Published);
+        # duyệt xong, job index chỉ còn phần thiếu nên phát hành gần như ngay (PRD 9.2, FR-08)
+        db.add(IngestionJob(version_id=version.id, kind="embed"))
     document = db.get(Document, version.document_id)
     audit.record(
         db, actor_id=None, action="extract", object_type="version", object_id=version.id,
@@ -205,12 +358,40 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
     )  # fmt: skip
 
 
+PRE_EMBED_STATES = (DRAFT, NEEDS_REVIEW, PENDING)
+
+
+def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
+    """D-34: embedding trước duyệt. Không bao giờ đổi trạng thái bản/phát hành; lỗi (vd. hết quota) chỉ đánh dấu job —
+    job index sau duyệt làm tiếp. Tự dừng khi bản đã rời trạng thái chờ duyệt."""
+    from src.services.retrieval import chunk_embedding_text, embed_texts
+
+    chunks = [c for c in db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal))]
+    todo = [c for c in chunks if c.embedding is None]
+    batch = get_settings().embedding_batch_size
+    try:
+        for i in range(0, len(todo), batch):
+            db.refresh(version)
+            if version.state not in PRE_EMBED_STATES:
+                break
+            part = todo[i : i + batch]
+            for c, blob in zip(part, embed_texts([chunk_embedding_text(c) for c in part]), strict=True):
+                c.embedding = blob
+            job.progress = min(1.0, (len(chunks) - len(todo) + i + len(part)) / max(len(chunks), 1))
+            db.commit()
+    except Exception as e:  # noqa: BLE001 — lỗi provider: ghi lại, không chặn luồng duyệt
+        log.warning("embed job %s lỗi: %s", job.id, type(e).__name__)
+        job.status, job.error_code = "failed", f"EMBEDDING_{type(e).__name__}"[:100]
+        return
+    job.status, job.stage = "succeeded", "embedded"
+
+
 def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
     version.state = INDEXING
     db.commit()
     chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)))
     try:
-        from src.services.retrieval import embed_texts
+        from src.services.retrieval import chunk_embedding_text, embed_texts
 
         todo = [c for c in chunks if c.embedding is None]
         done = len(chunks) - len(todo)
@@ -220,7 +401,7 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
         batch = get_settings().embedding_batch_size
         for i in range(0, len(todo), batch):
             part = todo[i : i + batch]
-            for c, blob in zip(part, embed_texts([c.text for c in part]), strict=True):
+            for c, blob in zip(part, embed_texts([chunk_embedding_text(c) for c in part]), strict=True):
                 c.embedding = blob
             job.progress = min(1.0, (done + i + len(part)) / max(len(chunks), 1))
             db.commit()
@@ -268,11 +449,19 @@ def _run_job(job_id: str) -> None:
         db.commit()
         if job.kind == "extract":
             _run_extract(db, job, version)
+        elif job.kind == "embed":
+            _run_embed(db, job, version)
         elif job.kind == "index":
             _run_index(db, job, version)
         else:  # loại job không hỗ trợ: KHÔNG được rơi vào index/phát hành (BR-01)
             job.status, job.error_code = "failed", f"UNSUPPORTED_JOB_{job.kind}"[:100]
         db.commit()
+        for pending in db.scalars(
+            select(IngestionJob).where(
+                IngestionJob.version_id == version.id, IngestionJob.kind == "embed", IngestionJob.status == "queued"
+            )
+        ):
+            start_job(pending.id)
     except Exception as e:  # noqa: BLE001 — job không được làm sập tiến trình
         db.rollback()
         log.exception("job %s lỗi", job_id)
@@ -288,7 +477,9 @@ def _run_job(job_id: str) -> None:
 
 
 def start_job(job_id: str) -> None:
-    threading.Thread(target=_run_job, args=(job_id,), daemon=True, name=f"job-{job_id}").start()
+    # thread không tự mang context của request → sao chép để log của job giữ http_request_id đã khởi tạo nó
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(_run_job, job_id), daemon=True, name=f"job-{job_id}").start()
 
 
 def resume_interrupted_jobs() -> None:

@@ -1,26 +1,17 @@
-// Token lưu trong sessionStorage: mất khi đóng tab, không dùng localStorage cho MVP.
-const KEY = "edu04.access_token";
-
+// Shared with the Vedu login/profile pages. Never keep a second, stale session token.
 export function getToken(): string | null {
-  try {
-    return window.sessionStorage.getItem(KEY);
-  } catch {
-    return null;
-  }
+  try { return window.localStorage.getItem("token"); } catch { return null; }
 }
 
 export function setToken(token: string): void {
-  try {
-    window.sessionStorage.setItem(KEY, token);
-  } catch {
-    // Trình duyệt chặn storage: phiên chỉ sống trong trang hiện tại.
-  }
+  window.localStorage.setItem("token", token);
+  window.sessionStorage.removeItem("edu04.access_token");
 }
 
 export function clearToken(): void {
   try {
-    window.sessionStorage.removeItem(KEY);
-  } catch {
-    // bỏ qua
-  }
+    window.localStorage.removeItem("token");
+    window.localStorage.removeItem("user");
+    window.sessionStorage.removeItem("edu04.access_token");
+  } catch { /* Storage may be unavailable. */ }
 }
