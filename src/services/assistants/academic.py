@@ -5,8 +5,10 @@ Evidence gate trước khi gọi LLM: không có đoạn nào vượt ngưỡng 
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -14,11 +16,15 @@ from src.config import get_settings
 from src.models.orm import User
 from src.services.assistants import (
     BASE_POLICY,
+    CITATION_RE,
     AssistantResult,
     call_json,
     format_history,
     format_sources,
+    join_sentences,
     json_list,
+    mark_uncited,
+    split_sentences,
     supporting_quotes,
     validate_citations,
 )
@@ -29,7 +35,7 @@ ALLOWED = ("answered", "partial", "needs_clarification", "insufficient_evidence"
 
 INSTRUCTION = """Trả lời CÂU HỎI chỉ dựa trên NGUỒN. Trả về DUY NHẤT một object JSON:
 {"status": "answered" | "partial" | "needs_clarification" | "insufficient_evidence",
- "answer": "câu trả lời có [n] sau từng ý (rỗng nếu needs_clarification/insufficient_evidence)",
+ "answer": "câu trả lời; MỖI câu khẳng định kết thúc bằng [n] (kể cả câu định nghĩa mở đầu) — rỗng nếu needs_clarification/insufficient_evidence",
  "missing": ["phần câu hỏi chưa có căn cứ trong nguồn"],
  "quotes": {"n": "câu chép NGUYÊN VĂN (không dịch, ≤300 ký tự) từ NGUỒN n chứng minh ý gắn [n]"},
  "clarification": "câu hỏi làm rõ ngắn (chỉ khi needs_clarification)"}
@@ -70,6 +76,67 @@ def evidence(db: Session, user: User, course_id: str, query: str) -> list[Hit]:
     return merged
 
 
+def _restore_citations(answer_text: str, quotes: Any, hits: list[Hit]) -> str:
+    """D-72: gpt-4o-mini đôi khi trả lời đúng + trích nguyên văn ở "quotes" nhưng QUÊN gắn [n] → FR-10.3 biến câu trả
+    lời thành "không đủ căn cứ". Chỉ khi câu trả lời KHÔNG có [n] nào: gắn [n] cho những nguồn mà câu trích nguyên văn
+    (≥ 20 ký tự) có THẬT trong chunk n (server kiểm, không tin model). Không kiểm được → giữ nguyên (vẫn bị từ chối)."""
+    if not answer_text.strip() or CITATION_RE.search(answer_text) or not isinstance(quotes, dict):
+        return answer_text
+    norm = lambda s: re.sub(r"\s+", " ", s).strip().casefold()  # noqa: E731
+    found: dict[int, str] = {}
+    for key, quote in quotes.items():
+        q = norm(str(quote or "").strip().strip('"“”'))
+        if (
+            str(key).isdigit()
+            and 1 <= int(key) <= len(hits)
+            and len(q) >= 20
+            and q in norm(hits[int(key) - 1].chunk.text)
+        ):
+            found[int(key)] = q
+    if not found:
+        return answer_text
+    # D-73: gắn [n] vào CÂU khớp nhất với câu trích đã kiểm (âm tiết/thuật ngữ chung, kể cả tên tiếng Anh trong ngoặc),
+    # không gắn dồn ở cuối; không câu nào chung từ → câu cuối như trước.
+    sents = split_sentences(answer_text)
+    idx = [i for i, (s, _) in enumerate(sents) if s.strip()]
+    for n, q in sorted(found.items()):
+        qw = set(re.findall(r"\w{3,}", q))
+        best = max(idx, key=lambda i: (len(qw & set(re.findall(r"\w{3,}", sents[i][0].casefold()))), i))
+        s = sents[best][0].rstrip()
+        end = len(s) - len(s.rstrip(".!?…"))  # chèn nhãn trước dấu câu cuối
+        sents[best][0] = f"{s[: len(s) - end]} [{n}]{s[len(s) - end :]}" if end else f"{s} [{n}]"
+    return join_sentences(sents)
+
+
+def _inherit_labels(text: str, used: dict[int, Hit]) -> str:
+    """D-73: model hay chỉ gắn [n] ở câu cuối đoạn. Câu chưa có nhãn nhận nhãn của câu liền kề trong CÙNG đoạn khi
+    server kiểm được nội dung câu nằm trong chunk của nguồn đó: trong các từ của câu có mặt ở các nguồn, ≥ 60% (và ≥ 2
+    từ) nằm trong chunk của nguồn kề. Không kiểm được → giữ nguyên để mark_uncited đánh dấu (không gắn bừa)."""
+    sents = split_sentences(text)
+    words = lambda s: set(re.findall(r"\w{3,}", s.casefold()))  # noqa: E731
+    chunk_words = {n: words(h.chunk.text) for n, h in used.items()}
+    # chỉ xét từ của câu CÓ trong ít nhất một nguồn — câu tiếng Việt / nguồn tiếng Anh vẫn đo được qua thuật ngữ chung
+    source_vocab = set().union(*chunk_words.values()) if chunk_words else set()
+    for i, (s, _) in enumerate(sents):
+        body = s.strip()
+        if not body or CITATION_RE.search(body):
+            continue
+        neighbours = []
+        for j in (i + 1, i - 1):  # cùng đoạn: không vượt qua dấu xuống dòng
+            if 0 <= j < len(sents) and "\n" not in sents[min(i, j)][1]:
+                neighbours += [int(x) for x in CITATION_RE.findall(sents[j][0]) if int(x) in chunk_words]
+        sw = words(body) & source_vocab
+        for n in dict.fromkeys(neighbours):
+            hit = len(sw & chunk_words[n])
+            if hit >= 2 and hit / len(sw) >= 0.6:
+                end = len(body) - len(body.rstrip(".!?…"))
+                sents[i][0] = s.replace(
+                    body, f"{body[: len(body) - end]} [{n}]{body[len(body) - end :]}" if end else f"{body} [{n}]"
+                )
+                break
+    return join_sentences(sents)
+
+
 def answer(
     db: Session,
     user: User,
@@ -97,7 +164,8 @@ def answer(
     if status == "insufficient_evidence":
         return AssistantResult(status=status, content=INSUFFICIENT_MESSAGE)
 
-    text, used, dropped = validate_citations(db, user, str(data.get("answer") or ""), hits)
+    answer_text = _restore_citations(str(data.get("answer") or ""), data.get("quotes"), hits)
+    text, used, dropped = validate_citations(db, user, answer_text, hits)
     if not used:
         # FR-10.3: không có citation hợp lệ → không trình bày như câu trả lời có căn cứ
         return AssistantResult(
@@ -105,6 +173,10 @@ def answer(
         )
     missing = [str(m) for m in json_list(data, "missing") if str(m).strip()]
     if dropped and status == "answered":
+        status = "partial"
+    text = _inherit_labels(text, dict(used))
+    text, uncited = mark_uncited(text)  # D-73 — BR-04: câu khẳng định không có [n] được đánh dấu ngay tại câu
+    if uncited and status == "answered":
         status = "partial"
     if missing:
         status = "partial"
