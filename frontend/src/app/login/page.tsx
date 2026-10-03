@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import gsap from "gsap";
+import { GraduationCap, PlayCircle, Presentation } from "lucide-react";
+
+type DemoRole = "student" | "lecturer"; // không có admin: quản trị phải đăng nhập bằng mật khẩu
+const DEMO_ROLES: { role: DemoRole; label: string; Icon: typeof GraduationCap }[] = [
+  { role: "student", label: "Sinh viên", Icon: GraduationCap },
+  { role: "lecturer", label: "Giảng viên", Icon: Presentation },
+];
 
 export default function LoginPage() {
   const [isLoginView, setIsLoginView] = useState(true);
@@ -15,7 +22,41 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
+  const [demoEnabled, setDemoEnabled] = useState(false); // chỉ hiện nút khi server bật DEMO_LOGIN_ENABLED
   const router = useRouter();
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/auth/demo-login`)
+      .then((r) => (r.ok ? r.json() : { enabled: false }))
+      .then((d) => setDemoEnabled(Boolean(d.enabled)))
+      .catch(() => setDemoEnabled(false));
+  }, []);
+
+  async function demoLogin(role: DemoRole) {
+    setError("");
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/auth/demo-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(response.status === 404 && !data.error?.message
+          ? "Đăng nhập demo đang tắt trên máy chủ này."
+          : data.error?.message || "Đăng nhập demo thất bại.");
+      }
+      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Đăng nhập demo thất bại.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     gsap.fromTo(
@@ -187,7 +228,10 @@ export default function LoginPage() {
                 <span aria-hidden="true">→</span>
               </Button>
 
-              <div className="login-fade-up my-[24px] md:my-[32px] grid grid-cols-[1fr_auto_1fr] items-center gap-[20px] md:gap-[31px]" aria-hidden="true">
+              {/* D-71: đăng nhập demo theo vai trò — server tự đăng nhập tài khoản demo, mật khẩu không xuống trình duyệt;
+                  chỉ hiện khi server bật DEMO_LOGIN_ENABLED */}
+              {demoEnabled && (<>
+              <div className="my-[24px] md:my-[32px] grid grid-cols-[1fr_auto_1fr] items-center gap-[20px] md:gap-[31px]" aria-hidden="true">
                 <span className="h-px bg-border"></span>
                 <b className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">HOẶC</b>
                 <span className="h-px bg-border"></span>
@@ -195,16 +239,25 @@ export default function LoginPage() {
 
               <button
                 type="button"
-                className="login-fade-up flex h-[48px] md:h-[54px] w-full cursor-pointer items-center justify-center gap-[12px] rounded-full border border-border bg-card hover:bg-secondary text-foreground text-[14px] md:text-[15px] font-medium shadow-sm transition-all hover:border-primary/30"
+                onClick={() => setShowDemo((v) => !v)}
+                aria-expanded={showDemo}
+                className="flex h-[48px] md:h-[54px] w-full cursor-pointer items-center justify-center gap-[12px] rounded-full border border-border bg-card hover:bg-secondary text-foreground text-[14px] md:text-[15px] font-medium shadow-sm transition-all hover:border-primary/30"
               >
-                <svg className="size-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.9-1.75 2.98-4.33 2.98-7.36Z" />
-                  <path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.05.97-3.38.97-2.6 0-4.81-1.76-5.6-4.12H3.06v2.59A10 10 0 0 0 12 22Z" />
-                  <path fill="#FBBC05" d="M6.4 13.93a6 6 0 0 1 0-3.86V7.48H3.06a10 10 0 0 0 0 9.04l3.34-2.59Z" />
-                  <path fill="#EA4335" d="M12 5.95c1.47 0 2.79.51 3.83 1.51l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.48l3.34 2.59C7.19 7.71 9.4 5.95 12 5.95Z" />
-                </svg>
-                <span>{isLoginView ? "Đăng nhập với Google" : "Đăng ký bằng Google"}</span>
+                <PlayCircle size={20} className="shrink-0 text-primary" aria-hidden="true" />
+                <span>Đăng nhập demo</span>
               </button>
+              {showDemo && (
+                <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Chọn vai trò demo">
+                  {DEMO_ROLES.map(({ role, label, Icon }) => (
+                    <button key={role} type="button" disabled={isLoading} onClick={() => void demoLogin(role)}
+                      className="flex flex-col items-center gap-1.5 rounded-2xl border border-border bg-card px-2 py-3 text-[13px] font-medium text-foreground shadow-sm transition-all hover:border-primary/40 hover:bg-secondary cursor-pointer disabled:opacity-50">
+                      <Icon size={20} className="text-primary" aria-hidden="true" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              </>)}
             </form>
 
             <p className="login-fade-up mt-6 text-center text-sm text-muted-foreground">

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key
 from src.db import get_db
-from src.knowledge_hub import HubSearchRequest, InvalidRequest, RetrievalError, ScopeDenied, SearchFilters
+from src.knowledge_hub import HubConfig, HubSearchRequest, InvalidRequest, RetrievalError, ScopeDenied, SearchFilters
 from src.models.orm import Approval, Chunk, Document, DocumentVersion, IngestionJob, User
 from src.services import acl, documents, storage
 from src.services.errors import AppError, bad_request, not_found
@@ -99,6 +99,8 @@ def _hub_search(
                 page=page,
                 page_size=page_size,
             ),
+            # Giới hạn page_size do Query của từng route kiểm (thư viện 100 như hợp đồng cũ, /knowledge-hub/search 50)
+            config=HubConfig(max_page_size=100),
         )
     except ScopeDenied as exc:
         raise not_found() from exc
@@ -119,7 +121,7 @@ def list_documents(
     semester: str | None = None,
     version: str | None = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
+    page_size: int = Query(20, ge=1, le=100),  # giữ hợp đồng cũ của thư viện (tối đa 100)
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:

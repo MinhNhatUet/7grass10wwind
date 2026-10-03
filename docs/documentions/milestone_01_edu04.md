@@ -42,7 +42,7 @@ Remote được cấu hình trong local: [AI20K-Build-Phase-Cohort-4/P-134](http
 | Quyền 4 thành viên | Chưa kiểm chứng | Người có quyền tổ chức/repo kiểm tra membership và quyền phù hợp |
 | GitHub CLI | Không tìm thấy `gh` trong PATH tại lần kiểm tra | Dùng giao diện GitHub hoặc môi trường có công cụ đã xác thực |
 | CI | Có workflow Python 3.11, ruff và pytest; bổ sung PR vào `develop` | Chạy trên GitHub sau khi thay đổi được đưa lên; chưa khẳng định CI xanh |
-| Quy ước nhánh | Thêm [BRANCHING.md](../.github/BRANCHING.md) | Thống nhất workflow và kiểm tra/tạo `develop` nếu áp dụng |
+| Quy ước nhánh | Thêm [BRANCHING.md](../../.github/BRANCHING.md) | Thống nhất workflow và kiểm tra/tạo `develop` nếu áp dụng |
 | PR template | Đã có; giữ các chỉnh sửa đang tồn tại | Review nội dung theo workflow nhóm |
 | Issue templates | Thêm story và bug templates | Xuất hiện sau khi nằm trên nhánh phù hợp của GitHub; chưa tạo issue thật |
 | CODEOWNERS | Có file nhưng đang tham chiếu team `AI20K-Build-Phase/book-maintainers` của template | Xác minh owner có quyền trong repo hiện tại và yêu cầu tổ chức trước khi sửa |

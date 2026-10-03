@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
@@ -386,8 +386,41 @@ def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None
     job.status, job.stage = "succeeded", "embedded"
 
 
+def _index_transition(
+    db: Session, version: DocumentVersion, revision: int, states: tuple[str, ...], target: str, **values
+) -> bool:
+    """BR-07: stale workers cannot overwrite a withdrawal, even after their last read."""
+    changed = db.execute(
+        update(DocumentVersion)
+        .where(
+            DocumentVersion.id == version.id,
+            DocumentVersion.revision == revision,
+            DocumentVersion.state.in_(states),
+        )
+        .values(state=target, **values)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    db.refresh(version)
+    return changed == 1
+
+
+def _stop_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
+    db.refresh(version)
+    db.refresh(job)
+    job.status, job.stage = "failed", "stopped"
+    job.error_code = "SOURCE_WITHDRAWN" if version.state == WITHDRAWN else "INDEX_SUPERSEDED"
+
+
+def _index_current(db: Session, version: DocumentVersion, revision: int) -> bool:
+    db.refresh(version)
+    return version.state == INDEXING and version.revision == revision
+
+
 def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
-    version.state = INDEXING
+    revision = version.revision
+    if not _index_transition(db, version, revision, (APPROVED, INDEXING), INDEXING):
+        _stop_index(db, job, version)
+        return
     db.commit()
     chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)))
     try:
@@ -400,14 +433,25 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
         db.commit()
         batch = get_settings().embedding_batch_size
         for i in range(0, len(todo), batch):
+            if not _index_current(db, version, revision):
+                _stop_index(db, job, version)
+                return
             part = todo[i : i + batch]
-            for c, blob in zip(part, embed_texts([chunk_embedding_text(c) for c in part]), strict=True):
+            db.commit()  # No DB transaction/lock held across the provider call.
+            blobs = embed_texts([chunk_embedding_text(c) for c in part])
+            if not _index_current(db, version, revision):
+                _stop_index(db, job, version)
+                return
+            for c, blob in zip(part, blobs, strict=True):
                 c.embedding = blob
             job.progress = min(1.0, (done + i + len(part)) / max(len(chunks), 1))
             db.commit()
     except Exception as e:  # noqa: BLE001 — lỗi provider: giữ approval, Failed để retry (PRD 7.1.7.1)
         log.warning("index job %s lỗi: %s", job.id, type(e).__name__)
-        version.state = FAILED
+        db.rollback()
+        if not _index_transition(db, version, revision, (INDEXING,), FAILED):
+            _stop_index(db, job, version)
+            return
         from src.services.retrieval import _is_rate_limit
 
         job.status = "failed"
@@ -421,17 +465,30 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
         .where(Approval.version_id == version.id, Approval.decision == "approve")
         .order_by(Approval.created_at.desc())
     )
-    if approval is None or approval.reviewed_revision != version.revision:
-        version.state = FAILED
+    if approval is None or approval.reviewed_revision != revision:
+        if not _index_transition(db, version, revision, (INDEXING,), FAILED):
+            _stop_index(db, job, version)
+            return
         job.status, job.error_code = "failed", "APPROVAL_REVISION_MISMATCH"
         return
-    document = db.get(Document, version.document_id)
-    previous = db.get(DocumentVersion, document.current_version_id) if document.current_version_id else None
-    if previous is not None and previous.id != version.id and previous.state == PUBLISHED:
-        previous.state = ARCHIVED  # thay phiên bản: bản cũ lưu trữ, không phục vụ
+    # CAS is the final authorization to publish, not the earlier ORM snapshot.
+    # Keep this write, the current-version pointer and audit in one transaction.
+    if not _index_transition(db, version, revision, (INDEXING,), PUBLISHED, published_at=datetime.now(UTC)):
+        _stop_index(db, job, version)
+        return
+    document = db.scalar(
+        select(Document)
+        .where(Document.id == version.document_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if document.current_version_id and document.current_version_id != version.id:
+        db.execute(
+            update(DocumentVersion)
+            .where(DocumentVersion.id == document.current_version_id, DocumentVersion.state == PUBLISHED)
+            .values(state=ARCHIVED)
+        )  # A concurrently withdrawn previous version must stay Withdrawn.
     document.current_version_id = version.id
-    version.state = PUBLISHED
-    version.published_at = datetime.now(UTC)
     job.status, job.stage, job.progress = "succeeded", "published", 1.0
     audit.record(
         db, actor_id=None, action="publish", object_type="version", object_id=version.id, course_id=document.course_id
@@ -440,11 +497,13 @@ def _run_index(db: Session, job: IngestionJob, version: DocumentVersion) -> None
 
 def _run_job(job_id: str) -> None:
     db = get_sessionmaker()()
+    revision = None
     try:
         job = db.get(IngestionJob, job_id)
-        if job is None:
+        if job is None or job.status not in ("queued", "running"):
             return
         version = db.get(DocumentVersion, job.version_id)
+        revision = version.revision
         job.status, job.attempts, job.stage = "running", job.attempts + 1, job.kind
         db.commit()
         if job.kind == "extract":
@@ -469,8 +528,10 @@ def _run_job(job_id: str) -> None:
         if job is not None:
             job.status, job.error_code = "failed", f"INTERNAL_{type(e).__name__}"[:100]
             version = db.get(DocumentVersion, job.version_id)
-            if version is not None and version.state in (PROCESSING, INDEXING):
-                version.state = FAILED
+            if version is not None and revision is not None:
+                _index_transition(db, version, revision, (PROCESSING, INDEXING), FAILED)
+                if version.state == WITHDRAWN:
+                    job.error_code = "SOURCE_WITHDRAWN"
             db.commit()
     finally:
         db.close()
@@ -636,7 +697,30 @@ def withdraw(
         raise bad_request("REASON_REQUIRED")
     if version.state not in (PUBLISHED, APPROVED, INDEXING, PENDING, FAILED):
         raise conflict("INVALID_STATE")
-    version.state, version.withdraw_reason = WITHDRAWN, reason
+    # Serialize with publication at the version row, and invalidate the revision
+    # used by in-flight workers. No stale ORM assignment may undo this decision.
+    changed = db.execute(
+        update(DocumentVersion)
+        .where(
+            DocumentVersion.id == version.id,
+            DocumentVersion.revision == version.revision,
+            DocumentVersion.state.in_((PUBLISHED, APPROVED, INDEXING, PENDING, FAILED)),
+        )
+        .values(state=WITHDRAWN, withdraw_reason=reason, revision=DocumentVersion.revision + 1)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if changed != 1:
+        db.rollback()
+        raise conflict("REVISION_CONFLICT")
+    db.refresh(version)
+    document = db.scalar(
+        select(Document).where(Document.id == document.id).with_for_update().execution_options(populate_existing=True)
+    )
+    db.execute(
+        update(IngestionJob)
+        .where(IngestionJob.version_id == version.id, IngestionJob.status.in_(("queued", "running")))
+        .values(status="failed", stage="stopped", error_code="SOURCE_WITHDRAWN")
+    )
     if document.current_version_id == version.id:
         # PRD 11.2: không có replacement → published_version = NULL, không tự fallback
         document.current_version_id = None

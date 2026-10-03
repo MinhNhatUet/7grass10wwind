@@ -150,7 +150,15 @@ class KnowledgeHubAgent:
         trace = HubTrace(mode="hybrid", requested_course_id=filters.course_id)
         try:
             vector = self._embedding_provider.embed_query(query)
-            vector_candidates = self._vector_store.search(vector, filters, self._config.vector_top_k)
+        except (
+            Exception
+        ):  # D-78: provider embedding lỗi (mạng, key, quota) → chỉ tìm theo từ khóa, thư viện vẫn dùng được
+            vector = None
+            trace.embedding_fallback = True
+        try:
+            vector_candidates = (
+                self._vector_store.search(vector, filters, self._config.vector_top_k) if vector is not None else []
+            )
             lexical_candidates = self._lexical_store.search(query, filters, self._config.lexical_top_k)
             trace.vector_candidate_count = len(vector_candidates)
             trace.lexical_candidate_count = len(lexical_candidates)

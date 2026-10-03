@@ -12,7 +12,9 @@ class FormulaCrop:
     bbox: list[float]
 
 
-def expand_and_clip_bbox(bbox: list[float], page_width: float, page_height: float, padding_x: float, padding_y: float) -> list[float]:
+def expand_and_clip_bbox(
+    bbox: list[float], page_width: float, page_height: float, padding_x: float, padding_y: float
+) -> list[float]:
     x0, y0, x1, y1 = bbox
     return [
         max(0.0, x0 - padding_x),

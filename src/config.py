@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     model_name: str = "gpt-4o-mini"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     llm_timeout_seconds: float = Field(default=60, gt=0)  # D-64: mỗi lần gọi LLM
+    # D-71: nút "Đăng nhập demo" (chọn vai trò, không cần mật khẩu). CHỈ bật ở môi trường demo; production luôn tắt.
+    demo_login_enabled: bool = False
+    demo_cnpm_sinhvien_login: str = "sinhvien"
+    demo_cnpm_giangvien_login: str = "giangvien"
     # D-60: bảng giá để ước tính chi phí (USD / 1 triệu token). Mặc định theo giá niêm yết dòng Gemini Flash-Lite —
     # chỉnh trong .env theo giá thật của nhà cung cấp đang dùng.
     llm_price_input_per_1m: float = Field(default=0.10, ge=0)
@@ -48,6 +52,10 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     embedding_dimension: int | None = Field(default=None, gt=0)
     gemini_api_key: str = ""
+    # D-77: key riêng cho embedding OpenAI chính hãng. Có giá trị → gọi thẳng OpenAI (EMBEDDING_BASE_URL nếu cần đổi);
+    # để trống → provider "openai" dùng endpoint AI_* như trước.
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
 
     # Auth tối giản MVP (UC-09). Giá trị giới hạn là đề xuất — PRD 11.2 chỉ yêu cầu "rate limit".
     auth_users_file: str = "data/auth/users.json"

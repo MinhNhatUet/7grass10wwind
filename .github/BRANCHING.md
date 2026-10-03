@@ -22,4 +22,4 @@ Tên nhánh gắn backlog: `feat/BL-16-knowledge-hub`, `fix/BL-06-course-access`
 
 ## Thiết lập trên GitHub cần người có quyền thực hiện
 
-Kiểm tra nhánh mặc định, quyền 4 thành viên, nhánh `develop`, ruleset cho nhánh quan trọng, trạng thái CI thực tế, owner review hợp lệ và visibility repository. Không xóa/bỏ qua ruleset của tổ chức để ép merge. Checklist trạng thái và giới hạn kiểm chứng nằm trong [milestone_01_edu04.md](../documentions/milestone_01_edu04.md).
+Kiểm tra nhánh mặc định, quyền 4 thành viên, nhánh `develop`, ruleset cho nhánh quan trọng, trạng thái CI thực tế, owner review hợp lệ và visibility repository. Không xóa/bỏ qua ruleset của tổ chức để ép merge. Checklist trạng thái và giới hạn kiểm chứng nằm trong [milestone_01_edu04.md](../docs/documentions/milestone_01_edu04.md).

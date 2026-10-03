@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
+import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -28,7 +30,11 @@ BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc
    và cách tiếp cận (BR-06).
 5. Nếu nguồn mâu thuẫn, nêu rõ cả hai và nguồn của từng bên, không tự chọn (BR-08).
 6. Phân biệt rõ phần có trong nguồn và phần suy luận từ nguồn ("Suy luận từ [n]: ...").
-7. Trả lời bằng tiếng Việt, giữ thuật ngữ gốc khi giúp hiểu. Không nêu điểm similarity như xác suất đúng.
+7. LUÔN viết câu trả lời bằng tiếng Việt, KỂ CẢ khi NGUỒN bằng tiếng Anh: diễn đạt lại ý bằng tiếng Việt, giữ thuật
+   ngữ gốc trong ngoặc khi giúp hiểu, vd "tính kết dính (cohesion)". Chỉ trường "quotes"/"proof" được chép nguyên văn nguồn
+   (giữ nguyên ngôn ngữ gốc, không dịch).
+   Số liệu, đơn vị, ngưỡng phải GIỮ ĐÚNG như nguồn và viết bằng chữ số (nguồn "fourteen days" → "14 ngày").
+   Không nêu điểm similarity như xác suất đúng.
 8. Viết MỌI công thức/ký hiệu toán bằng LaTeX: trong dòng $...$, riêng dòng $$...$$ (không dùng \\( \\) hay \\[ \\]).
    Văn bản NGUỒN trích từ PDF có thể vỡ ký hiệu (vd. "∑n i=1 mi" là $\\sum_{i=1}^{n} m_i$, "n 1 edges" là "$n-1$ edges"):
    khôi phục đúng ký hiệu theo ngữ cảnh nguồn, KHÔNG thêm nội dung mới. Trong chuỗi JSON, viết backslash đôi (\\\\frac).
@@ -39,6 +45,30 @@ CITATION_RE = re.compile(r"\[(\d{1,2})\]")
 # Không khớp chỉ số mảng dính liền tên biến ("A[1, 2]", "a[0]" — rất hay gặp trong sách CTDL & GT)
 MULTI_CITATION_RE = re.compile(r"(?<![\w\])])\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\]")
 ANY_CITATION_RE = re.compile(r"\s*(?<![\w\])])\[\d{1,2}(?:\s*,\s*\d{1,2})*\]")
+
+
+# Lựa chọn nhắc tới lựa chọn khác ("Cả A và B", "Tất cả các đáp án trên") → không được đổi thứ tự
+_CROSS_OPTION = re.compile(r"\b[A-D]\b|tất cả|cả hai|cả (?:ba|bốn)|không (?:có )?đáp án nào|all of|none of|both", re.I)
+
+
+def balance_answers(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """D-69: model hay đặt đáp án đúng ở A. Phân bổ lại vị trí đáp án đúng ĐỀU cho A–D trong bộ câu (vòng lặp vị trí đã
+    xáo), các phương án nhiễu xáo ngẫu nhiên. Bỏ qua câu có lựa chọn nhắc tới lựa chọn khác. Sửa tại chỗ, trả lại list."""
+    import random
+
+    slots: list[int] = []
+    for it in items:
+        opts, correct = it.get("options") or [], it.get("correct")
+        if len(opts) != 4 or correct not in (0, 1, 2, 3) or any(_CROSS_OPTION.search(str(o)) for o in opts):
+            continue
+        if not slots:
+            slots = random.sample(range(4), 4)
+        target = slots.pop()
+        others = [o for k, o in enumerate(opts) if k != correct]
+        random.shuffle(others)
+        others.insert(target, opts[correct])
+        it["options"], it["correct"] = others, target
+    return items
 
 
 def strip_citations(text: str) -> str:
@@ -67,6 +97,20 @@ _WS = re.compile(r"\s+")
 
 def _norm(s: str) -> str:
     return _WS.sub(" ", s).strip().casefold()
+
+
+def dedupe_key(text: str) -> str:
+    """Chuỗi từ (bỏ dấu câu, ký hiệu gạch đầu dòng, khoảng trắng, hoa thường) — so trùng câu hỏi, kiểm câu trích."""
+    return " ".join(re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold()))
+
+
+def verified_quote(raw: Any, text: str) -> str:
+    """D-74: câu trích model đưa ra làm căn cứ — chỉ nhận khi ≥ 20 ký tự và ĐÚNG CHUỖI TỪ liên tiếp có trong `text`
+    (server kiểm, không tin model; model hay đổi "•" thành "–" hoặc thêm dấu chấm nên không so ký hiệu). Trả "" nếu
+    không kiểm được."""
+    q = str(raw or "").strip().strip("\"“”'")
+    words = dedupe_key(q)
+    return q[:QUOTE_MAX_CHARS] if len(q) >= 20 and f" {words} " in f" {dedupe_key(text)} " else ""
 
 
 def _claims_for(text: str, n: int) -> str:
@@ -128,7 +172,9 @@ def cited_pages(chunk: Chunk, quote: str, answer: str, n: int) -> tuple[int, int
 # [n], [1, 2], [1][2] trong câu trả lời — cùng quy tắc với frontend (ChatMessage.linkCites) để đếm lần xuất hiện khớp nhau
 CITE_GROUP_RE = re.compile(r"(?<![\w)])\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]")
 _LINE = re.compile(r"[^\n]+")
-EVIDENCE_MIN, EVIDENCE_MAX = 200, 600
+_TOKEN = re.compile(r"\w+")
+# D-70: đủ dài để nội dung trải qua vài slide liền nhau; vẫn chỉ gồm dòng liên quan (cửa sổ có chi phí mỗi dòng)
+EVIDENCE_MAX = 900
 
 
 def _sentence_at(text: str, pos: int) -> str:
@@ -138,32 +184,102 @@ def _sentence_at(text: str, pos: int) -> str:
     return text[start : min(ends) if ends else len(text)]
 
 
-def evidence_passage(chunk: Chunk, claim: str) -> tuple[str, int]:
-    """Đoạn trích ĐỦ Ý cho một câu trả lời (D-56): dòng trùng từ nhiều nhất với câu, mở rộng sang các dòng kề tới
-    ~200–600 ký tự (không cắt giữa dòng); trang lấy theo page_map tại dòng đầu. Không gọi LLM/embedding."""
+def _terms(text: str) -> tuple[set[str], set[tuple[str, str]]]:
+    """Âm tiết (≥ 3 ký tự) và CẶP âm tiết liền nhau. Tiếng Việt mang nghĩa ở cặp ("bảo trì", "yêu cầu"); âm tiết rời
+    như "các", "được", "của" xuất hiện khắp nơi nên chỉ dùng làm điểm phụ."""
+    toks = _TOKEN.findall(text.casefold())
+    return {t for t in toks if len(t) >= 3}, set(zip(toks, toks[1:], strict=False))
+
+
+def evidence_passage(chunk: Chunk, claim: str, avoid: set[int] | None = None) -> tuple[str, int, int, set[int]]:
+    """Đoạn trích ĐỦ Ý cho một câu trả lời (D-56, sửa D-66): chấm từng dòng theo cặp âm tiết trùng với câu (âm tiết
+    rời là điểm phụ), lấy dòng tốt nhất — dòng đã dùng cho lần [n] trước (`avoid`) bị trừ điểm để các lần trích khác
+    nhau không lặp một đoạn — rồi chỉ mở rộng sang dòng kề CÓ liên quan (dòng không liên quan chỉ thêm khi đoạn còn
+    quá ngắn). Đoạn bắt đầu ở dòng liên quan, trang theo page_map của dòng đầu. Không gọi LLM/embedding.
+    Cửa sổ có thể đi qua nhiều trang liền nhau khi các dòng tiếp theo vẫn liên quan (D-70).
+    Trả (đoạn trích, trang đầu, trang cuối, chỉ số các dòng đã dùng)."""
     lines = [(m.start(), m.group(0).strip()) for m in _LINE.finditer(chunk.text) if m.group(0).strip()]
     if not lines:
-        return chunk.text[:EVIDENCE_MAX], chunk.locator_value
-    words = set(re.findall(r"\w{3,}", claim.casefold()))
-    scores = [len(words & set(re.findall(r"\w{3,}", t.casefold()))) for _, t in lines]
-    best = max(range(len(lines)), key=lambda i: scores[i])
-    lo = hi = best
-    size = len(lines[best][1])
-    while True:  # mở rộng sang dòng kề (trước/sau) liên quan hơn; dòng không liên quan chỉ thêm khi còn quá ngắn
-        options = [
-            (scores[i], i == hi + 1, i)
-            for i in (lo - 1, hi + 1)
-            if 0 <= i < len(lines) and size + len(lines[i][1]) <= EVIDENCE_MAX
-        ]
-        if not options:
-            break
-        score, _, i = max(options)
-        if score == 0 and size >= EVIDENCE_MIN:
-            break
-        lo, hi = min(lo, i), max(hi, i)
-        size += len(lines[i][1])
-    quote = "\n".join(t for _, t in lines[lo : hi + 1])[: EVIDENCE_MAX + 200]
-    return quote, chunk.page_at(lines[lo][0])
+        return chunk.text[:EVIDENCE_MAX], chunk.locator_value, chunk.locator_value, set()
+    words, pairs = _terms(claim)
+    terms = [_terms(t) for _, t in lines]
+    # Độ hiếm trong chunk: cặp/âm tiết xuất hiện ở nhiều dòng ("mô hình", "kiểm thử" trong bài về kiểm thử) gần như
+    # không phân biệt được dòng nào đúng ý → trọng số log(N/df) ≈ 0.
+    n = len(lines)
+    df: dict[Any, int] = {}
+    for w, p in terms:
+        for x in w | p:
+            df[x] = df.get(x, 0) + 1
+    idf = {x: math.log((n + 1) / c) for x, c in df.items()}
+    scores = [sum(idf[x] for x in pairs & p) + 0.3 * sum(idf[x] for x in words & w) for w, p in terms]
+    avoid = avoid or set()
+    best = max(range(n), key=lambda i: (scores[i] * (0.6 if i in avoid else 1), -i))
+    # Cửa sổ dòng liên tiếp quanh dòng tốt nhất, tối đa tổng (điểm − ngưỡng): dòng chỉ đáng thêm khi đạt ~1/3 dòng tốt
+    # nhất → lấy trọn cụm liên quan, không kéo theo dòng lạc đề; dòng đầu cửa sổ phải liên quan.
+    cost = max(scores[best] / 3, 1e-6)
+    lens = [len(t) for _, t in lines]
+    # Dòng ranh giới slide là trung tính (không cộng, không trừ): số trang, nhãn biểu đồ một từ, dòng lặp lại sau khi
+    # bỏ số/dấu (tiêu đề slide nối tiếp, chân trang "Bộ môn … 12"). Chân trang = dòng lặp KHÔNG đứng đầu trang.
+    norm = [" ".join(re.findall(r"[^\W\d_]+", t)).casefold() for _, t in lines]
+    norm_count: dict[str, int] = {}
+    for x in norm:
+        norm_count[x] = norm_count.get(x, 0) + 1
+    page_of = [chunk.page_at(o) for o, _ in lines]
+    page_head = [i == 0 or page_of[i] != page_of[i - 1] for i in range(n)]
+    one_word = [len(t.split()) < 2 or len(re.findall(r"[^\W\d_]{2,}", t)) < 2 for _, t in lines]
+    footer = [norm_count[norm[i]] > 1 and not page_head[i] for i in range(n)]
+    neutral = [one_word[i] or norm_count[norm[i]] > 1 for i in range(n)]
+    gain = [0.0 if neutral[i] else scores[i] - cost for i in range(n)]
+    lo, hi, top = best, best, None
+    for a in range(max(0, best - 12), best + 1):
+        if a != best and (neutral[a] or scores[a] < cost):  # đoạn trích mở đầu bằng dòng liên quan
+            continue
+        for b in range(best, min(n, best + 25)):
+            if sum(lens[a : b + 1]) > EVIDENCE_MAX:
+                break
+            if b != best and neutral[b]:  # không kết thúc bằng số trang / chân trang
+                continue
+            value = (sum(gain[a : b + 1]), b - a)
+            if top is None or value > top:
+                lo, hi, top = a, b, value
+    lo, hi = _extend_continuation(chunk, lines, scores, cost, lens, lo, hi)
+    # hiển thị: bỏ số trang, nhãn biểu đồ, chân trang; giữ tiêu đề slide (kể cả lặp) làm mốc khi nối nhiều slide
+    shown = [lines[i][1] for i in range(lo, hi + 1) if not one_word[i] and not footer[i]]
+    quote = "\n".join(shown or [lines[best][1]])[:EVIDENCE_MAX]
+    return quote, chunk.page_at(lines[lo][0]), chunk.page_at(lines[hi][0]), set(range(lo, hi + 1))
+
+
+_CONT_SUFFIX = re.compile(r"\s*\((?:tiếp|tt|cont\.?|continued|\d+)\)\s*$", re.I)
+
+
+def _extend_continuation(
+    chunk: Chunk, lines: list[tuple[int, str]], scores: list[float], cost: float, lens: list[int], lo: int, hi: int
+) -> tuple[int, int]:
+    """D-70: nội dung trải nhiều slide liền nhau. Nếu slide kế trước / kế sau là slide NỐI TIẾP (cùng tiêu đề, hoặc
+    tiêu đề thêm "(tiếp)", "(2)") và có dòng liên quan (≥ ngưỡng), nối đoạn trích tới dòng liên quan xa nhất của slide
+    đó. Chỉ nối slide nối tiếp — slide khác chủ đề dù có từ trùng (vd "Vận hành và bảo trì") không bị kéo vào."""
+    pages = [chunk.page_at(o) for o, _ in lines]
+    title: dict[int, str] = {}
+    for i, (_, t) in enumerate(lines):
+        title.setdefault(pages[i], _CONT_SUFFIX.sub("", t).casefold())
+
+    def rows(pg: int) -> list[int]:
+        return [i for i in range(len(lines)) if pages[i] == pg and scores[i] >= cost]
+
+    for step in (1, -1):
+        while True:
+            edge = hi if step == 1 else lo
+            nxt = pages[edge] + step
+            if nxt not in title or title[nxt] != title[pages[edge]]:
+                break
+            relevant = rows(nxt)
+            if not relevant:
+                break
+            new_lo, new_hi = (lo, max(relevant)) if step == 1 else (min(relevant), hi)
+            if sum(lens[new_lo : new_hi + 1]) > EVIDENCE_MAX:
+                break
+            lo, hi = new_lo, new_hi
+    return lo, hi
 
 
 def occurrence_evidence(content: str, used: list[tuple[int, Hit]]) -> dict[str, list[dict[str, Any]]]:
@@ -171,14 +287,16 @@ def occurrence_evidence(content: str, used: list[tuple[int, Hit]]) -> dict[str, 
     đoạn chung cho mọi [n] (D-56). Frontend đếm lần xuất hiện theo cùng regex."""
     hits = {str(n): h for n, h in used}
     out: dict[str, list[dict[str, Any]]] = {}
+    taken: dict[str, set[int]] = {}  # dòng đã dùng cho mỗi [n] → lần sau ưu tiên dòng khác (D-66)
     for m in CITE_GROUP_RE.finditer(content):
         ns = [x.strip() for x in m.group(1).split(",")]
         if not all(n in hits for n in ns):
             continue
         claim = _sentence_at(content, m.start())
         for n in ns:
-            quote, page = evidence_passage(hits[n].chunk, claim)
-            out.setdefault(n, []).append({"quote": quote, "page": page})
+            quote, page, page_end, rows = evidence_passage(hits[n].chunk, claim, taken.get(n))
+            taken.setdefault(n, set()).update(rows)
+            out.setdefault(n, []).append({"quote": quote, "page": page, "page_end": page_end})
     return out
 
 
@@ -222,6 +340,7 @@ def attach_evidence(payload: dict[str, Any], used: list[tuple[int, Hit]]) -> str
     mặc định là trang đầu chunk (sai)."""
     hits = {str(n): h for n, h in used}
     claims = []
+    taken: dict[str, set[int]] = {}  # các mục cùng nguồn ưu tiên đoạn khác nhau (D-66)
     for part in _cited_parts(payload):
         for k, v in part.items():  # "nguồn 1" trong câu hỏi/thẻ/đáp án → tên tài liệu
             if isinstance(v, str):
@@ -232,23 +351,30 @@ def attach_evidence(payload: dict[str, Any], used: list[tuple[int, Hit]]) -> str
         ev = {}
         for n in map(str, part["sources"]):
             if n in hits:
-                quote, page = evidence_passage(hits[n].chunk, text)
-                ev[n] = {"quote": quote, "page": page}
+                quote, page, page_end, rows = evidence_passage(hits[n].chunk, text, taken.get(n))
+                taken.setdefault(n, set()).update(rows)
+                ev[n] = {"quote": quote, "page": page, "page_end": page_end}
                 claims.append(f"{text} [{n}].")
         if ev:
             part["evidence"] = ev
     return "\n".join(claims)
 
 
-def format_sources(hits: list[Hit]) -> str:
+def format_sources(hits: list[Hit], focus: str | None = None) -> str:
+    """Khối NGUỒN cho prompt. `focus` (câu hỏi + thuật ngữ): đặt thêm đoạn liên quan nhất của chunk lên đầu (D-68) —
+    chunk lớn nhiều trang khiến model nhỏ bỏ sót vài dòng định nghĩa nằm giữa; toàn văn vẫn giữ nguyên bên dưới."""
     blocks = []
     for i, h in enumerate(hits, start=1):
         pages = [p for _, p in h.chunk.page_map or []]
         span = f"{min(pages)}–{max(pages)}" if len(set(pages)) > 1 else str(h.chunk.locator_value)
         loc = f"{'trang' if h.chunk.locator_type == 'page' else 'slide'} {span}"
+        focus_part = ""
+        if focus and len(h.chunk.text) > EVIDENCE_MAX:
+            excerpt, page, _end, _ = evidence_passage(h.chunk, focus)
+            focus_part = f"[Đoạn liên quan nhất, trang {page}]\n{excerpt}\n[Toàn văn]\n"
         blocks.append(
             f'<nguon so="{i}" tai_lieu="{h.document.title}" phien_ban="{h.version.version_label}" vi_tri="{loc}">\n'
-            f"{h.chunk.text}\n</nguon>"
+            f"{focus_part}{h.chunk.text}\n</nguon>"
         )
     return "\n\n".join(blocks)
 
@@ -339,28 +465,81 @@ def json_dicts(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
     return [x for x in json_list(data, key) if isinstance(x, dict)]
 
 
+_SENT_SPLIT = re.compile(r"((?<=[.!?])[ \t]+|\n+)")
+_LEAD_LABELS = re.compile(r"^((?:\[\d{1,2}\])+)\s*")
+
+
+def split_sentences(text: str) -> list[list[str]]:
+    """Tách câu, GIỮ dấu phân cách để ghép lại đúng: [[câu, phân_cách], …]. Nhãn đứng sau dấu chấm ("… nhau. [1]")
+    được trả về câu trước (D-73)."""
+    parts = _SENT_SPLIT.split(text)
+    out: list[list[str]] = []
+    for i in range(0, len(parts), 2):
+        sent, sep = parts[i], parts[i + 1] if i + 1 < len(parts) else ""
+        m = _LEAD_LABELS.match(sent)
+        if m and out and out[-1][0].strip():
+            out[-1][0] = out[-1][0].rstrip() + " " + m.group(1)
+            sent = sent[m.end() :]
+        out.append([sent, sep])
+    return out
+
+
+def join_sentences(sents: list[list[str]]) -> str:
+    return "".join(s + sep for s, sep in sents).strip()
+
+
 def validate_citations(db: Session, user: User, text: str, hits: list[Hit]) -> tuple[str, list[tuple[int, Hit]], bool]:
     """FR-10.2: số [n] phải thuộc context thực tế; nguồn phải còn phục vụ được ngay lúc trả (AC-10.4).
 
-    Trả (nội dung đã bỏ số không hợp lệ, danh sách nguồn dùng, có nguồn bị loại do mất quyền?).
+    D-73: câu có nhãn KHÔNG hợp lệ (ID ngoài context — AC-10.1) hoặc trỏ nguồn vừa mất quyền bị XÓA CẢ CÂU, không chỉ
+    xóa nhãn — trước đây câu văn rút từ nguồn đã thu hồi vẫn tới người dùng, chỉ mất nhãn (BR-03, BR-10).
+    Trả (nội dung còn lại, danh sách nguồn dùng, có câu bị loại do nguồn mất quyền?).
     """
     used: dict[int, Hit] = {}
+    servable: dict[int, bool] = {}
     dropped_revoked = False
-
-    def repl(m: re.Match[str]) -> str:
-        nonlocal dropped_revoked
-        n = int(m.group(1))
-        if not 1 <= n <= len(hits):
-            return ""  # ID giả/ngoài context bị chặn (AC-10.1)
-        hit = hits[n - 1]
-        if n not in used:
-            if not still_servable(db, user, hit.version.id):
-                dropped_revoked = True
-                return ""
-            used[n] = hit
-        return m.group(0)
-
     # "[1, 3]" / "[1,3]" → "[1][3]" để MỌI số đều qua kiểm tra (không để nhãn gộp lọt khỏi validator)
     text = MULTI_CITATION_RE.sub(lambda m: "".join(f"[{n.strip()}]" for n in m.group(1).split(",")), text)
-    cleaned = CITATION_RE.sub(repl, text)
-    return cleaned.strip(), sorted(used.items()), dropped_revoked
+    kept = []
+    for sent, sep in split_sentences(text):
+        ns = [int(x) for x in CITATION_RE.findall(sent)]
+        bad = False
+        for n in ns:
+            if not 1 <= n <= len(hits):
+                bad = True  # ID giả/ngoài context
+                continue
+            if n not in servable:
+                servable[n] = still_servable(db, user, hits[n - 1].version.id)
+            if not servable[n]:
+                bad = dropped_revoked = True
+        if bad:
+            continue
+        used.update({n: hits[n - 1] for n in ns})
+        kept.append([sent, sep])
+    return join_sentences(kept), sorted(used.items()), dropped_revoked
+
+
+# Câu "dẫn dắt" không phải khẳng định học thuật (BR-04 không yêu cầu nguồn)
+_META = re.compile(r"^\W*(dưới đây|sau đây|như sau|tóm lại|nói cách khác|ví dụ minh họa|bạn có thể|hy vọng)", re.I)
+UNCITED_MARK = " *(chưa có trích dẫn)*"
+
+
+def mark_uncited(text: str) -> tuple[str, int]:
+    """D-73 — BR-04: mỗi khẳng định học thuật cần nguồn. Câu đủ dài (≥ 8 từ) không có [n], không phải câu dẫn dắt /
+    tiêu đề (kết thúc ":") / câu hỏi → đánh dấu "(chưa có trích dẫn)" ngay tại câu. Trả (nội dung, số câu đánh dấu)."""
+    sents = split_sentences(text)
+    marked = 0
+    for s in sents:
+        body = s[0].strip()
+        if (
+            not body
+            or CITATION_RE.search(body)
+            or len(body.split()) < 8
+            or body.endswith((":", "?"))
+            or _META.match(body)
+            or body.startswith(("#", "|", "$$"))
+        ):
+            continue
+        s[0] = s[0].rstrip() + UNCITED_MARK
+        marked += 1
+    return join_sentences(sents), marked

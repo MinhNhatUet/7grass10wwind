@@ -15,7 +15,7 @@ from src.models.orm import StudyPlan, User
 from src.services.assistants import BASE_POLICY, AssistantResult, call_json, format_sources, json_dicts, json_list
 from src.services.assistants.academic import answer as academic_answer
 from src.services.assistants.academic import evidence
-from src.services.policy import INSUFFICIENT_MESSAGE
+from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import Hit, still_servable
 
 LEVELS = {"short": "ngắn gọn", "step": "từng bước", "detailed": "chi tiết"}
@@ -166,16 +166,23 @@ def plan(
         ), None
     prev_note = ""
     if previous is not None:
-        prev_note = (
-            f"\nĐây là bản điều chỉnh của kế hoạch trước (mục tiêu: {previous.goal}); giữ các buổi đã hoàn thành."
-        )
+        from src.services.conversations import plan_view
+
+        previous_view = plan_view(db, user, previous)
+        if previous_view["masked"]:
+            return AssistantResult(
+                status="insufficient_evidence", content=SOURCE_WITHDRAWN_MESSAGE, payload={"kind": "plan"}
+            ), None
+        prev_note = f"\nĐây là bản điều chỉnh của kế hoạch trước (mục tiêu: {previous_view['goal']}); giữ các buổi đã hoàn thành."
     data = call_json(
         BASE_POLICY,
         "Lập lộ trình học chỉ dựa trên NGUỒN. Ưu tiên nền tảng trước phần phụ thuộc. Trả về JSON "
         '{"feasible":true|false,"sessions":[{"day":1,"title":"...","objective":"...","minutes":45,'
         '"activity":"đọc/làm ví dụ...","self_check":"cách tự kiểm tra","sources":[n]}],'
-        '"uncovered":["chủ đề thiếu nguồn"]}. '
-        f"Ràng buộc: {days} ngày, mỗi ngày tổng phút KHÔNG vượt {minutes}. Nếu không đủ thời gian, feasible=false."
+        '"uncovered":["chủ đề thiếu nguồn"],"deferred":["phần quan trọng chưa xếp được vì thiếu thời gian"]}. '
+        f"Ràng buộc: {days} ngày, mỗi ngày tổng phút KHÔNG vượt {minutes}. Nội dung nhiều hơn thời gian thì VẪN lập lộ "
+        'trình cho phần cốt lõi vừa quỹ thời gian và liệt kê phần còn lại trong "deferred"; chỉ đặt feasible=false khi '
+        "không thể xếp nổi một buổi có ý nghĩa nào."
         f"{prev_note}\n\nNGUỒN:\n{format_sources(hits)}\n\nMỤC TIÊU: {goal}",
         temperature=0.3,
     )
@@ -213,6 +220,9 @@ def plan(
     uncovered = [str(u) for u in json_list(data, "uncovered") if str(u).strip()]
     if uncovered:
         warnings.append("Thiếu nguồn cho: " + "; ".join(uncovered))
+    deferred = [str(u) for u in json_list(data, "deferred") if str(u).strip()]
+    if deferred:  # AC-03.4: quá tải vẫn báo rõ cho người học, nhưng có lộ trình cho phần cốt lõi (D-72)
+        warnings.append("Chưa đủ thời gian cho: " + "; ".join(deferred) + " — tăng số ngày/phút mỗi ngày để học thêm.")
     if any(s["missing_source"] for s in sessions):
         warnings.append("Một số buổi chưa có nguồn hợp lệ — cần xác nhận trước khi thực hiện.")
     plan_data = {

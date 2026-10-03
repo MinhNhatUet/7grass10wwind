@@ -166,7 +166,9 @@ class PDFNativeParser(BaseParser):
                         )
                     )
                 raw_text = "\n".join(element.text or "" for element in elements if element.text)
-                quality_flags = detect_page_quality(raw_text=raw_text, element_count=len(elements), image_count=image_count)
+                quality_flags = detect_page_quality(
+                    raw_text=raw_text, element_count=len(elements), image_count=image_count
+                )
                 quality_flags = sorted(set(quality_flags).union(page_flags))
                 pages.append(
                     PageIR(

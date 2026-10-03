@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.db import REPO_ROOT, get_engine, init_db
 from src.ingestion.course_registry import CourseRegistry, CourseRegistryError
-from src.models.orm import Chunk, Course, Document, DocumentVersion, Membership, PUBLISHED, User
+from src.models.orm import PUBLISHED, Chunk, Course, Document, DocumentVersion, Membership, User
 from src.services import ingestion, storage
 from src.services.auth import hash_password
 

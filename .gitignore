@@ -47,7 +47,8 @@ coverage.xml
 pytest_tmp/
 pytest-cache-files-*/
 test_artifacts/
-tmp/
+# Vector tạm của pipeline dữ liệu — không commit (BR-12)
+embedding_tmp/
 
 # Docker
 docker-compose.override.yml
@@ -66,7 +67,19 @@ out/
 .ai-log/*.jsonl
 .ai-log/archive/
 
-# Ingestion runtime artifacts
-artifacts/
+# Ghi chú công việc cá nhân — không push
+docs/documentions/cong_viec_TV1_edu04.md
+docs/rules/
+docs/coding_agent_rules.md
+docs/plans/
+docs/work/
+# Large media files (>100MB - use CDN or Git LFS instead)
+*.mp4
+*.mov
+*.avi
+*.mkv
+frontend/public/assets/*.mp4
 
-src/data.zip
+# Scratch & temporary
+scratch/
+output.json

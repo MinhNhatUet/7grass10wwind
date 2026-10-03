@@ -19,7 +19,16 @@ from sqlalchemy.orm import Session
 
 from src.models.orm import QUIZ_KINDS, CourseQuiz, QuizAttempt, User, new_id
 from src.services import acl, audit, page_render, usage
-from src.services.assistants import LlmError, call_json, json_dicts, json_list, track_usage
+from src.services.assistants import (
+    LlmError,
+    balance_answers,
+    call_json,
+    dedupe_key,
+    json_dicts,
+    json_list,
+    track_usage,
+    verified_quote,
+)
 from src.services.errors import AppError, bad_request, forbidden, not_found
 
 GRACE_S = 30
@@ -186,13 +195,16 @@ def _generate_prompt(text: str, count: int) -> str:
         "không viết lại ý; đáp án đúng theo đáp án/bảng đáp án trong tài liệu, tài liệu không có đáp án thì "
         '"correct": null; bỏ qua câu không có đủ 4 lựa chọn.\n'
         "- Nếu là tài liệu học (giáo trình, slide…): soạn câu mới CHỈ dựa trên nội dung tài liệu, mỗi câu đúng 1 đáp án "
-        "đúng và 3 phương án nhiễu hợp lý, trải đều các phần quan trọng; vị trí đáp án đúng phân bố ngẫu nhiên.\n"
+        "đúng và 3 phương án nhiễu hợp lý, trải đều các phần quan trọng; KHÔNG nhắc chữ cái A/B/C/D trong lựa chọn "
+        "hay giải thích (thứ tự lựa chọn sẽ được xáo).\n"
         '- "explanation": 1–2 câu vì sao đáp án đúng, dựa trên tài liệu (đề có sẵn không có lời giải thì để "").\n'
+        '- "proof" (chỉ với tài liệu học): câu CHÉP NGUYÊN VĂN (20–300 ký tự) từ tài liệu chứng minh đáp án đúng, GIỮ '
+        'NGUYÊN ngôn ngữ gốc (tài liệu tiếng Anh → proof tiếng Anh, KHÔNG dịch); đề có sẵn thì để "".\n'
         '- "correct" là chỉ số 0–3 (0 = A).\n'
         '- "source_type": "exam_with_key" (đề có bảng/dòng đáp án), "exam_without_key" (đề không có đáp án) hoặc '
         '"material" (tài liệu học).\n'
         'JSON: {"source_type":"...","questions":[{"text":"...","options":["...","...","...","..."],"correct":0,'
-        '"explanation":"..."}]}\n\n'
+        '"explanation":"...","proof":"..."}]}\n\n'
         f"<tai_lieu>\n{text}\n</tai_lieu>"
     )
 
@@ -212,11 +224,16 @@ def _has_answer_key(text: str) -> bool:
     )
 
 
+def _is_material(source_type: str, text: str) -> bool:
+    """Tài liệu học (model tự soạn câu), không phải đề có sẵn — theo model VÀ theo cấu trúc văn bản."""
+    looks_like_exam = len(_NUMBERED_Q.findall(text)) >= 2 and len(_OPTION_MARK.findall(text)) >= 4
+    return source_type == "material" and not looks_like_exam
+
+
 def _keep_answers(source_type: str, text: str) -> bool:
     """Đáp án do model trả có được giữ không. Tài liệu học: giữ (model soạn câu + đáp án từ nội dung, GV duyệt).
     Đề có sẵn (theo model hoặc theo cấu trúc văn bản): chỉ giữ khi PDF có dòng đáp án."""
-    looks_like_exam = len(_NUMBERED_Q.findall(text)) >= 2 and len(_OPTION_MARK.findall(text)) >= 4
-    if source_type == "material" and not looks_like_exam:
+    if _is_material(source_type, text):
         return True
     return source_type != "exam_without_key" and _has_answer_key(text)
 
@@ -251,16 +268,27 @@ def generate_from_pdf(db: Session, user: User, quiz_id: str, data: bytes, count:
                          latency_ms=(time.perf_counter() - started) * 1000, request_id=None, tokens=tokens)  # fmt: skip
             db.commit()
     keep = _keep_answers(str(out.get("source_type") or ""), text)
-    new = []
+    material = _is_material(str(out.get("source_type") or ""), text)
+    new, seen = [], {dedupe_key(str(q.get("text", ""))) for q in existing}
     for q in json_dicts(out, "questions")[:count]:
         opts = [_OPTION_PREFIX.sub("", str(o)).strip() for o in json_list(q, "options")]
-        if not str(q.get("text") or "").strip() or len(opts) != 4:
+        key = dedupe_key(str(q.get("text") or ""))
+        if not key or len(opts) != 4 or key in seen:
             continue
+        explanation = str(q.get("explanation") or "") if keep else ""
+        if material:  # D-74: câu AI tự soạn phải có câu trích nguyên văn trong PDF chứng minh đáp án, không có thì loại
+            proof = verified_quote(q.get("proof"), text)
+            if not proof:
+                continue
+            explanation = f"{explanation} Căn cứ trong tài liệu: “{proof}”".strip()
+        seen.add(key)
         correct = q.get("correct") if keep else None  # đề không có đáp án → GV tự chọn trước khi phát hành
         new.append({**q, "id": None, "options": opts, "correct": correct if correct in (0, 1, 2, 3) else None,
-                    "explanation": q.get("explanation") if keep else ""})  # fmt: skip
+                    "explanation": explanation})  # fmt: skip
     if not new:
         raise AppError("QUIZ_GENERATE_EMPTY", 422, message="Không tạo được câu hỏi nào từ file này.")
+    if material:
+        balance_answers(new)  # D-69: câu AI tự soạn → đáp án đúng chia đều A–D; đề có sẵn giữ nguyên thứ tự gốc
     cleaned = _clean({"title": quiz.title, "kind": quiz.kind, "time_limit_s": quiz.time_limit_s,
                       "questions": existing + new})  # fmt: skip
     quiz.questions = cleaned["questions"]

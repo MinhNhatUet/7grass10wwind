@@ -1,10 +1,13 @@
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import bearer_token, current_session, current_user
+from src.config import get_settings
 from src.db import get_db
 from src.models.orm import Course, User
 from src.models.schemas import (
@@ -17,9 +20,10 @@ from src.models.schemas import (
     SessionInfo,
     UserPublic,
 )
-from src.services import acl
+from src.services import acl, audit
 from src.services.auth import AuthService, get_auth_service, hash_password
 from src.services.auth import Session as AuthSession
+from src.services.errors import AppError
 
 router = APIRouter()
 
@@ -37,6 +41,40 @@ async def login(
 ) -> LoginResponse:
     client_ip = request.client.host if request.client else "unknown"
     token, session, user = auth.login(db, body.login_id, body.password, client_ip)
+    expires_in = int((session.expires_at - datetime.now(UTC)).total_seconds())
+    return LoginResponse(access_token=token, expires_in=expires_in, user=public_user(user))
+
+
+class DemoLogin(BaseModel):
+    # Không có admin: quản trị có quyền bật/tắt và đổi quyền hệ thống — không cho vào bằng nút demo không mật khẩu
+    role: Literal["student", "lecturer"]
+
+
+@router.get("/auth/demo-login")
+async def demo_login_status() -> dict[str, bool]:
+    """Frontend hỏi để biết có hiện nút "Đăng nhập demo" không."""
+    s = get_settings()
+    return {"enabled": s.demo_login_enabled and s.app_env != "production"}
+
+
+@router.post("/auth/demo-login", response_model=LoginResponse)
+async def demo_login(
+    body: DemoLogin,
+    db: Session = Depends(get_db),
+    auth: AuthService = Depends(get_auth_service),
+) -> LoginResponse:
+    """D-71: đăng nhập nhanh bằng tài khoản demo theo vai trò — mật khẩu không bao giờ xuống frontend. Chỉ hoạt động
+    khi DEMO_LOGIN_ENABLED=true và không phải production; tắt thì 404 (không lộ sự tồn tại). Có ghi audit."""
+    s = get_settings()
+    if not (s.demo_login_enabled and s.app_env != "production"):
+        raise AppError("NOT_FOUND", 404)
+    login_id = {"student": s.demo_cnpm_sinhvien_login, "lecturer": s.demo_cnpm_giangvien_login}[body.role]
+    user = db.scalar(select(User).where(User.login_id == login_id))
+    if user is None or user.status != "active" or user.role != body.role:
+        raise AppError("DEMO_ACCOUNT_UNAVAILABLE", 404, message="Chưa có tài khoản demo cho vai trò này.")
+    token, session = auth.sessions.create(user.id, auth.ttl)
+    audit.record(db, actor_id=user.id, action="demo_login", object_type="user", object_id=user.id)
+    db.commit()
     expires_in = int((session.expires_at - datetime.now(UTC)).total_seconds())
     return LoginResponse(access_token=token, expires_in=expires_in, user=public_user(user))
 

@@ -129,6 +129,7 @@ class HubTrace:
     eligible_candidate_count: int = 0
     reranked_candidate_count: int = 0
     reranker_fallback: bool = False
+    embedding_fallback: bool = False
     returned_count: int = 0
     filtered_reason_counts: dict[str, int] = field(default_factory=dict)
 
