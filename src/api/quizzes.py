@@ -14,6 +14,7 @@ from src.api.deps import current_user
 from src.config import get_settings
 from src.db import get_db
 from src.models.orm import Chunk, Conversation, Course, Message, StudyPlan, User
+from src.services import conversations as plan_svc
 from src.services import course_quiz as svc
 from src.services import page_render
 from src.services.errors import AppError
@@ -128,10 +129,12 @@ def my_plans(user: User = Depends(current_user), db: Session = Depends(get_db)) 
     )
     items = []
     for p in rows:
-        sessions = p.data.get("sessions", [])
+        view = plan_svc.plan_view(db, user, p)
+        sessions = view["sessions"]
         items.append(
             {
-                "id": p.id, "goal": p.goal, "status": p.status, "version": p.version, "course_id": p.course_id,
+                "id": p.id, "goal": view["goal"], "status": p.status, "version": p.version, "course_id": p.course_id,
+                "masked": view["masked"],
                 "days": p.days, "minutes_per_day": p.minutes_per_day, "conversation_id": p.conversation_id,
                 "done": sum(1 for s in sessions if s.get("status") == "done"), "total": len(sessions),
                 "updated_at": svc._iso(p.updated_at),

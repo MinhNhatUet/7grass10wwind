@@ -4,6 +4,7 @@ uvicorn[standard]>=0.34.0
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 python-dotenv>=1.0.0
+PyYAML>=6.0.0  # config/*.yaml của pipeline dữ liệu (src/ingestion)
 
 # AI / LangChain
 langchain>=0.3.0
@@ -20,6 +21,8 @@ psycopg2-binary>=2.9.0
 pypdf>=6.19,<7
 python-pptx>=1.0.2,<2
 pypdfium2==5.13.0
+PyMuPDF>=1.24.0  # src/ingestion: parser PDF, cắt ảnh công thức (import khi dùng)
+# paddleocr  # tùy chọn: nhận dạng công thức (src/ingestion/formula/recognizer.py), không cài mặc định
 python-multipart>=0.0.32
 numpy>=2.0,<3
 

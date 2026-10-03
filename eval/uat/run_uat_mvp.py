@@ -213,7 +213,9 @@ def no_secret(body: Any) -> bool:
 
 def setup() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    src = sqlite3.connect(f"file:{ROOT / 'data' / 'app.db'}?mode=ro", uri=True)
+    # UAT_SOURCE_DB: chạy UAT trên DB khác (vd. bản thử reindex) — mặc định data/app.db; luôn chép ra bản riêng
+    source = Path(os.environ.get("UAT_SOURCE_DB") or ROOT / "data" / "app.db")
+    src = sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)
     dst = sqlite3.connect(DB)
     src.backup(dst)
     dst.close()
@@ -334,7 +336,9 @@ def auth_03(c: Case) -> None:
     a = anon("POST", "/auth/login", json={"login_id": lid, "password": "wrong-password"})
     b = anon("POST", "/auth/login", json={"login_id": lid + "_khong_ton_tai", "password": "wrong-password"})
     c.evidence["wrong_pw"], c.evidence["no_user"] = a, b
-    c.check("Sai mật khẩu và không tồn tại: cùng mã/thông báo", a[0] == b[0] and a[1] == b[1], (a, b))
+    code = lambda r: (r[0], (r[1].get("error") or {}).get("code") if isinstance(r[1], dict) else r[1])  # noqa: E731
+    # so mã HTTP + mã lỗi; request_id (D-65) khác nhau ở mỗi request nên không so nguyên body
+    c.check("Sai mật khẩu và không tồn tại: cùng mã/thông báo", code(a) == code(b), (code(a), code(b)))
     codes = [anon("POST", "/auth/login", json={"login_id": lid, "password": "wrong"})[0] for _ in range(6)]
     c.evidence["codes"] = codes
     c.check("Vượt ngưỡng → 429", 429 in codes, codes)
@@ -423,7 +427,7 @@ def qa_04(c: Case) -> None:
     c.check("Đọc nhiều trang A", s == 200 and len(pages["pages"]) == 3, s)
     conv, s, m = ask(sv, "Tài liệu này nói gì về các mức kiểm thử?", document_id=a["document_id"])
     c.evidence["ask_A"] = m
-    c.check("Hỏi nội dung A: chỉ trích A", s == 200 and cited_docs(m) <= {a["document_id"]}, cited_docs(m))
+    c.check("Hỏi nội dung A: trả lời có trích A và chỉ trích A", s == 200 and cited_docs(m) == {a["document_id"]}, cited_docs(m))
     _, s, m2 = ask(sv, "Kỹ thuật phỏng vấn để thu thập yêu cầu được thực hiện thế nào?", conv)
     c.evidence["ask_B_in_A"] = m2
     c.check("Hỏi nội dung chỉ có trong B: không dùng B", s == 200 and other["document_id"] not in cited_docs(m2),
@@ -652,6 +656,9 @@ def _items_ok(c: Case, label: str, m: dict[str, Any], kind: str) -> list[dict]:
         c.check(f"{label} #{i}: có dẫn chứng riêng + trang", bool(it.get("evidence")) and all(
             "page" in e and e.get("quote") for e in it["evidence"].values()), list((it.get("evidence") or {}).keys()))  # fmt: skip
         c.check(f"{label} #{i}: không có 'nguồn n'", not NUM_SOURCE.search(text), NUM_SOURCE.findall(text))
+        c.check(f"{label} #{i}: có câu trích chứng minh đáp án (D-74)", len(it.get("proof") or "") >= 20, it.get("proof"))
+    keys = [" ".join(re.findall(r"\w+", str(it.get("question") or it.get("front") or it.get("sentence")).casefold())) for it in items]  # fmt: skip
+    c.check(f"{label}: không có câu trùng", len(keys) == len(set(keys)), len(keys) - len(set(keys)))
     quotes = [e["quote"] for it in items for e in (it.get("evidence") or {}).values()]
     if len(quotes) > 1:
         c.check(f"{label}: dẫn chứng không trùng hết một đoạn", len(set(quotes)) > 1, len(set(quotes)))
@@ -890,6 +897,8 @@ def qz_02(c: Case) -> None:
     if isinstance(r, dict) and r.get("questions"):
         c.check("[doc] câu hỏi bám tài liệu (nhắc Zorblax/Mintaro/Quillon)",
                 all(re.search(r"zorblax|mintaro|quillon", json.dumps(q, ensure_ascii=False), re.I) for q in r["questions"]))  # fmt: skip
+        c.check("[doc] mỗi câu có câu trích chứng minh đáp án (D-74)",
+                all("Căn cứ trong tài liệu:" in (q.get("explanation") or "") for q in r["questions"]))  # fmt: skip
     _, _, r = out["key"]
     if isinstance(r, dict) and len(r.get("questions", [])) == 3:
         got = [q["correct"] for q in r["questions"]]
@@ -1097,7 +1106,7 @@ def ops_01(c: Case) -> None:
     c.check("Response không lộ key/stack trace", no_secret(b))
     s, b = sv("GET", f"/documents?course_id={COURSE}")
     c.check("Thư viện vẫn dùng được khi LLM lỗi", s == 200 and b["items"], s)
-    Server.start({"GEMINI_API_KEY": "invalid-uat-key"}, tag="embed_down")
+    Server.start({"GEMINI_API_KEY": "invalid-uat-key", "EMBEDDING_API_KEY": "invalid-uat-key"}, tag="embed_down")
     sv = login("sinhvien", CTX["pw"]["CNPM_SINHVIEN"])
     _, s, b = ask(sv, "Kiểm thử hộp đen là gì?")
     c.evidence["embed_down"] = {"status": s, "body": b}

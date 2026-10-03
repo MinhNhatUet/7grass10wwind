@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -30,7 +31,9 @@ BASE_POLICY = """Bạn là trợ lý học thuật của Trung tâm X. Quy tắc
 5. Nếu nguồn mâu thuẫn, nêu rõ cả hai và nguồn của từng bên, không tự chọn (BR-08).
 6. Phân biệt rõ phần có trong nguồn và phần suy luận từ nguồn ("Suy luận từ [n]: ...").
 7. LUÔN viết câu trả lời bằng tiếng Việt, KỂ CẢ khi NGUỒN bằng tiếng Anh: diễn đạt lại ý bằng tiếng Việt, giữ thuật
-   ngữ gốc trong ngoặc khi giúp hiểu, vd "tính kết dính (cohesion)". Chỉ trường "quotes" được chép nguyên văn nguồn.
+   ngữ gốc trong ngoặc khi giúp hiểu, vd "tính kết dính (cohesion)". Chỉ trường "quotes"/"proof" được chép nguyên văn nguồn
+   (giữ nguyên ngôn ngữ gốc, không dịch).
+   Số liệu, đơn vị, ngưỡng phải GIỮ ĐÚNG như nguồn và viết bằng chữ số (nguồn "fourteen days" → "14 ngày").
    Không nêu điểm similarity như xác suất đúng.
 8. Viết MỌI công thức/ký hiệu toán bằng LaTeX: trong dòng $...$, riêng dòng $$...$$ (không dùng \\( \\) hay \\[ \\]).
    Văn bản NGUỒN trích từ PDF có thể vỡ ký hiệu (vd. "∑n i=1 mi" là $\\sum_{i=1}^{n} m_i$, "n 1 edges" là "$n-1$ edges"):
@@ -94,6 +97,20 @@ _WS = re.compile(r"\s+")
 
 def _norm(s: str) -> str:
     return _WS.sub(" ", s).strip().casefold()
+
+
+def dedupe_key(text: str) -> str:
+    """Chuỗi từ (bỏ dấu câu, ký hiệu gạch đầu dòng, khoảng trắng, hoa thường) — so trùng câu hỏi, kiểm câu trích."""
+    return " ".join(re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold()))
+
+
+def verified_quote(raw: Any, text: str) -> str:
+    """D-74: câu trích model đưa ra làm căn cứ — chỉ nhận khi ≥ 20 ký tự và ĐÚNG CHUỖI TỪ liên tiếp có trong `text`
+    (server kiểm, không tin model; model hay đổi "•" thành "–" hoặc thêm dấu chấm nên không so ký hiệu). Trả "" nếu
+    không kiểm được."""
+    q = str(raw or "").strip().strip("\"“”'")
+    words = dedupe_key(q)
+    return q[:QUOTE_MAX_CHARS] if len(q) >= 20 and f" {words} " in f" {dedupe_key(text)} " else ""
 
 
 def _claims_for(text: str, n: int) -> str:
@@ -448,28 +465,81 @@ def json_dicts(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
     return [x for x in json_list(data, key) if isinstance(x, dict)]
 
 
+_SENT_SPLIT = re.compile(r"((?<=[.!?])[ \t]+|\n+)")
+_LEAD_LABELS = re.compile(r"^((?:\[\d{1,2}\])+)\s*")
+
+
+def split_sentences(text: str) -> list[list[str]]:
+    """Tách câu, GIỮ dấu phân cách để ghép lại đúng: [[câu, phân_cách], …]. Nhãn đứng sau dấu chấm ("… nhau. [1]")
+    được trả về câu trước (D-73)."""
+    parts = _SENT_SPLIT.split(text)
+    out: list[list[str]] = []
+    for i in range(0, len(parts), 2):
+        sent, sep = parts[i], parts[i + 1] if i + 1 < len(parts) else ""
+        m = _LEAD_LABELS.match(sent)
+        if m and out and out[-1][0].strip():
+            out[-1][0] = out[-1][0].rstrip() + " " + m.group(1)
+            sent = sent[m.end() :]
+        out.append([sent, sep])
+    return out
+
+
+def join_sentences(sents: list[list[str]]) -> str:
+    return "".join(s + sep for s, sep in sents).strip()
+
+
 def validate_citations(db: Session, user: User, text: str, hits: list[Hit]) -> tuple[str, list[tuple[int, Hit]], bool]:
     """FR-10.2: số [n] phải thuộc context thực tế; nguồn phải còn phục vụ được ngay lúc trả (AC-10.4).
 
-    Trả (nội dung đã bỏ số không hợp lệ, danh sách nguồn dùng, có nguồn bị loại do mất quyền?).
+    D-73: câu có nhãn KHÔNG hợp lệ (ID ngoài context — AC-10.1) hoặc trỏ nguồn vừa mất quyền bị XÓA CẢ CÂU, không chỉ
+    xóa nhãn — trước đây câu văn rút từ nguồn đã thu hồi vẫn tới người dùng, chỉ mất nhãn (BR-03, BR-10).
+    Trả (nội dung còn lại, danh sách nguồn dùng, có câu bị loại do nguồn mất quyền?).
     """
     used: dict[int, Hit] = {}
+    servable: dict[int, bool] = {}
     dropped_revoked = False
-
-    def repl(m: re.Match[str]) -> str:
-        nonlocal dropped_revoked
-        n = int(m.group(1))
-        if not 1 <= n <= len(hits):
-            return ""  # ID giả/ngoài context bị chặn (AC-10.1)
-        hit = hits[n - 1]
-        if n not in used:
-            if not still_servable(db, user, hit.version.id):
-                dropped_revoked = True
-                return ""
-            used[n] = hit
-        return m.group(0)
-
     # "[1, 3]" / "[1,3]" → "[1][3]" để MỌI số đều qua kiểm tra (không để nhãn gộp lọt khỏi validator)
     text = MULTI_CITATION_RE.sub(lambda m: "".join(f"[{n.strip()}]" for n in m.group(1).split(",")), text)
-    cleaned = CITATION_RE.sub(repl, text)
-    return cleaned.strip(), sorted(used.items()), dropped_revoked
+    kept = []
+    for sent, sep in split_sentences(text):
+        ns = [int(x) for x in CITATION_RE.findall(sent)]
+        bad = False
+        for n in ns:
+            if not 1 <= n <= len(hits):
+                bad = True  # ID giả/ngoài context
+                continue
+            if n not in servable:
+                servable[n] = still_servable(db, user, hits[n - 1].version.id)
+            if not servable[n]:
+                bad = dropped_revoked = True
+        if bad:
+            continue
+        used.update({n: hits[n - 1] for n in ns})
+        kept.append([sent, sep])
+    return join_sentences(kept), sorted(used.items()), dropped_revoked
+
+
+# Câu "dẫn dắt" không phải khẳng định học thuật (BR-04 không yêu cầu nguồn)
+_META = re.compile(r"^\W*(dưới đây|sau đây|như sau|tóm lại|nói cách khác|ví dụ minh họa|bạn có thể|hy vọng)", re.I)
+UNCITED_MARK = " *(chưa có trích dẫn)*"
+
+
+def mark_uncited(text: str) -> tuple[str, int]:
+    """D-73 — BR-04: mỗi khẳng định học thuật cần nguồn. Câu đủ dài (≥ 8 từ) không có [n], không phải câu dẫn dắt /
+    tiêu đề (kết thúc ":") / câu hỏi → đánh dấu "(chưa có trích dẫn)" ngay tại câu. Trả (nội dung, số câu đánh dấu)."""
+    sents = split_sentences(text)
+    marked = 0
+    for s in sents:
+        body = s[0].strip()
+        if (
+            not body
+            or CITATION_RE.search(body)
+            or len(body.split()) < 8
+            or body.endswith((":", "?"))
+            or _META.match(body)
+            or body.startswith(("#", "|", "$$"))
+        ):
+            continue
+        s[0] = s[0].rstrip() + UNCITED_MARK
+        marked += 1
+    return join_sentences(sents), marked

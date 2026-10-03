@@ -43,6 +43,12 @@ logs/
 htmlcov/
 .coverage
 coverage.xml
+.pytest_cache/
+pytest_tmp/
+pytest-cache-files-*/
+test_artifacts/
+# Vector tạm của pipeline dữ liệu — không commit (BR-12)
+embedding_tmp/
 
 # Docker
 docker-compose.override.yml
@@ -66,6 +72,7 @@ docs/documentions/cong_viec_TV1_edu04.md
 docs/rules/
 docs/coding_agent_rules.md
 docs/plans/
+docs/work/
 # Large media files (>100MB - use CDN or Git LFS instead)
 *.mp4
 *.mov

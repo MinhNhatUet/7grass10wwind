@@ -4,34 +4,22 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from src.knowledge_hub import HubSearchRequest
 from src.models.orm import User
 from src.services.assistants import AssistantResult
+from src.services.knowledge_hub_database import hub_response_view, search_database_session
 from src.services.policy import HUB_EMPTY_MESSAGE
-from src.services.retrieval import search
 
 HUB_TOP_K = 20
-SNIPPET_CHARS = 280
 
 
 def find(db: Session, user: User, course_id: str, query: str) -> AssistantResult:
-    hits = search(db, user, course_id, query, k=HUB_TOP_K)
-    best: dict[str, dict] = {}
-    for h in hits:  # hits đã sắp theo điểm giảm dần; giữ đoạn tốt nhất mỗi tài liệu
-        if h.document.id in best:
-            continue
-        best[h.document.id] = {
-            "document_id": h.document.id,
-            "version_id": h.version.id,
-            "chunk_id": h.chunk.id,
-            "title": h.document.title,
-            "doc_type": h.document.doc_type,
-            "version_label": h.version.version_label,
-            "chapter": h.version.chapter,
-            "snippet": h.chunk.text[:SNIPPET_CHARS],
-            "locator": {"type": h.chunk.locator_type, "value": h.chunk.locator_value},
-            "can_download": False,  # tính ở API theo quyền tải riêng
-        }
-    results = list(best.values())
+    response = search_database_session(
+        db,
+        user,
+        HubSearchRequest(query=query, course_id=course_id, page=1, page_size=HUB_TOP_K),
+    )
+    results = hub_response_view(db, response)["items"]
     if not results:
         return AssistantResult(
             status="insufficient_evidence", content=HUB_EMPTY_MESSAGE, payload={"kind": "hub", "results": []}

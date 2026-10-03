@@ -1,0 +1,1 @@
+"""Metadata resolution for ingestion."""

@@ -1,0 +1,1 @@
+"""Quality detection and scoring."""

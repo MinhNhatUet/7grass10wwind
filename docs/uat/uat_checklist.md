@@ -1,5 +1,7 @@
 # Checklist UAT (BL-30)
 
+> Bộ này giữ yêu cầu gốc PRD v1. Với MVP hiện tại, dùng [UAT MVP chi tiết](uat_mvp.md) và [báo cáo thực thi MVP](uat_mvp_report.md); bảng truy vết trong bộ mới chỉ rõ phần nào còn thuộc v1/nâng cao.
+
 Chép nguyên văn từ [PRD 14.2](../documentions/PRD_edu04.md). Không tự thêm kịch bản. Kết quả thực hiện ghi ở [uat_report.md](uat_report.md).
 
 | Mã | Tiền điều kiện và thao tác | Kết quả chấp nhận |

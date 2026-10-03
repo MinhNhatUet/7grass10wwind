@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     embedding_model: str = ""
     embedding_dimension: int | None = Field(default=None, gt=0)
     gemini_api_key: str = ""
+    # D-77: key riêng cho embedding OpenAI chính hãng. Có giá trị → gọi thẳng OpenAI (EMBEDDING_BASE_URL nếu cần đổi);
+    # để trống → provider "openai" dùng endpoint AI_* như trước.
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
 
     # Auth tối giản MVP (UC-09). Giá trị giới hạn là đề xuất — PRD 11.2 chỉ yêu cầu "rate limit".
     auth_users_file: str = "data/auth/users.json"
