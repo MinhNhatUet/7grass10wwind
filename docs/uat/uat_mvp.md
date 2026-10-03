@@ -935,4 +935,3 @@ Sau mỗi ca thay đổi cấu hình/quyền/provider, kỹ thuật viên khôi 
 ## 8. Giới hạn đã biết trước lượt chạy
 
 Rà soát ngày 2026-10-02 trước khi soạn bộ này ghi nhận: frontend lint còn lỗi; typecheck vướng route types cũ; chưa có báo cáo eval/UAT thật; quota UI chưa lưu server; endpoint mẫu `/api/v1/chat` còn mount. Đây là đầu vào cho triage, **không phải kết quả chạy các ca trên**. Kiểm tra lại theo đúng build sẽ nghiệm thu, đặc biệt gỡ/giới hạn endpoint mẫu trước phát hành.
-
