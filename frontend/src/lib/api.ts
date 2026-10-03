@@ -124,7 +124,7 @@ export interface StudyItem {
   sources: number[];
   evidence?: ItemEvidence; // đoạn trích riêng của thẻ này theo từng [n] (D-57)
 }
-export type ItemEvidence = Record<string, { quote: string; page: number }>;
+export type ItemEvidence = Record<string, { quote: string; page: number; page_end?: number }>;
 
 export interface TriageSections {
   definitions: { term?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];

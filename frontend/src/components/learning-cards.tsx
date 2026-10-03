@@ -36,7 +36,7 @@ function Cites({ ns, ev, cx }: { ns: number[]; ev?: ItemEvidence; cx: CiteCtx })
       {ns.map((n) => {
         const s = cx.sources.find((x) => String(x.id) === String(n));
         const own = ev?.[String(n)];
-        return s ? <CitationBadge key={n} source={own ? { ...s, content: own.quote, page: own.page, pageEnd: null } : s} onClick={cx.onSource} /> : null;
+        return s ? <CitationBadge key={n} source={own ? { ...s, content: own.quote, page: own.page, pageEnd: own.page_end ?? null } : s} onClick={cx.onSource} /> : null;
       })}
     </>
   );

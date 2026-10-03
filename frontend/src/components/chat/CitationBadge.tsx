@@ -7,21 +7,23 @@ import type { Source } from "@/types/chat";
 interface CitationBadgeProps {
   source: Source;
   onClick: (source: Source) => void;
+  /** Số hiển thị (D-67: mỗi vị trí tài liệu + trang một số); mặc định là số nguồn [n] */
+  label?: number | string;
 }
 
 const pages = (s: Source) => `${s.page}${s.pageEnd && s.pageEnd !== s.page ? `–${s.pageEnd}` : ""}`;
 
-export function CitationBadge({ source, onClick }: CitationBadgeProps) {
+export function CitationBadge({ source, onClick, label }: CitationBadgeProps) {
   return (
     <HoverCard.Root openDelay={120} closeDelay={150}>
       <HoverCard.Trigger asChild>
         <button
           type="button"
           onClick={() => onClick(source)}
-          aria-label={`Nguồn ${source.id}: ${source.title}, trang ${pages(source)}`}
+          aria-label={`Nguồn ${label ?? source.id}: ${source.title}, trang ${pages(source)}`}
           className="inline-flex items-center justify-center min-w-[1.4rem] h-[1.15rem] px-1 mx-0.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold leading-none align-[0.15em] cursor-pointer border-0 transition-colors"
         >
-          {source.id}
+          {label ?? source.id}
         </button>
       </HoverCard.Trigger>
       <HoverCard.Portal>
