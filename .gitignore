@@ -64,6 +64,7 @@ out/
 # Ghi chú công việc cá nhân — không push
 docs/documentions/cong_viec_TV1_edu04.md
 docs/rules/
+docs/coding_agent_rules.md
 docs/plans/
 # Large media files (>100MB - use CDN or Git LFS instead)
 *.mp4
