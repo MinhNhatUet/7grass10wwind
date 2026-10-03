@@ -25,6 +25,7 @@ from src.models.orm import (
     Course,
     Document,
     DocumentVersion,
+    Membership,
     Message,
     StudyPlan,
     UsageEvent,
@@ -167,8 +168,14 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
                 "quote": c.quote,
             }
         )
-    payload = dict(msg.payload or {})
+    payload = copy.deepcopy(msg.payload or {})
     content = msg.content
+    if payload.get("plan_id"):
+        plan = db.get(StudyPlan, payload["plan_id"])
+        view = plan_view(db, user, plan) if plan and plan.owner_id == user.id else None
+        payload["plan"] = view
+        if view is None or view["masked"]:
+            masked = True  # Plan provenance also protects chat after citations are cleaned up.
     if masked:  # không tách an toàn được → che cả message
         content, citations, payload = SOURCE_WITHDRAWN_MESSAGE, [], {"kind": payload.get("kind"), "masked": True}
     elif payload.get("kind") == "hub":
@@ -178,9 +185,6 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
             content, payload["masked"] = SOURCE_WITHDRAWN_MESSAGE, True
         for r in payload["results"]:
             r["can_download"] = _can_download(db, user, r["version_id"])
-    if payload.get("plan_id"):
-        plan = db.get(StudyPlan, payload["plan_id"])
-        payload["plan"] = plan_view(db, user, plan) if plan and plan.owner_id == user.id else None
     return {
         "request_id": msg.request_id,
         "answer_id": msg.id if msg.role == "assistant" else None,
@@ -304,7 +308,11 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     # Router chỉ được chọn trong các môn user đang được đọc (BR-02); hội thoại cố định môn thì chỉ môn đó
     readable = acl.readable_course_ids(db, user)
     candidates = [conv.course_id] if conv.course_id else readable
-    plan_id = (body.get("learning") or {}).get("plan_id")
+    options = body.get("learning") or {}
+    for linked_id in (options.get("plan_id"), options.get("previous_plan_id")):
+        if linked_id and plan_view(db, user, get_plan(db, user, linked_id))["masked"]:
+            raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
+    plan_id = options.get("plan_id")
     if plan_id:  # D-37: bài ôn tập của một buổi trong lộ trình — môn lấy từ lộ trình của chính user
         candidates = [get_plan(db, user, plan_id).course_id]
         if candidates[0] not in readable:
@@ -408,7 +416,7 @@ def _attach_plan(
         owner_id=user.id, course_id=course_id, conversation_id=conv.id, version=d["previous_version"] + 1,
         previous_id=d["previous_id"], status="Draft", goal=d["goal"][:2000], days=d["days"], minutes_per_day=d["minutes"],
         data={k: d[k] for k in ("sessions", "warnings", "total_minutes", "budget_minutes")}
-        | {"message_id": msg.id}
+        | {"message_id": msg.id, "source_versions": {str(n): hit.version.id for n, hit in result.used}}
         | ({"dates": d["dates"]} if d.get("dates") else {}),
     )  # fmt: skip
     db.add(plan)
@@ -425,20 +433,64 @@ def get_plan(db: Session, user: User, plan_id: str) -> StudyPlan:
 
 
 def plan_view(db: Session, user: User, plan: StudyPlan) -> dict[str, Any]:
-    msg = db.get(Message, plan.data.get("message_id")) if plan.data.get("message_id") else None
-    cit_version = {c.ordinal: c.version_id for c in (msg.citations if msg else [])}
-    sessions = []
-    for s in plan.data.get("sessions", []):
-        s = dict(s)
-        s["needs_update"] = any(
-            n in cit_version and not still_servable(db, user, cit_version[n]) for n in s.get("sources", [])
-        )  # AC-03.9
-        sessions.append(s)
+    """One fail-closed view for chat, detail, list and export (FR-03.9/05.4, BR-10).
+
+    Goal/warnings and cross-session content cannot be separated safely yet: loss
+    of any dependency masks the entire plan, not just its source links.
+    """
+    if plan.owner_id != user.id:
+        raise not_found()
+    # Recheck current principal/membership, including changes during a long request.
+    db.refresh(user)
+    db.scalars(select(Membership).where(Membership.user_id == user.id).execution_options(populate_existing=True)).all()
+    permitted = acl.can_read_course(db, user, plan.course_id)
+    course = db.get(Course, plan.course_id)
+    if course is not None:
+        db.refresh(course)
+    permitted = permitted and course is not None and course.status != "withdrawn"
+
+    data = plan.data or {}
+    if "source_versions" in data:
+        sources = data["source_versions"]
+    else:  # Legacy plans: recover provenance without relying on cached relationships.
+        msg = db.get(Message, data.get("message_id")) if data.get("message_id") else None
+        conv = db.get(Conversation, msg.conversation_id) if msg else None
+        sources = (
+            dict(db.execute(select(Citation.ordinal, Citation.version_id).where(Citation.message_id == msg.id)).all())
+            if msg and conv and conv.owner_id == user.id and msg.conversation_id == plan.conversation_id
+            else {}
+        )
+    sources = {str(n): v for n, v in sources.items()} if isinstance(sources, dict) else {}
+    sessions = data.get("sessions", [])
+    masked = not permitted or not sources
+    if not masked:
+        masked = any(not v or not still_servable(db, user, v) for v in sources.values()) or any(
+            str(n) not in sources for s in sessions for n in s.get("sources", [])
+        )
+    if masked:
+        # Whitelist only scheduling/progress. Drop evidence/proof and unknown text fields.
+        sessions = [
+            {
+                **{k: s[k] for k in ("id", "day", "minutes", "status") if k in s},
+                "title": SOURCE_WITHDRAWN_MESSAGE,
+                "objective": "",
+                "activity": "",
+                "self_check": "",
+                "sources": [],
+                "missing_source": True,
+                "needs_update": True,
+            }
+            for s in sessions
+        ]
+    else:
+        sessions = [{**copy.deepcopy(s), "needs_update": False} for s in sessions]
     return {
-        "id": plan.id, "version": plan.version, "previous_id": plan.previous_id, "status": plan.status, "goal": plan.goal,
+        "id": plan.id, "version": plan.version, "previous_id": plan.previous_id, "status": plan.status,
+        "goal": SOURCE_WITHDRAWN_MESSAGE if masked else plan.goal,
         "days": plan.days, "minutes_per_day": plan.minutes_per_day, "sessions": sessions,
-        "warnings": plan.data.get("warnings", []), "total_minutes": plan.data.get("total_minutes"),
-        "budget_minutes": plan.data.get("budget_minutes"), "dates": plan.data.get("dates"),
+        "warnings": [SOURCE_WITHDRAWN_MESSAGE] if masked else copy.deepcopy(data.get("warnings", [])),
+        "total_minutes": data.get("total_minutes"), "budget_minutes": data.get("budget_minutes"),
+        "dates": copy.deepcopy(data.get("dates")), "masked": masked,
     }  # fmt: skip
 
 

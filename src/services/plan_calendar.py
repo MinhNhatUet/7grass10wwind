@@ -7,8 +7,10 @@ nên nhập lại bản cập nhật sẽ ghi đè thay vì nhân đôi.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 
-from src.models.orm import StudyPlan
+from src.services.errors import AppError
+from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
 
 TZ = "Asia/Ho_Chi_Minh"  # ponytail: một múi giờ cố định cho pilot; thêm tham số tz khi có người dùng ngoài VN
 
@@ -30,17 +32,28 @@ def _fold(line: str) -> str:
     return "\r\n".join(out)
 
 
-def day_date(plan: StudyPlan, day: int, start: date | None) -> date:
+def day_date(plan: dict[str, Any], day: int, start: date | None) -> date:
     """Ngày thật của "ngày k": theo danh sách ngày người học chọn (D-46), nếu không thì start + k − 1."""
-    dates = plan.data.get("dates") or []
+    dates = plan.get("dates") or []
     if dates and 1 <= day <= len(dates):
         return date.fromisoformat(dates[day - 1])
     assert start is not None
     return start + timedelta(days=day - 1)
 
 
-def plan_ics(plan: StudyPlan, start: date | None, at: time, app_url: str | None = None) -> str:
-    """Ngày 1 của lộ trình = `start` (hoặc ngày đã chọn); các buổi cùng ngày xếp liền nhau từ giờ `at`."""
+def require_exportable_plan(plan: dict[str, Any]) -> None:
+    """Export only the server-authorized view; raw ORM plans are not accepted."""
+    if (
+        not isinstance(plan, dict)
+        or plan.get("masked") is not False
+        or any(s.get("needs_update") for s in plan.get("sessions", []))
+    ):
+        raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
+
+
+def plan_ics(plan: dict[str, Any], start: date | None, at: time, app_url: str | None = None) -> str:
+    """Render a plan_view snapshot, never raw StudyPlan data (BR-03/10)."""
+    require_exportable_plan(plan)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     lines = [
         "BEGIN:VCALENDAR",
@@ -48,11 +61,11 @@ def plan_ics(plan: StudyPlan, start: date | None, at: time, app_url: str | None 
         "PRODID:-//EDU-04//Lo trinh hoc//VI",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
-        f"X-WR-CALNAME:{_esc('EDU-04 · ' + plan.goal[:60])}",
+        f"X-WR-CALNAME:{_esc('EDU-04 · ' + plan['goal'][:60])}",
         f"X-WR-TIMEZONE:{TZ}",
     ]
     offset: dict[int, int] = {}  # phút đã dùng trong mỗi ngày
-    for s in sorted(plan.data.get("sessions", []), key=lambda x: (x.get("day", 0), x.get("id", ""))):
+    for s in sorted(plan.get("sessions", []), key=lambda x: (x.get("day", 0), x.get("id", ""))):
         day, minutes = int(s["day"]), int(s["minutes"])
         begin = datetime.combine(day_date(plan, day, start), at) + timedelta(minutes=offset.get(day, 0))
         offset[day] = offset.get(day, 0) + minutes
@@ -65,7 +78,7 @@ def plan_ics(plan: StudyPlan, start: date | None, at: time, app_url: str | None 
             desc.append(app_url)
         lines += [
             "BEGIN:VEVENT",
-            f"UID:{plan.id}-{s.get('id')}@edu04",
+            f"UID:{plan['id']}-{s.get('id')}@edu04",
             f"DTSTAMP:{stamp}",
             f"DTSTART;TZID={TZ}:{begin:%Y%m%dT%H%M%S}",
             f"DTEND;TZID={TZ}:{end:%Y%m%dT%H%M%S}",
@@ -83,8 +96,7 @@ def plan_ics(plan: StudyPlan, start: date | None, at: time, app_url: str | None 
 
 
 if __name__ == "__main__":  # tự kiểm: python -m src.services.plan_calendar
-    p = StudyPlan(id="plan_x", goal="Đồ thị, chu trình; Euler", days=2, minutes_per_day=90)
-    p.data = {"sessions": [
+    p = {"id": "plan_x", "goal": "Đồ thị, chu trình; Euler", "masked": False, "sessions": [
         {"id": "s1", "day": 1, "title": "Đồ thị cơ bản", "objective": "a, b; c", "activity": "đọc", "minutes": 45},
         {"id": "s2", "day": 1, "title": "Bậc", "objective": "x" * 200, "activity": "làm", "minutes": 30},
         {"id": "s3", "day": 2, "title": "Euler", "objective": "y", "activity": "z", "minutes": 60},

@@ -14,7 +14,7 @@ from src.db import get_db
 from src.models.orm import Conversation, User
 from src.services import conversations as svc
 from src.services.errors import AppError
-from src.services.plan_calendar import plan_ics
+from src.services.plan_calendar import plan_ics, require_exportable_plan
 
 router = APIRouter()
 # D-61: admin quản trị hệ thống, không dùng Hỏi đáp (cũng không đọc nội dung học tập — AC-01.6)
@@ -180,10 +180,15 @@ def plan_calendar(
     plan = svc.get_plan(db, user, plan_id)
     if plan.status not in ("Confirmed", "InProgress", "Paused"):
         raise AppError("PLAN_NOT_ACTIVE", 409)
-    if start is None and not plan.data.get("dates"):
+    view = svc.plan_view(db, user, plan)
+    require_exportable_plan(view)
+    if start is None and not view.get("dates"):
         raise AppError("VALIDATION_ERROR", 422, message="Thiếu ngày bắt đầu (start).")
+    calendar = plan_ics(view, start, at)
+    # Discard the rendered snapshot if permissions changed before the response.
+    require_exportable_plan(svc.plan_view(db, user, plan))
     return Response(
-        plan_ics(plan, start, at),
+        calendar,
         media_type="text/calendar; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="lo-trinh-{plan.id}.ics"', "Cache-Control": "no-store"},
     )
