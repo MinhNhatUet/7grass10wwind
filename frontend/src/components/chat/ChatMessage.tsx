@@ -37,12 +37,34 @@ function linkCites(text: string, ids: Set<string>): string {
   });
 }
 
-type Evidence = Record<string, { quote: string; page: number }[]>;
+type Evidence = Record<string, { quote: string; page: number; page_end?: number }[]>; // D-70: page_end khi đoạn trải nhiều trang
+
+/** D-67: số hiển thị theo ĐOẠN dẫn chứng (nguồn + trang + đoạn trích), đánh 1, 2, 3… theo thứ tự xuất hiện — một nguồn
+ *  trải nhiều trang/ý không còn hiện toàn "1"; trích lại đúng đoạn cũ thì dùng lại số cũ. Khóa "n-k" như href #cite-n-k. */
+function citeLabels(text: string, ids: Set<string>, evidence: Evidence | undefined): Record<string, number> {
+  const seen: Record<string, number> = {};
+  const byPlace: Record<string, number> = {};
+  const out: Record<string, number> = {};
+  for (const m of text.matchAll(CITE_RE)) {
+    const ns = m[1].split(",").map((x) => x.trim());
+    if (!ns.every((n) => ids.has(n))) continue;
+    for (const n of ns) {
+      const k = seen[n] ?? 0;
+      seen[n] = k + 1;
+      const ev = evidence?.[n]?.[k];
+      const place = `${n}@${ev?.page ?? ""}@${ev?.quote.slice(0, 80) ?? ""}`;
+      byPlace[place] ??= Object.keys(byPlace).length + 1;
+      out[`${n}-${k}`] = byPlace[place];
+    }
+  }
+  return out;
+}
 
 export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, onSend }: ChatMessageProps) {
   const [feedbackSent, setFeedbackSent] = useState<string | null>(null);
   const hideSources = HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "");
   const sourceIds = new Set((msg.sources ?? []).map((x) => String(x.id)));
+  const labels = citeLabels(msg.content, sourceIds, (msg.meta as { evidence?: Evidence } | undefined)?.evidence);
   // Có nguồn nhưng câu trả lời không gắn [n] nào → vẫn cho xem nguồn bằng hàng chip nhỏ (không mất nguồn)
   const unlinked = !hideSources && !!msg.sources?.length && !linkCites(msg.content, sourceIds).includes("](#cite-");
 
@@ -91,8 +113,8 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
                     if (m && cite) {
                       // đoạn trích riêng của câu này (nếu có), không thì đoạn trích chung của nguồn
                       const ev = (msg.meta as { evidence?: Evidence } | undefined)?.evidence?.[m[1]]?.[Number(m[2])];
-                      const shown = ev ? { ...cite, content: ev.quote, page: ev.page, pageEnd: null } : cite;
-                      return <CitationBadge source={shown} onClick={onSourceClick} />;
+                      const shown = ev ? { ...cite, content: ev.quote, page: ev.page, pageEnd: ev.page_end ?? null } : cite;
+                      return <CitationBadge source={shown} onClick={onSourceClick} label={labels[`${m[1]}-${m[2]}`]} />;
                     }
                     return (
                       <a

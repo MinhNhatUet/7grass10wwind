@@ -23,6 +23,7 @@ from src.models.orm import User
 from src.services.assistants import (
     BASE_POLICY,
     AssistantResult,
+    balance_answers,
     call_json,
     format_sources,
     json_dicts,
@@ -186,7 +187,8 @@ def mcq(
     data = call_json(
         BASE_POLICY,
         f"Tạo {n} câu TRẮC NGHIỆM tự ôn về CHỦ ĐỀ, chỉ dựa trên NGUỒN. Mỗi câu 4 lựa chọn, đúng 1 đáp án đúng; các "
-        "lựa chọn sai phải hợp lý (lỗi hiểu nhầm thường gặp), không đánh đố. Giải thích ngắn vì sao đáp án đúng, theo nguồn n. "
+        "lựa chọn sai phải hợp lý (lỗi hiểu nhầm thường gặp), không đánh đố. Giải thích ngắn vì sao đáp án đúng, theo nguồn n; "
+        "KHÔNG nhắc chữ cái A/B/C/D trong giải thích hay lựa chọn (thứ tự lựa chọn sẽ được xáo). "
         'Trả về JSON {"items":[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","source":n}]} Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         f"(correct là chỉ số 0–3).\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
         temperature=0.4,
@@ -212,6 +214,7 @@ def mcq(
             }
         )
         used.update(refs[:1])
+    balance_answers(items)  # D-69: đáp án đúng không dồn vào A
     if not items:
         return _empty("mcq")
     return AssistantResult(

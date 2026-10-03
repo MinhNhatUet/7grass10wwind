@@ -35,7 +35,8 @@ INSTRUCTION = """Trả lời CÂU HỎI chỉ dựa trên NGUỒN. Trả về DU
  "clarification": "câu hỏi làm rõ ngắn (chỉ khi needs_clarification)"}
 - "partial": chỉ một số phần có căn cứ — liệt kê phần thiếu trong "missing".
 - "needs_clarification": câu hỏi mơ hồ về phạm vi/chủ thể/viết tắt.
-- "insufficient_evidence": nguồn không đủ để trả lời."""
+- "insufficient_evidence": CHỈ khi không NGUỒN nào nói về điều được hỏi. Nếu có nguồn định nghĩa/mô tả trực tiếp khái
+  niệm được hỏi (kể cả bằng tiếng Anh hoặc chỉ một phần) thì trả lời "answered"/"partial" dựa trên phần đó."""
 
 
 _topic_queries: ContextVar[list[str] | None] = ContextVar("topic_queries", default=None)
@@ -85,7 +86,8 @@ def answer(
     data = call_json(
         BASE_POLICY,
         f"{INSTRUCTION}{style_line}\n\nLỊCH SỬ (chỉ để hiểu ngữ cảnh, KHÔNG phải nguồn):\n{format_history(history)}"
-        f"\n\nNGUỒN:\n{format_sources(hits)}\n\nCÂU HỎI: {question}",
+        f"\n\nNGUỒN:\n{format_sources(hits, retrieval_query or question)}\n\nCÂU HỎI: {question}",
+        temperature=0,  # D-68: cùng nguồn, cùng câu hỏi → cùng kết luận (gpt-4o-mini lúc trả lời lúc từ chối)
     )
     status = data.get("status") if data.get("status") in ALLOWED else "insufficient_evidence"
     if status == "needs_clarification":

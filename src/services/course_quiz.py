@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from src.models.orm import QUIZ_KINDS, CourseQuiz, QuizAttempt, User, new_id
 from src.services import acl, audit, page_render, usage
-from src.services.assistants import LlmError, call_json, json_dicts, json_list, track_usage
+from src.services.assistants import LlmError, balance_answers, call_json, json_dicts, json_list, track_usage
 from src.services.errors import AppError, bad_request, forbidden, not_found
 
 GRACE_S = 30
@@ -186,7 +186,8 @@ def _generate_prompt(text: str, count: int) -> str:
         "không viết lại ý; đáp án đúng theo đáp án/bảng đáp án trong tài liệu, tài liệu không có đáp án thì "
         '"correct": null; bỏ qua câu không có đủ 4 lựa chọn.\n'
         "- Nếu là tài liệu học (giáo trình, slide…): soạn câu mới CHỈ dựa trên nội dung tài liệu, mỗi câu đúng 1 đáp án "
-        "đúng và 3 phương án nhiễu hợp lý, trải đều các phần quan trọng; vị trí đáp án đúng phân bố ngẫu nhiên.\n"
+        "đúng và 3 phương án nhiễu hợp lý, trải đều các phần quan trọng; KHÔNG nhắc chữ cái A/B/C/D trong lựa chọn "
+        "hay giải thích (thứ tự lựa chọn sẽ được xáo).\n"
         '- "explanation": 1–2 câu vì sao đáp án đúng, dựa trên tài liệu (đề có sẵn không có lời giải thì để "").\n'
         '- "correct" là chỉ số 0–3 (0 = A).\n'
         '- "source_type": "exam_with_key" (đề có bảng/dòng đáp án), "exam_without_key" (đề không có đáp án) hoặc '
@@ -212,11 +213,16 @@ def _has_answer_key(text: str) -> bool:
     )
 
 
+def _is_material(source_type: str, text: str) -> bool:
+    """Tài liệu học (model tự soạn câu), không phải đề có sẵn — theo model VÀ theo cấu trúc văn bản."""
+    looks_like_exam = len(_NUMBERED_Q.findall(text)) >= 2 and len(_OPTION_MARK.findall(text)) >= 4
+    return source_type == "material" and not looks_like_exam
+
+
 def _keep_answers(source_type: str, text: str) -> bool:
     """Đáp án do model trả có được giữ không. Tài liệu học: giữ (model soạn câu + đáp án từ nội dung, GV duyệt).
     Đề có sẵn (theo model hoặc theo cấu trúc văn bản): chỉ giữ khi PDF có dòng đáp án."""
-    looks_like_exam = len(_NUMBERED_Q.findall(text)) >= 2 and len(_OPTION_MARK.findall(text)) >= 4
-    if source_type == "material" and not looks_like_exam:
+    if _is_material(source_type, text):
         return True
     return source_type != "exam_without_key" and _has_answer_key(text)
 
@@ -261,6 +267,8 @@ def generate_from_pdf(db: Session, user: User, quiz_id: str, data: bytes, count:
                     "explanation": q.get("explanation") if keep else ""})  # fmt: skip
     if not new:
         raise AppError("QUIZ_GENERATE_EMPTY", 422, message="Không tạo được câu hỏi nào từ file này.")
+    if _is_material(str(out.get("source_type") or ""), text):
+        balance_answers(new)  # D-69: câu AI tự soạn → đáp án đúng chia đều A–D; đề có sẵn giữ nguyên thứ tự gốc
     cleaned = _clean({"title": quiz.title, "kind": quiz.kind, "time_limit_s": quiz.time_limit_s,
                       "questions": existing + new})  # fmt: skip
     quiz.questions = cleaned["questions"]
