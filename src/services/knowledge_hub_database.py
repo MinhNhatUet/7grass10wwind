@@ -8,14 +8,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
-import sys
-from array import array
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import UTC
 from typing import Any
 
+import numpy as np
 from sqlalchemy import Select, false, func, select
 from sqlalchemy.orm import Session
 
@@ -43,6 +40,7 @@ from src.knowledge_hub.policies import is_version_eligible
 from src.knowledge_hub.retrieval import ReciprocalRankFusion
 from src.models.orm import PUBLISHED, WITHDRAWN, Chunk, Document, DocumentVersion, User
 from src.services import acl
+from src.services.formatting import iso
 from src.services.llm import get_embeddings
 
 SessionFactory = Callable[[], Session]
@@ -146,33 +144,29 @@ class SQLAlchemyVectorStore:
         self._session = session
         self.last_filter: RetrievalFilter | None = None
 
-    @staticmethod
-    def _decode_embedding(blob: bytes) -> list[float]:
-        values = array("f")
-        values.frombytes(blob)
-        if sys.byteorder != "little":
-            values.byteswap()
-        return list(values)
-
     def search(self, vector: list[float], filters: RetrievalFilter, limit: int) -> list[ChunkCandidate]:
         self.last_filter = filters
-        query_norm = math.sqrt(sum(value * value for value in vector))
+        query = np.asarray(vector, dtype=np.float32)
+        query_norm = float(np.linalg.norm(query))
         if not query_norm:
             return []
 
+        chunks = [c for c in self._session.scalars(_chunk_statement(filters)) if c.embedding is not None]
+        if not chunks:
+            return []
+        # Cosine vector hóa bằng NumPy (như retrieval.py); blob là float32 little-endian
+        stored = [np.frombuffer(c.embedding, dtype="<f4") for c in chunks]
+        if any(len(s) != len(query) for s in stored):
+            dim = next(len(s) for s in stored if len(s) != len(query))
+            raise ValueError(f"query embedding dimension {len(query)} does not match database dimension {dim}")
+        mat = np.vstack(stored)
+        norms = np.linalg.norm(mat, axis=1)
+        scores = (mat @ query) / np.where(norms == 0, 1.0, norms * query_norm)
+
         candidates: list[ChunkCandidate] = []
-        for chunk in self._session.scalars(_chunk_statement(filters)):
-            if chunk.embedding is None:
+        for chunk, norm, score in zip(chunks, norms, scores, strict=True):
+            if not norm:
                 continue
-            stored = self._decode_embedding(chunk.embedding)
-            if len(vector) != len(stored):
-                raise ValueError(
-                    f"query embedding dimension {len(vector)} does not match database dimension {len(stored)}"
-                )
-            stored_norm = math.sqrt(sum(value * value for value in stored))
-            if not stored_norm:
-                continue
-            score = sum(left * right for left, right in zip(vector, stored, strict=True)) / (query_norm * stored_norm)
             mapped = _map_chunk(chunk)
             candidates.append(
                 ChunkCandidate(
@@ -181,7 +175,7 @@ class SQLAlchemyVectorStore:
                     text=mapped.text,
                     page=mapped.page,
                     slide=mapped.slide,
-                    vector_score=score,
+                    vector_score=float(score),
                 )
             )
         candidates.sort(key=lambda candidate: (-(candidate.vector_score or 0.0), candidate.chunk_id))
@@ -290,13 +284,6 @@ def search_database_session(
     return hub.search(request, access)
 
 
-def _iso(value: Any) -> str | None:
-    if value is None:
-        return None
-    aware = value if value.tzinfo else value.replace(tzinfo=UTC)
-    return aware.isoformat(timespec="seconds")
-
-
 def _chunk_locator(chunk: Chunk) -> dict[str, Any]:
     """Return the authoritative locator, including a multi-page span and section."""
     positions = [chunk.locator_value]
@@ -371,7 +358,7 @@ def hub_response_view(session: Session, response: HubSearchResponse, *, include_
                 "chapter": version.chapter,
                 "file_type": version.file_type,
                 "page_count": version.page_count,
-                "published_at": _iso(version.published_at),
+                "published_at": iso(version.published_at),
                 "snippet": item.snippet,
                 "locator": locator,
                 "score": item.score,

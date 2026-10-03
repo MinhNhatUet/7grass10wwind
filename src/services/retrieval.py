@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -21,8 +22,10 @@ from src.config import get_settings
 from src.models.orm import PUBLISHED, Chunk, Document, DocumentVersion, User
 from src.services import acl
 
-# version_id → (chunk_ids, ma trận đã chuẩn hóa, tập từ của từng chunk — cho điểm khớp từ khóa D-68)
-_cache: dict[str, tuple[list[str], np.ndarray, list[set[str]]]] = {}
+# version_id → (chunk_ids, ma trận đã chuẩn hóa, tập từ của từng chunk — cho điểm khớp từ khóa D-68). LRU có trần:
+# version không còn được hỏi (đã thu hồi/lưu trữ) tự rơi khỏi cache thay vì giữ mãi.
+_cache: OrderedDict[str, tuple[list[str], np.ndarray, list[set[str]]]] = OrderedDict()
+CACHE_MAX_VERSIONS = 256
 _WORD = re.compile(r"\w{4,}")
 _cache_lock = threading.Lock()
 _document_scope: ContextVar[str | None] = ContextVar("document_scope", default=None)
@@ -128,6 +131,7 @@ def servable_versions(db: Session, user: User, course_id: str) -> list[tuple[Doc
 def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray, list[set[str]]]:
     with _cache_lock:
         if version_id in _cache:
+            _cache.move_to_end(version_id)
             return _cache[version_id]
     rows = db.execute(
         select(Chunk.id, Chunk.embedding, Chunk.text).where(
@@ -139,6 +143,8 @@ def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray, list[s
     words = [set(_WORD.findall(r[2].casefold())) for r in rows]
     with _cache_lock:
         _cache[version_id] = (ids, mat, words)
+        while len(_cache) > CACHE_MAX_VERSIONS:
+            _cache.popitem(last=False)
     return ids, mat, words
 
 

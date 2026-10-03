@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
@@ -523,24 +524,56 @@ def _run_job(job_id: str) -> None:
             start_job(pending.id)
     except Exception as e:  # noqa: BLE001 — job không được làm sập tiến trình
         db.rollback()
-        log.exception("job %s lỗi", job_id)
-        job = db.get(IngestionJob, job_id)
-        if job is not None:
-            job.status, job.error_code = "failed", f"INTERNAL_{type(e).__name__}"[:100]
-            version = db.get(DocumentVersion, job.version_id)
-            if version is not None and revision is not None:
-                _index_transition(db, version, revision, (PROCESSING, INDEXING), FAILED)
-                if version.state == WITHDRAWN:
-                    job.error_code = "SOURCE_WITHDRAWN"
-            db.commit()
+        code = _job_error_code(e)
+        log.exception("job %s lỗi", job_id, extra={"event": "job.failed", "job_id": job_id, "error_code": code})
+        try:  # M-10: DB đang lỗi thì chính bước ghi "failed" cũng lỗi → ghi log, job còn "running" sẽ được resume
+            job = db.get(IngestionJob, job_id)
+            if job is not None:
+                job.status, job.error_code = "failed", code
+                version = db.get(DocumentVersion, job.version_id)
+                if version is not None and revision is not None:
+                    _index_transition(db, version, revision, (PROCESSING, INDEXING), FAILED)
+                    if version.state == WITHDRAWN:
+                        job.error_code = "SOURCE_WITHDRAWN"
+                db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("không ghi được trạng thái lỗi của job %s", job_id, extra={"event": "job.fail_record_failed"})
     finally:
         db.close()
 
 
+def _job_error_code(e: Exception) -> str:
+    """M-10: phân loại lỗi job để biết nên thử lại hay phải sửa dữ liệu/code (mã ghi vào ingestion_jobs.error_code)."""
+    if isinstance(e, OperationalError):
+        return "DB_UNAVAILABLE"  # lỗi hạ tầng tạm thời — thử lại được
+    if isinstance(e, ValueError | KeyError | UnicodeError):
+        return f"DATA_{type(e).__name__}"[:100]  # dữ liệu tài liệu/chunk không hợp lệ
+    return f"INTERNAL_{type(e).__name__}"[:100]  # lỗi lập trình — xem log theo job_id
+
+
+_slots: threading.BoundedSemaphore | None = None
+_slots_lock = threading.Lock()
+
+
+def _job_slots() -> threading.BoundedSemaphore:
+    global _slots
+    with _slots_lock:
+        if _slots is None:
+            _slots = threading.BoundedSemaphore(get_settings().job_max_workers)
+        return _slots
+
+
+def _run_limited(job_id: str) -> None:
+    with _job_slots():  # H-03: chỉ JOB_MAX_WORKERS job trích xuất/embedding chạy cùng lúc, job thừa chờ lượt
+        _run_job(job_id)
+
+
 def start_job(job_id: str) -> None:
+    # Daemon thread (như trước): tắt/reload app không phải chờ job embedding dài; job dở được resume khi khởi động.
     # thread không tự mang context của request → sao chép để log của job giữ http_request_id đã khởi tạo nó
     ctx = contextvars.copy_context()
-    threading.Thread(target=ctx.run, args=(_run_job, job_id), daemon=True, name=f"job-{job_id}").start()
+    threading.Thread(target=ctx.run, args=(_run_limited, job_id), daemon=True, name=f"job-{job_id}").start()
 
 
 def resume_interrupted_jobs() -> None:

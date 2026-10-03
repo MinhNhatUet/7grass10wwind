@@ -409,7 +409,6 @@ def test_real_pdf_page_render_and_range(tmp_path, monkeypatch):
 
 
 def test_registration_cannot_choose_admin(setup, monkeypatch):
-    import asyncio
     from types import SimpleNamespace
 
     from src.api.auth import register
@@ -423,7 +422,5 @@ def test_registration_cannot_choose_admin(setup, monkeypatch):
             return "token", SimpleNamespace(expires_at=datetime.now(UTC)), user
 
     request = SimpleNamespace(client=SimpleNamespace(host="test"))
-    result = asyncio.run(
-        register(RegisterRequest(login_id="new", password="test-password", role="admin"), request, db, Auth())
-    )
+    result = register(RegisterRequest(login_id="new", password="test-password", role="admin"), request, db, Auth())
     assert result.user.role == "student"

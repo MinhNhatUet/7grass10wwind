@@ -20,6 +20,7 @@ from src.agents import orchestrator
 from src.config import get_settings
 from src.knowledge_hub import RetrievalError as KnowledgeHubRetrievalError
 from src.models.orm import (
+    DEFAULT_CONVERSATION_TITLE,
     Chunk,
     Citation,
     Conversation,
@@ -46,6 +47,7 @@ from src.services.assistants import (
     track_usage,
 )
 from src.services.errors import AppError, bad_request, forbidden, not_found
+from src.services.formatting import iso
 from src.services.policy import SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import EmbeddingUnavailableError, document_scope, still_servable
 
@@ -85,7 +87,7 @@ def create(
         owner_id=user.id,
         course_id=course_id,
         assistant_mode=assistant,
-        title=(title or "Hội thoại mới")[:300],
+        title=(title or DEFAULT_CONVERSATION_TITLE)[:300],
         document_id=document_id,
     )
     db.add(conv)
@@ -202,18 +204,12 @@ def serialize(db: Session, user: User, msg: Message, conv: Conversation) -> dict
         "status": msg.status,
         "content": content,
         "citations": citations,
-        "created_at": _iso(msg.created_at),
+        "created_at": iso(msg.created_at),
         "metadata": {"course_id": message_course(msg, conv), **payload},
     }
 
 
-def _iso(dt: datetime) -> str:
-    return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).isoformat(timespec="seconds")
-
-
 def _can_download(db: Session, user: User, version_id: str) -> bool:
-    from src.models.orm import Document, DocumentVersion
-
     v = db.get(DocumentVersion, version_id)
     return bool(v and acl.can_download_version(db, user, v, db.get(Document, v.document_id)))
 
@@ -237,18 +233,25 @@ def list_messages(
 # ---------------------------------------------------------------- gửi câu hỏi
 
 
+HISTORY_TURNS = 6  # format_history chỉ đưa 6 lượt gần nhất vào prompt
+
+
 def _history(db: Session, conv: Conversation, before_id: str) -> list[tuple[str, str]]:
-    msgs = db.scalars(
-        select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at, Message.id)
-    )
+    # Chỉ đọc vài tin cuối (dư cho tin bị che), không serialize cả hội thoại dài mỗi lần hỏi
+    recent = db.scalars(
+        select(Message)
+        .where(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(HISTORY_TURNS * 2 + 1)
+    ).all()
     out = []
-    for m in msgs:
+    for m in reversed(recent):
         if m.id == before_id:
             break
         current = serialize(db, db.get(User, conv.owner_id), m, conv)
         if not current["metadata"].get("masked"):
             out.append((m.role, current["content"]))
-    return out
+    return out[-HISTORY_TURNS:]
 
 
 def _check_quota(db: Session, user: User) -> None:
@@ -308,14 +311,10 @@ def _persist_answer(
     return msg
 
 
-def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], request_id: str | None) -> dict[str, Any]:
-    conv = get_owned(db, user, conversation_id)
-    if conv.document_id:
-        scoped_document(db, user, conv.document_id)
-    # Router chỉ được chọn trong các môn user đang được đọc (BR-02); hội thoại cố định môn thì chỉ môn đó
+def _candidate_courses(db: Session, user: User, conv: Conversation, options: dict[str, Any]) -> list[tuple[str, str]]:
+    """Môn router được phép chọn (BR-02): môn user đang đọc được; hội thoại/lộ trình cố định môn thì chỉ môn đó."""
     readable = acl.readable_course_ids(db, user)
     candidates = [conv.course_id] if conv.course_id else readable
-    options = body.get("learning") or {}
     for linked_id in (options.get("plan_id"), options.get("previous_plan_id")):
         if linked_id and plan_view(db, user, get_plan(db, user, linked_id))["masked"]:
             raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
@@ -326,7 +325,10 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
             raise forbidden("COURSE_NOT_ALLOWED")
     if conv.course_id and conv.course_id not in readable:
         raise forbidden("COURSE_NOT_ALLOWED")
-    courses = [(cid, course_name(db, cid)) for cid in candidates]
+    return [(cid, course_name(db, cid)) for cid in candidates]
+
+
+def _validated_input(body: dict[str, Any]) -> tuple[str, str]:
     content = str(body.get("content") or "").strip()
     if not content:
         raise bad_request("EMPTY_MESSAGE")
@@ -335,22 +337,25 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
     mode = body.get("assistant") or "auto"
     if mode not in MODES:
         raise bad_request("INVALID_ASSISTANT")
-    request_id = request_id or new_id("req")
+    return content, mode
 
-    # Retry cùng request ID: không tạo user message trùng; đã có câu trả lời thì trả lại (AC-02.6, AC-05.3)
+
+def _user_message(
+    db: Session, user: User, conv: Conversation, body: dict[str, Any], content: str, mode: str, request_id: str
+) -> tuple[Message | None, Message]:
+    """Idempotent theo request ID (AC-02.6, AC-05.3): trả (câu trả lời đã có, tin người dùng). Retry không tạo tin
+    trùng và không tính quota lần nữa."""
     existing_answer = db.scalar(
         select(Message).where(
             Message.conversation_id == conv.id, Message.request_id == request_id, Message.role == "assistant"
         )
     )
-    if existing_answer is not None:
-        return serialize(db, user, existing_answer, conv)
     user_msg = db.scalar(
         select(Message).where(
             Message.conversation_id == conv.id, Message.request_id == request_id, Message.role == "user"
         )
     )
-    if user_msg is None:
+    if existing_answer is None and user_msg is None:
         _check_quota(db, user)
         user_msg = Message(
             conversation_id=conv.id,
@@ -361,11 +366,25 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
             payload={"learning": body.get("learning")} if body.get("learning") else {},
         )
         db.add(user_msg)
-        if conv.title == "Hội thoại mới":
+        if conv.title == DEFAULT_CONVERSATION_TITLE:
             conv.title = content[:80]
         conv.assistant_mode = mode
         db.commit()
+    return existing_answer, user_msg
 
+
+def _answer(
+    db: Session,
+    user: User,
+    conv: Conversation,
+    user_msg: Message,
+    courses: list[tuple[str, str]],
+    content: str,
+    mode: str,
+    options: dict[str, Any],
+    request_id: str,
+) -> dict[str, Any]:
+    """Chạy orchestrator, lưu câu trả lời; lỗi nhà cung cấp → 503 có thể thử lại. Luôn ghi usage/chi phí (D-60)."""
     started = time.perf_counter()
     status, chosen, routed_course = "error", mode, None
     with track_usage() as tokens:  # D-60: token của router + trợ lý → chi phí
@@ -380,7 +399,7 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
                     question=content,
                     history=_history(db, conv, user_msg.id),
                     mode=mode,
-                    options=body.get("learning") or {},
+                    options=options,
                 )
             chosen = trace["assistant"] if trace["assistant"] in ASSISTANTS else "router"
             routed_course = trace.get("course_id")
@@ -413,6 +432,21 @@ def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], re
                 tokens=tokens,
             )
             db.commit()
+
+
+def send(db: Session, user: User, conversation_id: str, body: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+    """Gửi câu hỏi (M-02: tách bước): quyền + môn → kiểm đầu vào → tin người dùng idempotent → trả lời."""
+    conv = get_owned(db, user, conversation_id)
+    if conv.document_id:
+        scoped_document(db, user, conv.document_id)
+    options = body.get("learning") or {}
+    courses = _candidate_courses(db, user, conv, options)
+    content, mode = _validated_input(body)
+    request_id = request_id or new_id("req")
+    existing_answer, user_msg = _user_message(db, user, conv, body, content, mode, request_id)
+    if existing_answer is not None:
+        return serialize(db, user, existing_answer, conv)
+    return _answer(db, user, conv, user_msg, courses, content, mode, options, request_id)
 
 
 # ---------------------------------------------------------------- lộ trình học (FR-03.5–03.13)

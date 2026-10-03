@@ -10,6 +10,8 @@ const messages: Record<string, string> = {
   PAGE_RENDER_FAILED: "Không thể hiển thị ảnh trang PDF. Bạn có thể xem nội dung trích xuất bên dưới.",
   PAGE_IMAGE_UNSUPPORTED: "Định dạng này chưa hỗ trợ ảnh trang. Hiển thị nội dung trích xuất.",
   APPROVAL_REVISION_MISMATCH: "Phiên bản đã thay đổi sau khi duyệt; cần kiểm tra và duyệt lại.",
+  DB_UNAVAILABLE: "Cơ sở dữ liệu tạm thời không phản hồi. Vui lòng thử lại sau.",
+  TOO_MANY_REGISTRATIONS: "Có quá nhiều lượt đăng ký từ thiết bị này. Vui lòng thử lại sau.",
 };
 
 export function errorCodeMessage(code?: string) {

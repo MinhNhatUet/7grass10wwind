@@ -14,6 +14,7 @@ from src.db import get_db
 from src.models.orm import Conversation, User
 from src.services import conversations as svc
 from src.services.errors import AppError
+from src.services.formatting import iso
 from src.services.plan_calendar import plan_ics, require_exportable_plan
 
 router = APIRouter()
@@ -28,8 +29,8 @@ def conv_view(c: Conversation) -> dict[str, Any]:
         "document_id": c.document_id,
         "assistant_mode": c.assistant_mode,
         "title": c.title,
-        "created_at": svc._iso(c.created_at),
-        "updated_at": svc._iso(c.updated_at),
+        "created_at": iso(c.created_at),
+        "updated_at": iso(c.updated_at),
     }
 
 

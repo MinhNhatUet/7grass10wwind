@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
@@ -20,17 +21,59 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(8)}"
 
 
-# Trạng thái tài liệu (PRD 9.2)
-DRAFT, PROCESSING, NEEDS_REVIEW, PENDING = "Draft", "Processing", "NeedsReview", "PendingApproval"
-REJECTED, APPROVED, INDEXING, PUBLISHED = "Rejected", "Approved", "Indexing", "Published"
-FAILED, WITHDRAWN, ARCHIVED = "Failed", "Withdrawn", "Archived"
-VERSION_STATES = (DRAFT, PROCESSING, NEEDS_REVIEW, PENDING, REJECTED, APPROVED, INDEXING, PUBLISHED, FAILED)
-VERSION_STATES += (WITHDRAWN, ARCHIVED)
+# L-05: StrEnum — so sánh/lưu DB/JSON như chuỗi thường (giá trị DB không đổi), có kiểm tra kiểu và gợi ý của IDE.
+class VersionState(StrEnum):
+    """Trạng thái phiên bản tài liệu (PRD 9.2)."""
 
-ROLES = ("student", "lecturer", "reviewer", "admin")
-# Nhãn liêm chính (IntegrityLabel, PRD 9.1): tài liệu tính điểm/đáp án không phục vụ Sinh viên (BR-06)
-INTEGRITY_LABELS = ("learning_material", "exercise_ungraded", "exercise_graded", "answer_key")
-RESTRICTED_FOR_STUDENTS = ("exercise_graded", "answer_key")
+    DRAFT = "Draft"
+    PROCESSING = "Processing"
+    NEEDS_REVIEW = "NeedsReview"
+    PENDING = "PendingApproval"
+    REJECTED = "Rejected"
+    APPROVED = "Approved"
+    INDEXING = "Indexing"
+    PUBLISHED = "Published"
+    FAILED = "Failed"
+    WITHDRAWN = "Withdrawn"
+    ARCHIVED = "Archived"
+
+
+class Role(StrEnum):
+    STUDENT = "student"
+    LECTURER = "lecturer"
+    REVIEWER = "reviewer"
+    ADMIN = "admin"
+
+
+class IntegrityLabel(StrEnum):
+    """Nhãn liêm chính (PRD 9.1): tài liệu tính điểm/đáp án không phục vụ Sinh viên (BR-06)."""
+
+    LEARNING_MATERIAL = "learning_material"
+    EXERCISE_UNGRADED = "exercise_ungraded"
+    EXERCISE_GRADED = "exercise_graded"
+    ANSWER_KEY = "answer_key"
+
+
+DEFAULT_CONVERSATION_TITLE = "Hội thoại mới"  # L-08: dùng chung cho ORM và chỗ đặt tên tự động
+
+# Tên cũ giữ nguyên để không phải sửa mọi nơi dùng
+DRAFT, PROCESSING, NEEDS_REVIEW, PENDING = (
+    VersionState.DRAFT,
+    VersionState.PROCESSING,
+    VersionState.NEEDS_REVIEW,
+    VersionState.PENDING,
+)
+REJECTED, APPROVED, INDEXING, PUBLISHED = (
+    VersionState.REJECTED,
+    VersionState.APPROVED,
+    VersionState.INDEXING,
+    VersionState.PUBLISHED,
+)
+FAILED, WITHDRAWN, ARCHIVED = VersionState.FAILED, VersionState.WITHDRAWN, VersionState.ARCHIVED
+VERSION_STATES = tuple(VersionState)
+ROLES = tuple(Role)
+INTEGRITY_LABELS = tuple(IntegrityLabel)
+RESTRICTED_FOR_STUDENTS = (IntegrityLabel.EXERCISE_GRADED, IntegrityLabel.ANSWER_KEY)
 
 
 class User(Base):
@@ -187,7 +230,7 @@ class Conversation(Base):
     course_id: Mapped[str | None] = mapped_column(ForeignKey("courses.id"), nullable=True)
     assistant_mode: Mapped[str] = mapped_column(String(20), default="auto")
     document_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    title: Mapped[str] = mapped_column(String(300), default="Hội thoại mới")
+    title: Mapped[str] = mapped_column(String(300), default=DEFAULT_CONVERSATION_TITLE)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
@@ -248,7 +291,7 @@ class StudyPlan(Base):
     __tablename__ = "study_plans"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("plan"))
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    course_id: Mapped[str] = mapped_column(String(40))
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)  # M-08: toàn vẹn tham chiếu
     conversation_id: Mapped[str | None] = mapped_column(String(40))
     version: Mapped[int] = mapped_column(Integer, default=1)
     previous_id: Mapped[str | None] = mapped_column(String(40))
@@ -294,8 +337,21 @@ class UsageEvent(Base):
 
 
 # ---------------------------------------------------------------- Đề trắc nghiệm do giảng viên soạn (D-38, ngoài PRD 7.2)
-QUIZ_KINDS = ("practice", "exam", "midterm", "final")  # chỉ "practice" được xem đáp án sau khi nộp (BR-06)
-QUIZ_STATES = ("Draft", "Published", "Closed")
+class QuizKind(StrEnum):
+    PRACTICE = "practice"  # chỉ "practice" được xem đáp án sau khi nộp (BR-06)
+    EXAM = "exam"
+    MIDTERM = "midterm"
+    FINAL = "final"
+
+
+class QuizState(StrEnum):
+    DRAFT = "Draft"
+    PUBLISHED = "Published"
+    CLOSED = "Closed"
+
+
+QUIZ_KINDS = tuple(QuizKind)
+QUIZ_STATES = tuple(QuizState)
 
 
 class CourseQuiz(Base):

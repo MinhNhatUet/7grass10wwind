@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+import anyio.to_thread
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -19,19 +20,23 @@ from src.models.schemas import ErrorBody, ErrorDetail
 from src.observability import configure_logging, install, request_id
 from src.services.documents import resume_interrupted_jobs
 from src.services.errors import AppError
-from src.services.retention import start_retention_job
+from src.services.retention import start_retention_job, stop_retention_job
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
+    # M-12: endpoint đồng bộ (chat gọi LLM 10–60 s) chạy trong threadpool AnyIO, mặc định chỉ 40 luồng → nâng trần để
+    # vài chục câu hỏi đang chờ LLM không chặn đăng nhập/thư viện. Stream (SSE) là hướng lâu dài (H-3).
+    anyio.to_thread.current_default_thread_limiter().total_tokens = settings.http_thread_limit
     init_db()
     if settings.app_env != "test":
         resume_interrupted_jobs()
         start_retention_job()
     yield
     print("Shutting down...")
+    stop_retention_job()
 
 
 app = FastAPI(
@@ -46,9 +51,10 @@ configure_logging("edu04-backend", settings.app_env, settings.log_level)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins.split(","),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Xác thực bằng header Bearer, không dùng cookie → không cần credentials; chỉ mở đúng method/header frontend dùng
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
     expose_headers=["X-Request-ID"],  # frontend khác origin đọc được mã hỗ trợ
 )
 install(app)  # thêm sau CORS → bọc ngoài cùng, mọi response (kể cả lỗi) đều có X-Request-ID

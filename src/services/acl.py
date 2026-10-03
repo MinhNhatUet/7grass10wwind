@@ -11,21 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.models.orm import PUBLISHED, RESTRICTED_FOR_STUDENTS, Course, Document, DocumentVersion, Membership, User
+from src.services.formatting import aware
 
 STAFF_ROLES = ("lecturer", "reviewer")
-
-
-def _aware(dt: datetime | None) -> datetime | None:
-    if dt is None:
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def active_membership(db: Session, user: User, course_id: str) -> Membership | None:
     m = db.scalar(select(Membership).where(Membership.user_id == user.id, Membership.course_id == course_id))
     if m is None:
         return None
-    valid_to = _aware(m.valid_to)
+    valid_to = aware(m.valid_to)
     if valid_to is not None and valid_to <= datetime.now(UTC):
         return None
     return m

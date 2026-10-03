@@ -18,13 +18,10 @@ from src.knowledge_hub import HubConfig, HubSearchRequest, InvalidRequest, Retri
 from src.models.orm import Approval, Chunk, Document, DocumentVersion, IngestionJob, User
 from src.services import acl, documents, storage
 from src.services.errors import AppError, bad_request, not_found
+from src.services.formatting import iso
 from src.services.knowledge_hub_database import hub_response_view, search_database_session
 
 router = APIRouter()
-
-
-def _iso(dt: Any) -> str | None:
-    return dt.isoformat(timespec="seconds") if dt else None
 
 
 def version_view(v: DocumentVersion, d: Document, *, full: bool) -> dict[str, Any]:
@@ -39,7 +36,7 @@ def version_view(v: DocumentVersion, d: Document, *, full: bool) -> dict[str, An
         "file_type": v.file_type,
         "page_count": v.page_count,
         "state": v.state,
-        "published_at": _iso(v.published_at),
+        "published_at": iso(v.published_at),
     }
     if full:  # chỉ cho người quản lý/duyệt môn
         base |= {
@@ -58,8 +55,8 @@ def version_view(v: DocumentVersion, d: Document, *, full: bool) -> dict[str, An
             "withdraw_reason": v.withdraw_reason,
             "is_current": d.current_version_id == v.id,
             "emergency_locked": d.emergency_locked,
-            "created_at": _iso(v.created_at),
-            "updated_at": _iso(v.updated_at),
+            "created_at": iso(v.created_at),
+            "updated_at": iso(v.updated_at),
         }
     return base
 
@@ -374,7 +371,7 @@ def preview(
                 "reason": a.reason,
                 "reviewer_id": a.reviewer_id,
                 "reviewed_revision": a.reviewed_revision,
-                "created_at": _iso(a.created_at),
+                "created_at": iso(a.created_at),
             }
             for a in approvals
         ],

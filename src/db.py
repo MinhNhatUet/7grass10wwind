@@ -51,11 +51,49 @@ def get_sessionmaker() -> sessionmaker[Session]:
     return sessionmaker(bind=get_engine(), expire_on_commit=False)
 
 
+BASELINE_REVISION = "0001"  # schema lúc chuyển sang Alembic (migrations/versions/0001_baseline_schema.py)
+
+
+def _alembic_config():  # noqa: ANN202
+    from alembic.config import Config
+
+    cfg = Config(str(REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    return cfg
+
+
 def init_db() -> None:
+    """M-09: schema do Alembic quản lý (`migrations/`).
+    - DB mới: `upgrade head` dựng toàn bộ.
+    - DB cũ chưa có Alembic: chạy các bước _migrate_* cũ để về đúng mốc, `stamp` mốc, rồi `upgrade head`.
+    Thay đổi schema về sau: thêm migration (`alembic revision --autogenerate`), không thêm hàm _migrate_* mới."""
+    from alembic import command
+
     from src.models import orm  # noqa: F401  (đăng ký bảng)
 
     engine = get_engine()
-    Base.metadata.create_all(engine)
+    cfg = _alembic_config()
+    with engine.connect() as conn:
+        tables = set(inspect(conn).get_table_names())
+    if "alembic_version" not in tables and "users" in tables:
+        _legacy_upgrade_to_baseline(engine)
+        with engine.begin() as conn:
+            cfg.attributes["connection"] = conn
+            command.stamp(cfg, BASELINE_REVISION)
+    with engine.begin() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
+
+
+def _legacy_upgrade_to_baseline(engine: Engine) -> None:
+    """DB tạo trước Alembic: đưa về đúng schema mốc 0001 bằng các bước cũ (giữ nguyên dữ liệu)."""
+    from src.models.orm import StudyPlan
+
+    # create_all chỉ tạo bảng còn thiếu (như trước); study_plans phải có sẵn ở dạng mốc để 0002 thêm khóa ngoại
+    Base.metadata.create_all(engine, tables=[t for t in Base.metadata.sorted_tables if t is not StudyPlan.__table__])
+    with engine.connect() as conn:
+        if "study_plans" not in inspect(conn).get_table_names():
+            raise RuntimeError("DB cũ thiếu bảng study_plans — sao lưu rồi tạo DB mới, hoặc nạp lại bằng seed")
     _migrate_nullable_conversation_course(engine)
     _migrate_conversation_document(engine)
     _migrate_chunk_page_map(engine)

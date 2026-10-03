@@ -5,16 +5,18 @@ services:
     image: postgres:15-alpine
     container_name: edu04-db
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: ai20k
+      # Không viết cứng mật khẩu: đặt POSTGRES_PASSWORD trong .env (compose đọc .env ở gốc repo).
+      # Volume Postgres đã tạo trước đây dùng mật khẩu cũ: đặt đúng giá trị đó hoặc xóa volume để khởi tạo lại.
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ai20k}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d ai20k"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +31,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg2://user:password@db:5432/ai20k
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}@db:5432/${POSTGRES_DB:-ai20k}
       # Conservative defaults for Gemini free-tier ingestion, including resumed jobs.
       - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-4}
       - EMBEDDING_PAUSE_SECONDS=${EMBEDDING_PAUSE_SECONDS:-15}
