@@ -485,3 +485,24 @@ def test_chat_diagnose_opens_progress_flow_or_falls_back(env, tmp_path, monkeypa
         db.get(Document, f"doc{n}").current_version_id = None  # môn chưa có tài liệu phục vụ
     db.commit()
     assert run(users["sv"]) is old
+
+
+def test_topics_without_semantic_hits_use_their_lesson_document(env, monkeypatch):
+    """Tên chủ đề ngắn/viết tắt ("Vai trò của PM") không qua ngưỡng tìm kiếm ngữ nghĩa → vẫn soạn được câu từ CHÍNH
+    tài liệu của bài, không báo "chưa có nguồn" cho cả bài."""
+    client, db, users, who, llm = env
+    monkeypatch.setattr(service, "evidence", lambda *a, **k: [])
+    client.put("/api/v1/learning/progress", json={"course_id": "SE101", "current_lesson_id": "L2"})
+    a = client.post("/api/v1/learning/assessments", json={"course_id": "SE101"}).json()
+    assert {q["topic_title"] for q in a["questions"]} == {"Mô hình thác nước", "Mô hình lặp", "Yêu cầu chức năng"}
+    assert a["scope"]["not_assessed"] == []
+    stored = db.get(LearningAssessment, a["id"]).questions
+    assert {q["lesson_id"]: q["source"]["document_title"] for q in stored} == {"L1": "Bai 1", "L2": "Bai 2"}
+    # đoạn trùng từ nhiều nhất với chủ đề đứng trước: "thác nước" (waterfall) lấy đoạn waterfall của Bai 1
+    assert all(q["source"]["chunk_id"] == "chk11" for q in stored if q["topic_id"] == "L1.T1")
+    # tài liệu của bài bị thu hồi → không lấy đoạn của nó (quyền vẫn kiểm qua servable_versions)
+    db.get(DocumentVersion, "ver2").state = "Withdrawn"
+    db.commit()
+    client.put("/api/v1/learning/progress", json={"course_id": "SE101", "current_lesson_id": "L1"})
+    b = client.post("/api/v1/learning/assessments", json={"course_id": "SE101", "topic_ids": ["L1.T1"]}).json()
+    assert all(q["source"]["document_title"] == "Bai 1" for q in db.get(LearningAssessment, b["id"]).questions)

@@ -290,3 +290,18 @@ def test_topic_concepts_prefer_missed_answers_then_objectives(cur):
     assert concepts["L1.T1"][1:] == ["Nêu các pha của thác nước", "Chỉ ra hạn chế của thác nước"]
     assert "q2-a" not in concepts["L1.T1"]  # câu làm đúng không phải chỗ hổng
     assert "L1.T2" not in concepts  # mục tiêu mặc định = tên chủ đề → builder tự thêm tên chủ đề
+
+
+def test_derived_topic_query_expands_abbreviations():
+    from src.services.learning_path.curriculum import expand_abbreviations
+
+    assert expand_abbreviations("Vai trò của PM") == "Vai trò của PM (phần mềm)"
+    assert (
+        expand_abbreviations("Khái niệm SP Phần mềm, HTTT")
+        == "Khái niệm SP Phần mềm, HTTT (sản phẩm, hệ thống thông tin)"
+    )
+    assert expand_abbreviations("Mô hình thác nước") == "Mô hình thác nước"  # không có viết tắt → giữ nguyên
+    c = derive("SE101", [{"chapter": "1", "title": "Tổng quan", "sections": ["Vai trò của PM"], "document": "x",
+                          "kind": "lesson", "document_id": "d1"}])  # fmt: skip
+    t = c.lessons[0].topics[0]
+    assert t.title == "Vai trò của PM" and t.query == "Tổng quan: Vai trò của PM (phần mềm)"

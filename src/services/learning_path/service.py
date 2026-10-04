@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
-from src.models.orm import CourseQuiz, LearnerProgress, LearningAssessment, LearningPath, TopicMastery, User
+from src.models.orm import Chunk, CourseQuiz, LearnerProgress, LearningAssessment, LearningPath, TopicMastery, User
 from src.services import acl, usage
 from src.services.assistants import (
     BASE_POLICY,
@@ -39,9 +39,15 @@ from src.services.errors import AppError, bad_request, not_found
 from src.services.formatting import iso
 from src.services.learning_path import diagnosis, roadmap
 from src.services.learning_path.blueprint import Blueprint, Slot, build_blueprint
-from src.services.learning_path.curriculum import Curriculum, CurriculumError, Topic, load_curriculum
+from src.services.learning_path.curriculum import (
+    Curriculum,
+    CurriculumError,
+    Topic,
+    expand_abbreviations,
+    load_curriculum,
+)
 from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
-from src.services.retrieval import EmbeddingUnavailableError, Hit, document_scope, still_servable
+from src.services.retrieval import EmbeddingUnavailableError, Hit, document_scope, servable_versions, still_servable
 
 HITS_PER_TOPIC = 2
 SLOTS_PER_CALL = 8
@@ -216,9 +222,33 @@ def _bank_questions(db: Session, course_id: str, topic_ids: set[str]) -> dict[st
 
 
 def _topic_hits(db: Session, user: User, course_id: str, curriculum: Curriculum, topic: Topic) -> list[Hit]:
+    """Nguồn cho chủ đề: truy xuất ngữ nghĩa trong tài liệu của bài trước; thiếu thì lấy thẳng các đoạn của CHÍNH tài
+    liệu bài đó, xếp theo độ trùng từ với tên chủ đề. Tên chủ đề lấy từ slide thường ngắn/viết tắt ("Vai trò của PM")
+    nên không qua được ngưỡng điểm ngữ nghĩa dù tài liệu của bài có nội dung. Câu hỏi vẫn phải có câu trích nguyên văn
+    chứng minh trong đoạn được chọn (D-74) nên không bịa được."""
     lesson = curriculum.lesson_of(topic)
+    query = topic.query or topic.title
     with document_scope(lesson.document_id):  # bài gắn tài liệu → chỉ truy xuất trong tài liệu đó
-        return evidence(db, user, course_id, topic.query or topic.title)[:HITS_PER_TOPIC]
+        hits = evidence(db, user, course_id, query)[:HITS_PER_TOPIC]
+    if len(hits) < HITS_PER_TOPIC and lesson.document_id:
+        seen = {h.chunk.id for h in hits}
+        hits += [h for h in _lesson_chunks(db, user, course_id, lesson.document_id, query) if h.chunk.id not in seen]
+    return hits[:HITS_PER_TOPIC]
+
+
+def _lesson_chunks(db: Session, user: User, course_id: str, document_id: str, query: str) -> list[Hit]:
+    """Các đoạn của tài liệu bài (bản đang phục vụ, đúng quyền — BR-03), đoạn trùng nhiều từ của chủ đề trước."""
+    words = {w for w in dedupe_key(expand_abbreviations(query)).split() if len(w) >= 2}
+    out = []
+    for version, document in servable_versions(db, user, course_id):
+        if document.id != document_id:
+            continue
+        for chunk in db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)):
+            if chunk.text.strip():
+                score = len(words & set(dedupe_key(chunk.text).split()))
+                out.append((score, -chunk.ordinal, Hit(chunk=chunk, version=version, document=document, score=0.0)))
+    out.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [h for *_, h in out]
 
 
 GENERATE_INSTRUCTION = """Soạn câu hỏi trắc nghiệm 4 lựa chọn để ĐÁNH GIÁ mức nắm vững của sinh viên theo từng Ô.
