@@ -12,6 +12,7 @@ from src.api.auth import router as auth_router
 from src.api.conversations import router as conversations_router
 from src.api.dashboard import router as dashboard_router
 from src.api.documents import router as documents_router
+from src.api.learning_path import router as learning_path_router
 from src.api.quizzes import router as quizzes_router
 from src.api.sources import router as sources_router
 from src.config import get_settings
@@ -67,6 +68,7 @@ for r in (
     dashboard_router,
     admin_router,
     quizzes_router,
+    learning_path_router,
 ):
     app.include_router(r, prefix="/api/v1")
 

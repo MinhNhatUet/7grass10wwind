@@ -10,6 +10,7 @@ import { BookOpen, CalendarDays, ClipboardList, Sparkles, Timer } from "lucide-r
 import { ApiError, api, json, type ChatMessage, type CourseItem, type Plan } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { FORMAT_LABEL, PENDING_SEND, PlanCard, PracticePicker, type PracticeChoice } from "@/components/learning-cards";
+import { ProgressPath } from "@/components/learning-path";
 
 type PlanRow = { id: string; goal: string; status: string; version: number; done: number; total: number; updated_at: string };
 type SelfCheck = { message_id: string; conversation_id: string; kind: string; topic: string | null; questions: number; answered: number; assessed: boolean; levels: string[]; created_at: string };
@@ -80,6 +81,12 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
           ))}
         </div>
       </section>
+
+      <ProgressPath courses={courses}
+        onPractice={(courseId, action, topic, label) => {
+          const content = `Lộ trình — ${label}`;
+          goToChat(router, content, { content, assistant: "learning", learning: { action, topic } }, courseId);
+        }} />
 
       <TopicPractice courses={courses} busy={false}
         onStart={(courseId, topics, c, label) => {
