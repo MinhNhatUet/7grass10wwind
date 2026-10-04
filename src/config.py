@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "127.0.0.1"  # L-04: dev chỉ nghe máy local; container ghi đè 0.0.0.0 (Dockerfile)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"  # trình duyệt coi localhost và 127.0.0.1 là 2 origin
     http_thread_limit: int = Field(default=100, ge=1)  # M-12: số request đồng bộ chạy song song
 
     # LLM — endpoint tương thích OpenAI (AI_* trong .env); OPENAI_API_KEY/MODEL_NAME là fallback cũ

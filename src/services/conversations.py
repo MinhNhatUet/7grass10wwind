@@ -43,6 +43,7 @@ from src.services.assistants import (
     learning,
     name_sources,
     occurrence_evidence,
+    study_tools,
     supporting_quotes,
     track_usage,
 )
@@ -631,7 +632,9 @@ def save_quiz_answers(
     db: Session, user: User, message_id: str, answers: dict[str, str], submit: bool
 ) -> dict[str, Any]:
     msg = db.get(Message, message_id)
-    if msg is None or (msg.payload or {}).get("kind") != "quiz":
+    # Tự luận (quiz) và chẩn đoán kiến thức nền (diagnose, D-30) cùng nộp qua đây — merge 57a0ad4 (29/09) đã làm mất
+    # nhánh diagnose → nộp bài chẩn đoán trả 404
+    if msg is None or (msg.payload or {}).get("kind") not in ("quiz", "diagnose"):
         raise not_found()
     conv = get_owned(db, user, msg.conversation_id)
     if any(not still_servable(db, user, c.version_id) for c in msg.citations):
@@ -651,6 +654,11 @@ def save_quiz_answers(
                 payload["assessment"] = learning.assess(
                     payload.get("questions", []), payload["answers"], "\n\n".join(chunks)
                 )
+                if payload.get("kind") == "diagnose":  # chỉ ra trang cần đọc lại cho phần hổng, lấy từ citation thật
+                    pages = {
+                        c.ordinal: c.locator_value for c in msg.citations if still_servable(db, user, c.version_id)
+                    }
+                    payload["assessment"] = study_tools.review_pages(payload["questions"], payload["assessment"], pages)
             except LlmError as e:
                 db.rollback()
                 raise AppError("LLM_UNAVAILABLE", 503, retryable=True) from e
