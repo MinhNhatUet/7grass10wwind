@@ -109,16 +109,18 @@ def _evidence(q: dict[str, Any], picked: int, objective_text: str) -> dict[str, 
 
 
 def source_refs(questions: list[dict[str, Any]], skip: set[str] | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Nguồn thật (tài liệu + trang) của câu hỏi theo chủ đề — để chỉ chỗ cần đọc lại."""
+    """Nguồn thật (tài liệu + trang + đoạn dẫn chứng) của câu hỏi theo chủ đề — để chỉ chỗ cần đọc lại. Đoạn dẫn
+    chứng = câu trích nguyên văn đã kiểm có trong tài liệu (D-74); mỗi (bản, trang) một mục."""
     refs: dict[str, list[dict[str, Any]]] = {}
     for q in questions:
         src = q.get("source")
         if not src or q["id"] in (skip or set()):
             continue
         bucket = refs.setdefault(q["topic_id"], [])
-        ref = {k: src.get(k) for k in ("version_id", "document_title", "page", "page_end")}
-        if ref not in bucket:
-            bucket.append(ref)
+        if any(r["version_id"] == src.get("version_id") and r["page"] == src.get("page") for r in bucket):
+            continue
+        ref = {k: src.get(k) for k in ("document_id", "version_id", "document_title", "page", "page_end")}
+        bucket.append(ref | {"quote": str(q.get("proof") or "")})
     return refs
 
 
@@ -200,7 +202,13 @@ def diagnose(
 def _lesson_ref(lesson: Any) -> list[dict[str, Any]]:
     if not lesson.document_title:
         return []
-    return [{"version_id": None, "document_title": lesson.document_title, "page": lesson.page, "page_end": None}]
+    return [lesson_ref(lesson)]
+
+
+def lesson_ref(lesson: Any) -> dict[str, Any]:
+    """Nguồn mức bài (trang đầu bài trong tài liệu của bài) khi chưa có câu hỏi nào chỉ ra trang cụ thể."""
+    return {"document_id": lesson.document_id, "version_id": None, "document_title": lesson.document_title,
+            "page": lesson.page, "page_end": None, "quote": ""}  # fmt: skip
 
 
 def recommendations(

@@ -506,3 +506,31 @@ def test_topics_without_semantic_hits_use_their_lesson_document(env, monkeypatch
     client.put("/api/v1/learning/progress", json={"course_id": "SE101", "current_lesson_id": "L1"})
     b = client.post("/api/v1/learning/assessments", json={"course_id": "SE101", "topic_ids": ["L1.T1"]}).json()
     assert all(q["source"]["document_title"] == "Bai 1" for q in db.get(LearningAssessment, b["id"]).questions)
+
+
+def test_review_sources_are_openable_citations_with_evidence(env):
+    """ "Xem lại …" và nguồn của bước lộ trình là trích dẫn mở được trang: có tài liệu, bản, trang và đoạn dẫn chứng
+    (câu trích nguyên văn đã kiểm); kiểm lại quyền mỗi lần xem."""
+    client, db, users, who, llm = env
+    client.put("/api/v1/learning/progress", json={"course_id": "SE101", "current_lesson_id": "L2"})
+    a = client.post("/api/v1/learning/assessments", json={"course_id": "SE101"}).json()
+    res = client.post(f"/api/v1/learning/assessments/{a['id']}/submit",
+                      json={"answers": answer(db, a["id"], {"L1.T1", "L2.T1"})}).json()  # fmt: skip
+    gap = next(g for g in res["result"]["gaps"] if g["topic_id"] == "L1.T1")
+    src = gap["review"]["sources"][0]
+    assert src["document_id"] == "doc1" and src["version_id"] == "ver1" and src["page"] == 2
+    assert src["quote"] and src["quote"] in TEXT["waterfall"]  # đoạn dẫn chứng có thật trong tài liệu
+    q = next(x for x in res["questions"] if x["topic_title"] == "Mô hình thác nước")
+    assert q["source"]["version_id"] == "ver1" and q["source"]["quote"] == q["proof"]
+
+    path = client.post(f"/api/v1/learning/assessments/{a['id']}/path", json={"strategy": "foundation_first"}).json()
+    learn = next(s for s in path["steps"] if s["kind"] == "learn")  # nguồn mức bài → gắn bản đang phục vụ
+    assert learn["sources"] == [{"document_id": "doc3", "version_id": "ver3", "document_title": "Bai 3",
+                                 "page": None, "page_end": None, "quote": ""}]  # fmt: skip
+    # tài liệu bài 2 bị thu hồi → nguồn của nó biến mất khi xem lại (kết quả đã lưu không bị sửa)
+    db.get(DocumentVersion, "ver2").state = "Withdrawn"
+    db.commit()
+    view = client.get(f"/api/v1/learning/assessments/{a['id']}").json()
+    gaps = {g["topic_id"]: g for g in view["result"]["gaps"]}
+    assert gaps["L2.T1"]["review"]["sources"] == [] and gaps["L1.T1"]["review"]["sources"]
+    assert "ver2" not in str(view["result"]) and "ver2" in str(db.get(LearningAssessment, a["id"]).result)

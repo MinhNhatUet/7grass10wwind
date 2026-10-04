@@ -4,17 +4,21 @@
 // mục tiêu + lỗ hổng có giải thích → chọn 1 trong 3 phương án lộ trình → lộ trình có thứ tự, hoạt động, checkpoint.
 // Mọi quyết định (phạm vi, chấm, chẩn đoán, lộ trình) ở server; trang chỉ hiển thị và gửi thao tác của người học.
 
-import { useCallback, useEffect, useState } from "react";
-import { Compass } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { Compass, X } from "lucide-react";
 import { ApiError, api, json, type CourseItem } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
+import { CitationBadge } from "@/components/chat/CitationBadge";
+import SourceReader from "@/components/source-reader";
+import type { Source } from "@/types/chat";
 
 type Lesson = { id: string; order: number; title: string; topics: { id: string; title: string }[] };
 type Curriculum = { course_id: string; source: "authored" | "derived"; notes: string[]; lessons: Lesson[] };
 type Progress = { covered_lesson_ids: string[]; current_lesson: { id: string; title: string; order: number } | null; next_lesson: { id: string; title: string; order: number } | null; covered_topics: number; total_topics: number };
 type MasteryTopic = { topic_id: string; title: string; level: string; mastery: number | null; confidence: string | null; assessed: boolean };
 type Mastery = { lessons: { lesson_id: string; order: number; title: string; covered: boolean; topics: MasteryTopic[] }[] };
-type Ref = { document_title: string | null; page: number | null; page_end: number | null };
+// Nguồn từ server: đã kiểm quyền lúc trả; có bản (version_id) thì mở được trang, quote = đoạn dẫn chứng nguyên văn
+type Ref = { document_id?: string | null; version_id?: string | null; document_title: string | null; page: number | null; page_end: number | null; quote?: string };
 type Question = { id: string; text: string; options: string[]; withdrawn?: boolean; lesson_title?: string | null; topic_title?: string | null; objective?: string | null; picked?: number | null; correct?: number; explanation?: string; proof?: string; source?: Ref | null };
 type Gap = { topic_id: string; topic_title: string; lesson_title: string; lesson_order: number; level: string; missing_concepts: string[]; why: string; evidence: { question: string; picked_text: string; correct_text: string; indicates: string }[]; review: { lesson_title: string; topic_title: string; sources: Ref[] }; root_causes: { title: string; lesson_title: string }[] };
 type Option = { strategy: string; title: string; description: string; suits: string; recommended: boolean; rationale: string; preview: string[]; summary: { steps: number; total_minutes: number; checkpoints: number; new_lessons: string[] } };
@@ -49,7 +53,51 @@ function Level({ level }: { level: string }) {
 }
 
 /** onFind: tìm tài liệu học theo nội dung (Knowledge Hub trong chat) cho chủ đề của một bước lộ trình. */
-export function ProgressPath({ courses, onPractice, onFind }: { courses: CourseItem[]; onPractice: (courseId: string, action: string, topic: string, label: string) => void; onFind: (courseId: string, query: string) => void }) {
+/** Mở trang nguồn của một trích dẫn: trong chat là khung nguồn bên phải; ở trang Ôn tập là khung trượt riêng. */
+const OpenSource = createContext<(s: Source) => void>(() => {});
+
+/** Nguồn dạng trích dẫn như trong chat: rê chuột hiện đoạn dẫn chứng + trang, bấm mở trang tài liệu. */
+function Refs({ refs }: { refs: Ref[] }) {
+  const open = useContext(OpenSource);
+  return (
+    <>
+      {refs.map((r, i) => {
+        if (!r.document_id || !r.version_id) return where(r) ? <span key={i}> · {where(r)}</span> : null;
+        const page = r.page ?? 1;
+        const label = r.page ? `tr. ${r.page}${r.page_end && r.page_end !== r.page ? `–${r.page_end}` : ""}` : "mở";
+        const source: Source = { id: `${r.version_id}-${page}-${i}`, title: r.document_title ?? "", page, pageEnd: r.page_end ?? null,
+          content: r.quote ?? "", documentId: r.document_id, versionId: r.version_id };
+        return <span key={i} className="whitespace-nowrap"> · {r.document_title}<CitationBadge source={source} onClick={open} label={label} /></span>;
+      })}
+    </>
+  );
+}
+
+type ProgressPathProps = { courses: CourseItem[]; onPractice: (courseId: string, action: string, topic: string, label: string) => void; onFind: (courseId: string, query: string) => void };
+
+/** onSource: cách mở trang nguồn của nơi chứa (chat có khung nguồn riêng); không truyền → khung trượt của khối này. */
+export function ProgressPath({ onSource, ...props }: ProgressPathProps & { onSource?: (s: Source) => void }) {
+  const [viewing, setViewing] = useState<Source | null>(null);
+  return (
+    <OpenSource.Provider value={onSource ?? setViewing}>
+      <ProgressPathBody {...props} />
+      {viewing && (
+        <div role="dialog" aria-modal="true" aria-label="Trích dẫn nguồn" className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => setViewing(null)}>
+          <div className="h-full w-[min(560px,100vw)] overflow-y-auto bg-white dark:bg-[#0c1219] p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[14px] font-semibold">Trích dẫn nguồn · {viewing.title}</span>
+              <button type="button" aria-label="Đóng" className={btn2} onClick={() => setViewing(null)}><X size={16} /></button>
+            </div>
+            {viewing.content && <p className={`mb-3 border-l-2 border-black/20 dark:border-white/20 pl-2 text-[13px] ${muted}`}>“{viewing.content}”</p>}
+            <SourceReader key={`${viewing.versionId}-${viewing.page}`} source={{ documentId: viewing.documentId, versionId: viewing.versionId, page: viewing.page }} />
+          </div>
+        </div>
+      )}
+    </OpenSource.Provider>
+  );
+}
+
+function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
   const [courseId, setCourseId] = useState(courses[0]?.id ?? "");
   const [cur, setCur] = useState<Curriculum | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -228,7 +276,7 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
                   <p><b>Vì sao:</b> {g.why}</p>
                   <ul className="list-disc pl-4">{g.evidence.map((e, i) => <li key={i}>Chọn “{e.picked_text}” — {e.indicates}</li>)}</ul>
                   {g.root_causes.length > 0 && <p><b>Nguyên nhân gốc:</b> chưa vững {g.root_causes.map((x) => `“${x.title}” (${x.lesson_title})`).join(", ")}</p>}
-                  <p><b>Xem lại:</b> Bài {g.lesson_order}: {g.review.lesson_title} — {g.review.topic_title}{g.review.sources.map(where).filter(Boolean).map((s) => ` · ${s}`).join("")}</p>
+                  <p><b>Xem lại:</b> Bài {g.lesson_order}: {g.review.lesson_title} — {g.review.topic_title}<Refs refs={g.review.sources} /></p>
                 </div>
               ))}
             </div>
@@ -275,7 +323,7 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
                     );
                   })}
                 </div>
-                {done && q.explanation && <p className={`mt-1 text-[12px] ${muted}`}>{q.explanation}{q.source && ` — ${where(q.source)}`}</p>}
+                {done && q.explanation && <p className={`mt-1 text-[12px] ${muted}`}>{q.explanation}{q.source && <Refs refs={[q.source]} />}</p>}
               </>
             )}
           </li>
@@ -309,7 +357,7 @@ function PathPanel({ path, busy, onStep, onCheckpoint, onPractice, onFind }: { p
               {!s.needs_update && (
                 <>
                   {s.objectives.length > 0 && s.kind !== "checkpoint" && <p className={muted}>Mục tiêu: {s.objectives.slice(0, 3).join("; ")}</p>}
-                  {s.sources.length > 0 && <p className={muted}>Đọc: {s.sources.map(where).filter(Boolean).join("; ")}</p>}
+                  {s.sources.length > 0 && <p className={muted}>Đọc<Refs refs={s.sources} /></p>}
                   {s.locked && <p className="text-amber-700 dark:text-amber-300">🔒 {s.unlock}</p>}
                   <div className="mt-1 flex flex-wrap gap-1">
                     {s.activities.filter((x) => x.type === "find").map((x, i) => (
