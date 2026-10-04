@@ -1,208 +1,153 @@
-# AI20K Agent Template
+# EDU-04 — Kho tri thức hỗ trợ học thuật X
 
-Template chính thức cho học viên VinUni AI20K Build Phase: cấu trúc dự án, code
-mẫu và hướng dẫn kỹ thuật để xây dựng một AI Agent hoàn chỉnh — từ kiến trúc,
-code, test cho đến deploy và nộp bài Demo Day.
+Trợ lý học thuật dùng RAG cho Trung tâm X (AI20K Build Phase, đội **7 cỏ 10 gió**). Sinh viên hỏi đáp và học trên
+**chính tài liệu đã được giảng viên duyệt**, mọi khẳng định học thuật đều có trích dẫn mở được tới đúng trang nguồn.
 
-Technical Guidebook: <https://phoenix.note.transformerlabs.ai/technical-book>
+- **Academic Assistant:** hỏi đáp có trích dẫn [n] tới tài liệu, trang; thiếu căn cứ thì nói rõ, không bịa.
+- **Learning Assistant:** giải thích theo 3 mức, câu hỏi tự kiểm tra, trắc nghiệm, flashcard, điền khuyết, chẩn đoán
+  kiến thức nền; **lộ trình học** theo tiến độ (đã học tới bài N → bài đánh giá → chọn lộ trình → các bước cụ thể).
+- **Knowledge Hub:** tìm và mở tài liệu trong phạm vi được phép (vector + BM25 + rerank).
+- **Quy trình tài liệu của giảng viên:** upload → duyệt (người duyệt khác người upload) → phát hành → thu hồi, có audit.
+- **Quản trị:** người dùng và quyền theo môn, khóa khẩn cấp tài liệu, quota, chi phí AI, giám sát.
 
-## Template có sẵn những gì
-
-- **Cấu trúc thư mục tách lớp** — `agents/`, `api/`, `services/`, `models/` đã
-  chia sẵn, không phải bàn lại từ đầu.
-- **Code mẫu chạy được** — LangGraph agent (state, node, tool), FastAPI routes,
-  Pydantic settings, schema.
-- **Docker và CI** — Dockerfile multi-stage, `docker-compose.yml`, workflow
-  GitHub Actions chạy `ruff` + `pytest` khi push lên `main`/`develop` và khi mở
-  pull request vào `main`.
-- **Technical Guidebook 10 chương** trong `docs/guide/`, đồng thời đọc được
-  online.
-- **Checklist 10 deliverables** của Demo Day.
-- **AI usage logging** — hook cài sẵn cho 6 công cụ AI, log tự động gửi lên
-  grading server mỗi lần `git push`.
+Kiến trúc: [ARCHITECTURE.md](ARCHITECTURE.md) · sơ đồ: [docs/architecture_diagram.md](docs/architecture_diagram.md) ·
+đánh giá: [eval/results/report.md](eval/results/report.md), [eval/results/manual_cases.md](eval/results/manual_cases.md).
 
 ## Yêu cầu
 
-- Python 3.11 (phiên bản CI đang dùng)
-- Git
-- Docker — tuỳ chọn, chỉ cần nếu chạy `docker compose`
+- Python 3.11 (bản CI dùng), Node.js 20+
+- Key LLM tương thích OpenAI và key embedding (Gemini hoặc OpenAI)
+- Docker — tùy chọn, để chạy `docker compose`
 
-## Bắt đầu
-
-### 1. Clone repo của đội
-
-Khi đội được chốt, hệ thống tự sinh repo cho đội từ template này, nằm trong org
-GitHub của khoá bạn đang học và đặt tên theo mã đội. Copy URL ở trang đội trên
-Phoenix rồi clone về:
+## Cài đặt
 
 ```bash
-git clone https://github.com/<ORG-CỦA-KHOÁ>/<MÃ-ĐỘI>.git
-cd <MÃ-ĐỘI>
-```
+git clone https://github.com/AI20K-Build-Phase-Cohort-4/P-134.git
+cd P-134
 
-Không cần `rm -rf .git`, `git init` hay `git remote add`: repo sinh từ template
-đã bắt đầu bằng lịch sử riêng của đội và remote trỏ sẵn đúng chỗ. Chưa thấy repo
-của đội thì báo BTC — repo tự tạo nằm ngoài org sẽ không được chấm.
-
-### 2. Cài môi trường
-
-```bash
+# Backend
 python3.11 -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env               # rồi điền key (xem bảng dưới)
+
+# Frontend
+cd frontend && npm ci && cd ..
+
+# Hook ghi log AI (chạy một lần)
+bash scripts/setup_hooks.sh                                       # Linux / macOS / Git Bash
+powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1  # Windows
 ```
 
-### 3. Cấu hình biến môi trường
+### Dữ liệu ban đầu
 
 ```bash
-cp .env.example .env
+python scripts/seed_users.py                          # môn học, người dùng, quyền theo môn
+python scripts/seed_cnpm.py --confirm-demo-usage      # demo môn Công nghệ phần mềm (SE101) từ data/artifacts
 ```
 
-Mở `.env` và điền `OPENAI_API_KEY`. Riêng `AI_LOG_API_KEY`, mỗi thành viên tự
-tạo key riêng tại [dashboard Phoenix](https://phoenix.note.transformerlabs.ai/api-keys)
-rồi thay vào chỗ `<get-your-api-key-from-dashboard-phoenix>` — giá trị trong
-`.env.example` chỉ là placeholder, để nguyên thì log không vào được hệ thống chấm.
+Tài liệu mới do giảng viên upload qua giao diện **Quản lý tài liệu**, đi qua duyệt rồi mới vào tìm kiếm. Dữ liệu
+(`data/`) không nằm trong repo (BR-12).
 
-### 4. Cài hook ghi log AI
+## Chạy
 
 ```bash
-bash scripts/setup_hooks.sh                                      # Linux / macOS / Git Bash
-powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1 # Windows PowerShell
+make dev                 # Windows: backend :8000 + frontend :3000 (scripts/dev.ps1)
+make run                 # chỉ backend, http://localhost:8000 (Swagger: /docs, health: /health)
+cd frontend && npm run dev   # chỉ frontend, http://localhost:3000
 ```
 
-Chạy một lần sau khi clone. Hook ghi lại prompt khi bạn dùng Claude Code, Cursor,
-Codex CLI, Gemini CLI, Antigravity hoặc GitHub Copilot, và cài pre-push hook để
-đẩy log lên server.
-
-### 5. Chạy server
+Bằng Docker:
 
 ```bash
-uvicorn src.main:app --reload --port 8000
+docker compose up --build    # frontend :3000, backend :8000, Postgres 15; cần POSTGRES_PASSWORD trong .env
 ```
 
-Swagger UI ở <http://localhost:8000/docs>. Hoặc dùng `make run`, `make test`,
-`make lint` — xem `Makefile`.
+Image backend không chứa `.env`, `data/`, bản sao DB; dữ liệu được mount từ `./data` lúc chạy.
 
-Để chạy cả frontend và backend trên Windows:
+**Đăng nhập demo:** đặt `DEMO_LOGIN_ENABLED=true` (chỉ môi trường demo, luôn tắt ở production), trang đăng nhập
+hiện nút "Đăng nhập demo" theo vai trò sinh viên / giảng viên.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
-```
+## Biến môi trường
 
-Hoặc nếu đã cài `make`:
+Đầy đủ trong [.env.example](.env.example). Các biến chính:
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL` | — | LLM tương thích OpenAI (ưu tiên). `OPENAI_API_KEY` / `MODEL_NAME` là fallback |
+| `LLM_TIMEOUT_SECONDS` | `60` | Timeout mỗi lần gọi LLM |
+| `EMBEDDING_PROVIDER` | `gemini` | `gemini` hoặc `openai` |
+| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION` | — | Model và số chiều embedding (ví dụ `gemini-embedding-001`, `768`) |
+| `GEMINI_API_KEY` | — | Key cho embedding Gemini |
+| `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL` | — | Key/endpoint riêng cho embedding OpenAI |
+| `RETRIEVAL_MIN_SCORE` | `0.55` | Ngưỡng bằng chứng; đổi model embedding phải hiệu chỉnh lại |
+| `DATABASE_URL` | `sqlite:///./data/app.db` | DB; compose dùng Postgres |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Origin frontend, phân tách bằng dấu phẩy |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Địa chỉ backend cho frontend |
+| `DEMO_LOGIN_ENABLED` | `false` | Bật nút đăng nhập demo |
+| `DAILY_QUESTION_QUOTA` | `200` | Số câu hỏi mỗi người mỗi ngày |
+| `LEARNING_ASSESSMENT_MAX_QUESTIONS` | `15` | Số câu tối đa của bài đánh giá lộ trình |
+| `AUTH_SESSION_TTL_MINUTES` | `480` | Thời hạn phiên đăng nhập |
+| `UPLOAD_MAX_MB` | `100` | Dung lượng tối đa mỗi tệp upload |
+| `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M`, `USD_TO_VND` | `0.10`, `0.40`, `26000` | Bảng giá ước tính cho trang Chi phí AI |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | — | Chỉ cho `docker compose` |
+| `AI_LOG_API_KEY` | — | Key cá nhân để gửi log AI lên hệ thống chấm |
+
+## Câu hỏi mẫu (môn Công nghệ phần mềm)
+
+| Trợ lý | Câu hỏi |
+|---|---|
+| Academic | "Kiểm thử hộp đen là gì? Khác gì kiểm thử hộp trắng?" |
+| Academic | "Phân tích giá trị biên dùng để làm gì?" |
+| Academic | "Mô hình thác nước có những giai đoạn nào?" |
+| Learning — giải thích | "Giải thích từng bước cách thiết kế ca kiểm thử bằng phân vùng tương đương" |
+| Learning — tự kiểm tra | "Cho mình 5 câu trắc nghiệm về quản lý yêu cầu" |
+| Learning — lộ trình | Trang **Học tập → Lộ trình**: chọn "đã học tới bài N" → làm bài đánh giá → chọn lộ trình |
+| Knowledge Hub | "Tìm tài liệu về kiểm thử đơn vị" |
+| Ngoài phạm vi | "Cách nấu phở bò?" → hệ thống hỏi làm rõ, không trả lời có nguồn |
+| Liêm chính | "Giải hộ bài tập lớn, đưa đáp án cuối" → chuyển hướng sang gợi ý, không đưa lời giải (BR-06) |
+
+## Kiểm thử và đánh giá
 
 ```bash
-make dev
+make lint                      # ruff check src/ tests/
+make test                      # pytest (không gọi LLM thật)
+python -m eval.uat.run_uat_mvp # UAT mức API trên bản sao DB, backend riêng cổng 8100
 ```
 
-Frontend ở <http://localhost:3000>, backend ở <http://localhost:8000>.
+Kết quả: [eval/results/report.md](eval/results/report.md), ca kiểm thử có output thật:
+[eval/results/manual_cases.md](eval/results/manual_cases.md).
 
 ## Cấu trúc thư mục
 
 ```
 src/
-  agents/            LangGraph agent
-    graph.py         State graph (nodes + edges)
-    state.py         State schema (TypedDict)
-    nodes/           Node functions
-    tools/           Agent tools (@tool)
-  api/routes.py      FastAPI endpoints
-  models/schemas.py  Pydantic schemas
-  services/llm.py    LLM client
-  config.py          Pydantic Settings
-  main.py            App entry point
-tests/               pytest suite
-scripts/             Hook ghi log AI + installer
-docs/
-  guide/             Technical Guidebook (nguồn của bản online)
-  architecture_diagram.md
-eval/                Kết quả evaluation
-presentation/        Slide và video Demo Day
-.claude/ .codex/ .cursor/ .gemini/ .agents/ .github/hooks/
-                     Config hook cho từng công cụ
-.github/workflows/   CI
-Dockerfile           Multi-stage build
-docker-compose.yml   Chạy backend bằng Docker
-README_boilerplate.md  Khung README cho dự án của đội
+  main.py               FastAPI app, mount router /api/v1, /health
+  config.py             Settings đọc từ .env
+  api/                  auth, conversations, documents, sources, learning_path, quizzes, dashboard, admin
+  agents/               LangGraph: policy → router → academic | learning | hub | clarify
+  services/             acl, auth, retrieval, documents, conversations, assistants/, learning_path/, llm
+  knowledge_hub/        tìm kiếm lai (vector + BM25 + RRF + rerank)
+  ingestion/            pipeline trích xuất PDF/PPTX, chunk, metadata
+  models/               ORM (SQLAlchemy) + schema (Pydantic)
+frontend/               Next.js
+migrations/             Alembic
+scripts/                seed dữ liệu, import tài liệu, hook log AI
+tests/                  pytest
+eval/                   UAT, RAGAS, benchmark, kết quả đánh giá
+docs/                   PRD, backlog, kế hoạch, UAT, sơ đồ kiến trúc
 ```
-
-## Technical Guidebook
-
-| Chương | Nội dung | Thời gian |
-|---|---|---|
-| 1 | Lời mở đầu — mục tiêu, cách sử dụng | 15 phút |
-| 2 | Khởi tạo dự án — clone, setup, git workflow | 4 giờ |
-| 3 | Thiết kế kiến trúc — 3-tier, diagram, ADR | 6 giờ |
-| 4 | LangGraph Agent — state, node, edge, tool, RAG | 8 giờ |
-| 5 | FastAPI — routes, validation, error handling, streaming | 6 giờ |
-| 6 | Giao diện — Next.js và Streamlit | 6 giờ |
-| 7 | DevOps — Docker, CI/CD, deploy, logging | 6 giờ |
-| 8 | Kiểm thử — unit test, integration test, RAGAS | 4 giờ |
-| 9 | Demo Day — 10 deliverables, checklist | 2 giờ |
-| 10 | Tài nguyên — khoá học, tài liệu, BMAD method | tham khảo |
-
-Đọc online tại <https://phoenix.note.transformerlabs.ai/technical-book>: đăng
-nhập bằng GitHub (đúng account đã được BTC mời vào org của khoá), chọn tab
-**Technical Book** ở sidebar trái. Bản offline nằm trong `docs/guide/`, mở được
-bằng bất kỳ markdown viewer nào.
-
-## 10 deliverables cho Demo Day
-
-| # | Deliverable | Vị trí | Template lo tới đâu |
-|---|---|---|---|
-| 1 | Source code | `src/` | Khung sẵn |
-| 2 | README | copy `README_boilerplate.md` thành `README.md` | Khung sẵn |
-| 3 | Architecture diagram | `docs/architecture_diagram.md` | Khung sẵn |
-| 4 | AI logs | LangSmith (3 biến môi trường) + auto AI usage logging | Cấu hình sẵn |
-| 5 | Live URL | deploy lên Render/Vercel | CI/CD sẵn |
-| 6 | Video demo | `presentation/` | Đội tự làm |
-| 7 | Pitch deck | `presentation/` | Đội tự làm |
-| 8 | Development journal | `JOURNAL.md` | Khung sẵn |
-| 9 | Worklog | `WORKLOG.md` | Khung sẵn |
-| 10 | Evaluation evidence | `eval/` | Đội tự làm |
-
-## Tech stack
-
-| Lớp | Công nghệ |
-|---|---|
-| Agent | LangGraph + LangChain 0.3 |
-| Backend | FastAPI 0.115 + Uvicorn |
-| LLM | OpenAI, mặc định `gpt-4o-mini` (đổi trong `src/config.py`) |
-| Giao diện | Next.js hoặc Streamlit (đội tự chọn, hướng dẫn ở chương 6) |
-| Lint / test | ruff + pytest 8 |
-| DevOps | Docker + GitHub Actions |
 
 ## AI usage logging
 
-Mọi prompt được ghi vào `.ai-log/session.jsonl` và tự động gửi lên grading server
-ở bước pre-push.
-
-| Công cụ | Cấu hình | Thời điểm ghi |
-|---|---|---|
-| Claude Code | `.claude/settings.json` | mỗi prompt (`UserPromptSubmit`) |
-| Cursor | `.cursor/hooks.json` | mỗi prompt và khi dừng |
-| OpenAI Codex CLI | `.codex/hooks.json` | mỗi prompt và khi dừng |
-| Gemini CLI | `.gemini/settings.json` | mỗi lượt agent chạy |
-| GitHub Copilot | `.github/hooks/hooks.json` | mỗi prompt và cuối session |
-| Antigravity IDE | `.agents/hooks.json` | mỗi prompt, kèm lần quét lại lúc `git push` |
-
-Dùng ChatGPT hay công cụ web khác thì log thủ công:
+Mọi prompt được ghi vào `.ai-log/session.jsonl` bằng hook và tự gửi lên grading server ở bước pre-push. Không gỡ hoặc
+bỏ qua các hook này (`.claude/settings.json`, `.cursor/hooks.json`, `.codex/hooks.json`, `.gemini/settings.json`,
+`.github/hooks/hooks.json`, `.agents/hooks.json`). Công cụ web (ChatGPT…) thì log thủ công:
 
 ```bash
 bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "What you asked"
 ```
 
-## Đóng góp
-
-Repo này là open source. Đọc [CONTRIBUTING.md](CONTRIBUTING.md) trước khi mở PR.
-
-Nội dung trong `docs/guide/` là nguồn của Technical Book và được đồng bộ lên bản
-online, nên mọi thay đổi ở đó cần review của
-[@AI20K-Build-Phase/book-maintainers](https://github.com/orgs/AI20K-Build-Phase/teams/book-maintainers)
-— xem [.github/CODEOWNERS](.github/CODEOWNERS).
-
-Báo lỗ hổng bảo mật theo [SECURITY.md](SECURITY.md), đừng mở public issue.
-
 ## License
 
-[MIT](LICENSE) — dùng tự do cho mục đích giáo dục.
+[MIT](LICENSE)
