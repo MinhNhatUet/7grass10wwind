@@ -57,10 +57,13 @@ def build_blueprint(
         wanted = set(focus_topic_ids)
         in_scope = [t for t in in_scope if t.id in wanted]
     order = {x.id: x.order for x in curriculum.lessons}
+    nth = {t.id: i for x in curriculum.lessons for i, t in enumerate(x.topics)}
 
-    def rank(t: Topic) -> tuple[int, int]:
+    def rank(t: Topic) -> tuple[int, int, int]:
+        # cùng mức ưu tiên → xoay vòng theo bài (chủ đề thứ i của mọi bài trước chủ đề thứ i+1): quỹ câu nhỏ hơn số
+        # chủ đề thì MỌI bài đã học vẫn có câu hỏi, không dồn hết vào các bài đầu (SE101: 75 chủ đề, quỹ 20)
         m = mastery.get(t.id)
-        return (_PRIORITY.get(m.get("level") if m else None, 3), order[t.lesson_id])
+        return (_PRIORITY.get(m.get("level") if m else None, 3), nth[t.id], order[t.lesson_id])
 
     ranked = sorted(in_scope, key=rank)
     chosen, deferred = ranked[:max_questions], ranked[max_questions:]

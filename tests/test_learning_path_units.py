@@ -214,10 +214,14 @@ def test_continue_with_gaps_reviews_prerequisites_first_then_interleaves(cur):
     r = roadmap.build_roadmap(cur, {"L1", "L2"}, mastery, "continue_with_gaps")
     ks = kinds(r)
     assert ks[0] == ("review", ["L2.T1"])  # L3.T1 cần L2.T1 → ôn trước khi học bài 3
-    assert ks[1] == ("learn", "L3")
-    assert ("reinforce", ["L1.T1"]) in ks[2:] and ks[-1][0] == "checkpoint"
-    checkpoint = next(s for s in r["steps"] if s["kind"] == "checkpoint")
-    assert "L3.T1" in checkpoint["assessment"]["topic_ids"] and "L2.T1" in checkpoint["assessment"]["topic_ids"]
+    assert ks[1][0] == "checkpoint" and ks[2] == ("learn", "L3")
+    assert ("reinforce", ["L1.T1"]) in ks[3:] and ks[-1][0] == "checkpoint"
+    gate = r["steps"][1]
+    assert gate["assessment"]["topic_ids"] == ["L2.T1"]
+    learn = r["steps"][2]
+    assert roadmap.gate_of(r["steps"], learn)["id"] == gate["id"] and not roadmap.gate_open(r["steps"], learn)
+    after = next(s for s in r["steps"] if s["kind"] == "checkpoint" and s["order"] > learn["order"])
+    assert "L3.T1" in after["assessment"]["topic_ids"]
 
 
 def test_intensive_review_gates_new_lesson_behind_full_checkpoint(cur):

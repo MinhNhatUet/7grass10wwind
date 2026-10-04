@@ -2,7 +2,7 @@
 
 Ba chiến lược, cùng một đầu vào (chương trình học, phạm vi đã học, mức nắm vững cộng dồn, nguồn theo chủ đề):
 - foundation_first   — ôn hết chủ đề hổng theo thứ tự đề cương (nền trước phần phụ thuộc) → kiểm tra lại → học bài mới.
-- continue_with_gaps — giữ nhịp lớp: ôn trước chủ đề nền mà bài kế tiếp cần, học bài mới, xen kẽ vá các lỗ hổng còn lại.
+- continue_with_gaps — giữ nhịp lớp: ôn trước chủ đề nền mà bài kế tiếp cần (đạt kiểm tra mới mở), học bài mới, xen kẽ vá các lỗ hổng còn lại.
 - intensive_review   — ôn toàn bộ phạm vi đã học (yếu trước, vững sau) → kiểm tra tổng (đạt mới mở bài mới).
 
 Mỗi bước có thứ tự, bài/chủ đề/mục tiêu thật của đề cương, hoạt động học (ánh xạ sang công cụ học có sẵn: giải thích,
@@ -32,7 +32,8 @@ STRATEGIES: dict[str, dict[str, str]] = {
     },
     "continue_with_gaps": {
         "title": "Học tiếp, vá lỗ hổng song song",
-        "description": "Giữ nhịp lớp học: ôn trước phần nền bài kế tiếp cần, học bài mới và xen kẽ ôn các chủ đề yếu.",
+        "description": "Giữ nhịp lớp học: ôn phần nền bài kế tiếp cần và đạt bài kiểm tra, rồi học bài mới, xen kẽ ôn các "
+        "chủ đề yếu còn lại.",
         "suits": "Khi phần lớn đã vững, chỉ còn vài chủ đề cần củng cố.",
     },
     "intensive_review": {
@@ -212,17 +213,19 @@ def build_roadmap(
             b.checkpoint(list(upcoming[0].topics), f"Kiểm tra bài {upcoming[0].order}: {upcoming[0].title}")
     elif strategy == "continue_with_gaps":
         first = {t.id for t in prerequisite_gaps(curriculum, covered, mastery, upcoming[0])} if upcoming else set()
+        prereq = [t for t, _ in weak if t.id in first]
         for t, level in weak:
             if t.id in first:
                 b.gap(t, level)
+        # ôn nền xong phải ĐẠT kiểm tra mới mở bài mới (gate_of) — không học bài mới khi nền nó cần còn hổng
+        b.checkpoint(prereq, "Kiểm tra phần nền trước khi học bài mới")
         rest = [(t, level) for t, level in weak if t.id not in first]
         for lesson in upcoming:
             b.learn(lesson)
             patch, rest = rest[:2], rest[2:]
             for t, level in patch:
                 b.gap(t, level)
-            prereq = [t for t, _ in weak if t.id in first] if lesson is upcoming[0] else []
-            b.checkpoint(list(lesson.topics) + [t for t, _ in patch] + prereq,
+            b.checkpoint(list(lesson.topics) + [t for t, _ in patch],
                          f"Kiểm tra bài {lesson.order}: {lesson.title} và chủ đề vừa ôn")  # fmt: skip
         for t, level in rest:
             b.gap(t, level)
