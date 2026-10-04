@@ -11,6 +11,7 @@ import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { CitationBadge } from "@/components/chat/CitationBadge";
 import SourceReader from "@/components/source-reader";
 import type { Source } from "@/types/chat";
+import { pinStudy } from "@/lib/study-pins";
 
 type Lesson = { id: string; order: number; title: string; topics: { id: string; title: string }[] };
 type Curriculum = { course_id: string; source: "authored" | "derived"; notes: string[]; lessons: Lesson[] };
@@ -210,7 +211,7 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
           )}
 
           {path && (
-            <PathPanel path={path} busy={busy} onStep={(id, s) => void setStep(id, s)}
+            <PathPanel path={path} courseId={courseId} busy={busy} onStep={(id, s) => void setStep(id, s)}
               onCheckpoint={(stepId) => void startAssessment({ path_id: path.id, step_id: stepId })}
               onPractice={(action, topic, label) => onPractice(courseId, action, topic, label)}
               onFind={(query) => onFind(courseId, query)} />
@@ -338,8 +339,20 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
   );
 }
 
-function PathPanel({ path, busy, onStep, onCheckpoint, onPractice, onFind }: { path: Path; busy: boolean; onStep: (id: string, status: string) => void; onCheckpoint: (stepId: string) => void; onPractice: (action: string, topic: string, label: string) => void; onFind: (query: string) => void }) {
+function PathPanel({ path, courseId, busy, onStep, onCheckpoint, onPractice, onFind }: { path: Path; courseId: string; busy: boolean; onStep: (id: string, status: string) => void; onCheckpoint: (stepId: string) => void; onPractice: (action: string, topic: string, label: string) => void; onFind: (query: string) => void }) {
   const [picking, setPicking] = useState<string | null>(null); // bước đang mở danh sách khái niệm để nhờ giải thích
+  // D-83: bấm ôn một bước → ghim bước đó thành tag "Đang ôn" (đổi qua lại giữa các phần, kể cả khi đang trong chat)
+  const pin = (s: Step) => pinStudy({
+    key: `path:${path.id}:${s.id}`, source: "path", title: s.title, subtitle: path.summary.title, courseId,
+    topic: `${s.title}. ${s.objectives.join("; ")}`.slice(0, 600), concepts: s.concepts,
+    actions: s.activities.filter((x) => x.type === "find" || CHAT_ACTIONS.has(x.type)),
+    href: `/learning/plans?tab=progress&step=${encodeURIComponent(s.id)}`,
+  });
+  // mở từ tag → cuộn tới đúng bước
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("step");
+    if (id) document.getElementById(`step-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [path.id]);
   return (
     <div className="rounded-xl border border-black/10 dark:border-white/10 p-3">
       <p className="font-medium">{path.summary.title} <span className={`font-normal ${muted}`}>· {path.done}/{path.total} bước · ~{path.summary.total_minutes} phút</span></p>
@@ -350,7 +363,7 @@ function PathPanel({ path, busy, onStep, onCheckpoint, onPractice, onFind }: { p
           const topics = (s.topic_titles ?? []).join(", ") || s.title;
           const failed = s.kind === "checkpoint" && s.status === "done" && s.result && !s.result.passed;
           return (
-            <li key={s.id} className={`rounded-lg p-2 text-[13px] ${s.id === path.next_step_id ? "bg-black/5 dark:bg-white/10" : ""} ${s.remediation || s.round ? "border-l-2 border-amber-500 pl-3" : ""}`}>
+            <li key={s.id} id={`step-${s.id}`} className={`scroll-mt-24 rounded-lg p-2 text-[13px] ${s.id === path.next_step_id ? "bg-black/5 dark:bg-white/10" : ""} ${s.remediation || s.round ? "border-l-2 border-amber-500 pl-3" : ""}`}>
               <p className="font-medium">{s.order}. <span className={muted}>[{s.remediation ? "Ôn lại" : STEP_KIND[s.kind] ?? s.kind}]</span> {s.title}
                 {s.status === "done" && " ✓"}{s.result && ` · ${s.result.score_pct ?? "—"}% ${s.result.passed ? "(đạt)" : "(chưa đạt)"}`}</p>
               {failed && <p className="text-amber-700 dark:text-amber-300">Chưa đạt — làm các bước “Ôn lại” bên dưới rồi kiểm tra lại; đạt mới mở bài mới.</p>}
@@ -361,11 +374,11 @@ function PathPanel({ path, busy, onStep, onCheckpoint, onPractice, onFind }: { p
                   {s.locked && <p className="text-amber-700 dark:text-amber-300">🔒 {s.unlock}</p>}
                   <div className="mt-1 flex flex-wrap gap-1">
                     {s.activities.filter((x) => x.type === "find").map((x, i) => (
-                      <button key={`f${i}`} type="button" className={btn2} disabled={s.locked} onClick={() => onFind(topics)}>🔎 {x.label}</button>
+                      <button key={`f${i}`} type="button" className={btn2} disabled={s.locked} onClick={() => { pin(s); onFind(topics); }}>🔎 {x.label}</button>
                     ))}
                     {s.activities.filter((x) => CHAT_ACTIONS.has(x.type)).map((x, i) => (
                       <button key={i} type="button" className={btn2} disabled={s.locked}
-                        onClick={() => (x.type === "explain" && s.concepts?.length ? setPicking(picking === s.id ? null : s.id) : onPractice(x.type, context, x.label))}>
+                        onClick={() => (x.type === "explain" && s.concepts?.length ? setPicking(picking === s.id ? null : s.id) : (pin(s), onPractice(x.type, context, x.label)))}>
                         {x.label}{x.type === "explain" && s.concepts?.length ? (picking === s.id ? " ▴" : " ▾") : ""}
                       </button>
                     ))}
@@ -383,7 +396,7 @@ function PathPanel({ path, busy, onStep, onCheckpoint, onPractice, onFind }: { p
                       <p className={`text-[12px] ${muted}`}>Chọn khái niệm bạn muốn trợ lý giải thích từng bước:</p>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {s.concepts.map((c) => (
-                          <button key={c} type="button" className={btn2} onClick={() => { setPicking(null); onPractice("explain", `${c} (chủ đề: ${topics})`.slice(0, 600), `Giải thích: ${c}`); }}>{c}</button>
+                          <button key={c} type="button" className={btn2} onClick={() => { setPicking(null); pin(s); onPractice("explain", `${c} (chủ đề: ${topics})`.slice(0, 600), `Giải thích: ${c}`); }}>{c}</button>
                         ))}
                       </div>
                     </div>

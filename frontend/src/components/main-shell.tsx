@@ -15,6 +15,7 @@ import {
   Sun, Target, Trash2, Zap,
 } from "lucide-react";
 import { API } from "@/lib/api-errors";
+import { StudyPinsBar } from "@/components/study-pins";
 
 export const CONV_CHANGED = "edu04:conversations-changed";
 export const ACTIVE_CONV = "edu04:active-conversation";
@@ -249,6 +250,7 @@ export function MainShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
+        {student && <StudyPinsBar />}
         <div className="flex-1 min-h-0 relative">{children}</div>
       </main>
     </div>
