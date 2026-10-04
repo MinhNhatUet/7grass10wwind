@@ -34,6 +34,9 @@ from src.services.formatting import aware, iso
 
 GRACE_S = 30
 MAX_QUESTIONS = 100
+# Gắn câu hỏi vào chương trình học (learning_path.curriculum) — tùy chọn; đề luyện tập có gắn thẻ được dùng làm ngân
+# hàng câu hỏi cho bài đánh giá theo tiến độ (chỉ "practice", không lấy đề thi — BR-06)
+TAGS = ("lesson_id", "topic_id", "objective_id")
 
 
 def _complete(q: dict[str, Any]) -> bool:
@@ -61,7 +64,7 @@ def view(quiz: CourseQuiz, *, staff: bool) -> dict[str, Any]:
         "questions": [
             {
                 k: q.get(k)
-                for k in (("id", "text", "options", "correct", "explanation") if staff else ("id", "text", "options"))
+                for k in (("id", "text", "options", "correct", "explanation", *TAGS) if staff else ("id", "text", "options"))
             }
             for q in qs
         ],
@@ -136,6 +139,7 @@ def _clean(payload: dict[str, Any]) -> dict[str, Any]:
                 "options": opts,
                 "correct": correct if correct in (0, 1, 2, 3) else None,
                 "explanation": str(q.get("explanation") or "")[:2000],
+                **{t: str(q[t])[:200] for t in TAGS if q.get(t)},
             }
         )
     return {

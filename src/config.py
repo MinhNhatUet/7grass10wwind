@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     chat_max_input_chars: int = Field(default=5000, gt=0)
     daily_question_quota: int = Field(default=200, gt=0)
     learning_quiz_questions: int = Field(default=3, gt=0)
+    # D-82: bài đánh giá theo tiến độ — trần số câu (phủ mọi chủ đề đã học trước, dư thì hỏi sâu chủ đề yếu/chưa rõ)
+    learning_assessment_max_questions: int = Field(default=20, gt=0, le=60)
 
     # Database
     database_url: str = "sqlite:///./data/app.db"
