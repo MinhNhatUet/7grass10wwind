@@ -24,7 +24,7 @@ type Result = {
   topics: { topic_id: string; title: string; lesson_title: string; answered: number; correct: number; level: string; confidence: string; objectives: { id: string; text: string; status: string }[] }[];
   gaps: Gap[]; recommendations: { kind: string; text: string }[]; path_options: Option[]; recommended_strategy: string;
 };
-type Assessment = { id: string; purpose: string; status: string; path_id: string | null; step_id: string | null; scope: { lessons: { id: string; title: string; order: number }[]; not_assessed: { title: string; reason_text: string }[] }; questions: Question[]; result: Result | null };
+type Assessment = { id: string; purpose: string; status: string; path_id: string | null; step_id: string | null; scope: { lessons: { id: string; title: string; order: number }[] }; questions: Question[]; result: Result | null };
 type Step = { id: string; order: number; kind: string; title: string; lesson_title?: string | null; topic_titles?: string[]; objectives: string[]; activities: { type: string; label: string }[]; sources: Ref[]; minutes: number; status: string; locked?: boolean; needs_update?: boolean; unlock?: string; concepts?: string[]; remediation?: number; round?: number; result?: { score_pct: number | null; passed: boolean } };
 type Path = { id: string; strategy: string; status: string; summary: { title: string; description: string; total_minutes: number }; steps: Step[]; done: number; total: number; next_step_id: string | null };
 type Row = { id: string; status: string; title?: string; purpose?: string; score_pct?: number | null; created_at: string };
@@ -205,9 +205,6 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
         <button type="button" className={btn2} onClick={onClose}>Đóng</button>
       </div>
       {err && <p className="rounded-xl bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-700 dark:text-red-200">{err}</p>}
-      {a.scope.not_assessed.length > 0 && (
-        <p className={`text-[12px] ${muted}`}>Chưa hỏi lượt này: {a.scope.not_assessed.map((n) => `${n.title} (${n.reason_text})`).join("; ")}</p>
-      )}
 
       {r && (
         <div className="space-y-3">
