@@ -9,6 +9,7 @@ trích nguyên văn chứng minh đáp án (D-74). Chấm, chẩn đoán, gợi 
 
 from __future__ import annotations
 
+import copy
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -17,7 +18,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
-from src.models.orm import Chunk, CourseQuiz, LearnerProgress, LearningAssessment, LearningPath, TopicMastery, User
+from src.models.orm import (
+    Chunk,
+    CourseQuiz,
+    DocumentVersion,
+    LearnerProgress,
+    LearningAssessment,
+    LearningPath,
+    TopicMastery,
+    User,
+)
 from src.services import acl, usage
 from src.services.assistants import (
     BASE_POLICY,
@@ -504,10 +514,57 @@ def _scope_out(curriculum: Curriculum, scope: dict[str, Any]) -> dict[str, Any]:
     }  # fmt: skip
 
 
+class _Refs:
+    """Nguồn hiển thị (tài liệu, bản, trang, đoạn dẫn chứng) — kiểm lại quyền NGAY lúc trả (BR-03, BR-10): nguồn mất quyền
+    bị bỏ; nguồn mức bài (chưa có bản cụ thể) được gắn bản đang phục vụ của tài liệu bài để mở được trang."""
+
+    def __init__(self, db: Session, user: User, course_id: str) -> None:
+        self.db, self.user, self.course_id = db, user, course_id
+        self._ok: dict[str, bool] = {}
+        self._current: dict[str, str] | None = None
+
+    def _servable(self, version_id: str) -> bool:
+        if version_id not in self._ok:
+            self._ok[version_id] = still_servable(self.db, self.user, version_id)
+        return self._ok[version_id]
+
+    def _current_version(self, document_id: str) -> str | None:
+        if self._current is None:
+            self._current = {d.id: v.id for v, d in servable_versions(self.db, self.user, self.course_id)}
+        return self._current.get(document_id)
+
+    def __call__(self, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out = []
+        for r in refs or []:
+            doc, version = r.get("document_id"), r.get("version_id")
+            if version and not self._servable(version):
+                continue
+            if version and not doc:  # nguồn lưu từ bản trước (chưa có document_id)
+                v = self.db.get(DocumentVersion, version)
+                doc = v.document_id if v else None
+            if not version and doc:
+                version = self._current_version(doc)
+                if version is None:  # tài liệu bài không còn phục vụ cho user này
+                    continue
+            out.append({"document_id": doc, "version_id": version, "document_title": r.get("document_title"),
+                        "page": r.get("page"), "page_end": r.get("page_end"), "quote": r.get("quote") or ""})  # fmt: skip
+        return out
+
+
+def _result_view(result: dict[str, Any] | None, refs: _Refs) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    out = copy.deepcopy(result)
+    for g in out.get("gaps") or []:
+        g["review"]["sources"] = refs(g["review"].get("sources") or [])
+    return out
+
+
 def assessment_view(db: Session, user: User, a: LearningAssessment) -> dict[str, Any]:
     """Trước khi nộp: KHÔNG có đáp án/giải thích/hiểu nhầm/nguồn. Sau khi nộp: thêm kết quả và phần xem lại."""
     curriculum = _course_curriculum(db, user, a.course_id)
     hidden = _unservable(db, user, a.questions)
+    refs = _Refs(db, user, a.course_id)
     questions = []
     for q in a.questions:
         if q["id"] in hidden:
@@ -516,14 +573,14 @@ def assessment_view(db: Session, user: User, a: LearningAssessment) -> dict[str,
         item = {"id": q["id"], "text": q["text"], "options": q["options"], **_titles(curriculum, q),
                 "picked": diagnosis.picked_index(a.answers.get(q["id"]))}  # fmt: skip
         if a.status == "Submitted":
-            src = q.get("source")
+            src = refs([q["source"] | {"quote": q.get("proof") or ""}]) if q.get("source") else []
             item.update({"correct": q["correct"], "explanation": q.get("explanation") or "", "proof": q.get("proof") or "",
-                         "source": {k: src[k] for k in ("document_title", "page", "page_end")} if src else None})  # fmt: skip
+                         "source": src[0] if src else None})  # fmt: skip
         questions.append(item)
     return {
         "id": a.id, "course_id": a.course_id, "purpose": a.purpose, "status": a.status,
         "path_id": a.path_id, "step_id": a.step_id, "scope": _scope_out(curriculum, a.scope or {}),
-        "questions": questions, "result": a.result if a.status == "Submitted" else None,
+        "questions": questions, "result": _result_view(a.result, refs) if a.status == "Submitted" else None,
         "created_at": iso(a.created_at), "submitted_at": iso(a.submitted_at),
     }  # fmt: skip
 
@@ -670,7 +727,7 @@ def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
     nguồn từng bước được kiểm lại (BR-03, BR-10)."""
     curriculum = _course_curriculum(db, user, path.course_id)
     known_topics = {t.id for t in curriculum.topics()}
-    servable: dict[str, bool] = {}
+    refs = _Refs(db, user, path.course_id)
     steps = []
     for s in path.steps:
         if (s.get("lesson_id") and curriculum.lesson(s["lesson_id"]) is None) or any(
@@ -680,13 +737,7 @@ def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
                          | {"title": SOURCE_WITHDRAWN_MESSAGE, "needs_update": True, "topic_ids": [], "sources": [],
                             "activities": [], "objectives": []})  # fmt: skip
             continue
-        sources = []
-        for r in s.get("sources", []):
-            v = r.get("version_id")
-            if v and v not in servable:
-                servable[v] = still_servable(db, user, v)
-            if not v or servable[v]:
-                sources.append({k: r.get(k) for k in ("document_title", "page", "page_end")})
+        sources = refs(s.get("sources", []))
         locked = not roadmap.gate_open(path.steps, s)
         steps.append({**s, "sources": sources, "needs_update": False, "locked": locked,
                       "unlock": _unlock_text(path.steps, s) if locked else ""})  # fmt: skip

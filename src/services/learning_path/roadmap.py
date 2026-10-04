@@ -15,7 +15,14 @@ from __future__ import annotations
 from typing import Any
 
 from src.services.learning_path.curriculum import Curriculum, Lesson, Topic
-from src.services.learning_path.diagnosis import INSUFFICIENT, MISSING, REINFORCE, SOLID, prerequisite_gaps
+from src.services.learning_path.diagnosis import (
+    INSUFFICIENT,
+    MISSING,
+    REINFORCE,
+    SOLID,
+    lesson_ref,
+    prerequisite_gaps,
+)
 
 STRATEGIES: dict[str, dict[str, str]] = {
     "foundation_first": {
@@ -50,7 +57,7 @@ def _refs_for(topics: list[Topic], lesson: Lesson, refs: dict[str, list[dict[str
             if r not in out:
                 out.append(r)
     if not out and lesson.document_title:
-        out.append({"version_id": None, "document_title": lesson.document_title, "page": lesson.page, "page_end": None})
+        out.append(lesson_ref(lesson))
     return out[:4]
 
 

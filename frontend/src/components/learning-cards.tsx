@@ -517,7 +517,7 @@ export function LearningCards(props: {
     const course: CourseItem = { id: meta.course_id, code: null, name: meta.course_id, term: null, assigned: true, can_upload: false, can_review: false };
     return (
       <div className="mt-3">
-        <ProgressPath courses={[course]} onPractice={(_courseId, action, topic, label) => {
+        <ProgressPath courses={[course]} onSource={props.onSource} onPractice={(_courseId, action, topic, label) => {
           const content = `Lộ trình — ${label}`;
           props.onSend(content, { content, assistant: "learning", learning: { action, topic } });
         }} onFind={(_courseId, query) => {
