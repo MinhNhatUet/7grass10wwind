@@ -64,7 +64,9 @@ def view(quiz: CourseQuiz, *, staff: bool) -> dict[str, Any]:
         "questions": [
             {
                 k: q.get(k)
-                for k in (("id", "text", "options", "correct", "explanation", *TAGS) if staff else ("id", "text", "options"))
+                for k in (
+                    ("id", "text", "options", "correct", "explanation", *TAGS) if staff else ("id", "text", "options")
+                )
             }
             for q in qs
         ],

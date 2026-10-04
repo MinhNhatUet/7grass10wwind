@@ -430,7 +430,9 @@ class TopicMastery(Base):
     topic_id: Mapped[str] = mapped_column(String(200))
     lesson_id: Mapped[str] = mapped_column(String(200))
     topic_title: Mapped[str] = mapped_column(String(500))
-    correct: Mapped[float] = mapped_column(Float, default=0.0)  # số câu đúng/đã trả lời, đã giảm trọng số theo thời gian
+    correct: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )  # số câu đúng/đã trả lời, đã giảm trọng số theo thời gian
     answered: Mapped[float] = mapped_column(Float, default=0.0)
     mastery: Mapped[float | None] = mapped_column(Float)
     level: Mapped[str] = mapped_column(String(30), default="insufficient_data")
