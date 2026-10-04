@@ -1,0 +1,30 @@
+# Mẫu đề cương môn học cho lộ trình theo tiến độ (D-82). Đặt tên file đúng mã môn: config/curricula/<COURSE_ID>.yaml
+# (vd SE101.yaml). Có file này thì dùng thay cho chương trình suy ra từ tài liệu. File .sample này KHÔNG được nạp.
+#
+# - Thứ tự bài trong danh sách = thứ tự học (học tới bài N ⇒ phạm vi đã học là bài 1..N).
+# - id: chữ, số, . _ : - (tối đa 120 ký tự), duy nhất trong cả đề cương; đổi id làm mất liên kết với kết quả cũ.
+# - document: tên hoặc id tài liệu ĐÃ PHÁT HÀNH của môn — câu hỏi của bài chỉ lấy từ tài liệu này (bỏ trống = cả môn).
+# - prerequisites: chủ đề nền (phải khai báo ở phía TRƯỚC) — dùng để ôn nền trước khi học bài sau và chỉ ra nguyên nhân gốc.
+# - query: cụm từ truy xuất nguồn cho chủ đề (mặc định = title); objectives bỏ trống → 1 mục tiêu theo tên chủ đề.
+# - Giảng viên có thể gắn topic_id/objective_id cho câu trong đề LUYỆN TẬP để câu đó được dùng trong bài đánh giá.
+lessons:
+  - id: L1
+    title: Tổng quan về quy trình phần mềm
+    document: "01 - Tong quan"
+    topics:
+      - id: L1.T1
+        title: Mô hình thác nước
+        query: mô hình thác nước waterfall
+        objectives:
+          - {id: L1.T1.O1, text: Nêu được các pha của mô hình thác nước và thứ tự của chúng}
+          - {id: L1.T1.O2, text: Chỉ ra hạn chế của mô hình thác nước khi yêu cầu thay đổi}
+      - id: L1.T2
+        title: Mô hình lặp và tăng dần
+  - id: L2
+    title: Kỹ nghệ yêu cầu
+    topics:
+      - id: L2.T1
+        title: Yêu cầu chức năng và phi chức năng
+        prerequisites: [L1.T1]
+        objectives:
+          - Phân biệt yêu cầu chức năng với yêu cầu phi chức năng qua ví dụ

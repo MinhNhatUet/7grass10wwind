@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { BookOpen, CalendarDays, ClipboardList, Sparkles, Timer } from "lucide-react";
 import { ApiError, api, json, type ChatMessage, type CourseItem, type Plan } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
-import { FORMAT_LABEL, PENDING_SEND, PlanCard, PracticePicker, type PracticeChoice } from "@/components/learning-cards";
+import { FORMAT_LABEL, PENDING_SEND, PlanCard, PracticePicker, STUDY_SEND, type PracticeChoice } from "@/components/learning-cards";
 
 type PlanRow = { id: string; goal: string; status: string; version: number; done: number; total: number; updated_at: string };
 type SelfCheck = { message_id: string; conversation_id: string; kind: string; topic: string | null; questions: number; answered: number; assessed: boolean; levels: string[]; created_at: string };
@@ -92,9 +92,12 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 font-semibold"><CalendarDays size={18} /> Lộ trình học</h2>
-            <p className={`mt-1 text-sm ${muted}`}>Tạo lộ trình theo mục tiêu, theo dõi tiến độ, ôn tập từng buổi và đưa lịch vào Google Calendar.</p>
+            <p className={`mt-1 text-sm ${muted}`}>Theo tiến độ: đánh giá phần đã học → lỗ hổng → chọn lộ trình. Theo ngày: lịch học, ôn từng buổi, Google Calendar. Phần đang ôn được ghim lên thanh &quot;Đang ôn&quot;.</p>
           </div>
-          <Link href="/learning/plans" className={`${btn} no-underline`}>Mở lộ trình học →</Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/learning/plans?tab=progress" className={`${btn} no-underline`}>Theo tiến độ →</Link>
+            <Link href="/learning/plans?tab=days" className={`${btn2} no-underline text-inherit`}>Theo ngày →</Link>
+          </div>
         </div>
       </section>
 
@@ -155,6 +158,10 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
 
 /** Chuyển sang chat NGAY (D-45): yêu cầu học tập để trong sessionStorage, trang chat tự gửi và hiện "đang trả lời". */
 export function goToChat(router: ReturnType<typeof useRouter>, content: string, body: Record<string, unknown>, courseId?: string) {
+  if (window.location.pathname === "/") { // đã ở chat (vd. bấm tag "Đang ôn") → gửi luôn, không đợi trang mở lại
+    window.dispatchEvent(new CustomEvent(STUDY_SEND, { detail: { content, body, courseId } }));
+    return;
+  }
   try {
     sessionStorage.setItem(PENDING_SEND, JSON.stringify({ content, body, courseId }));
   } catch {
@@ -164,7 +171,7 @@ export function goToChat(router: ReturnType<typeof useRouter>, content: string, 
 }
 
 /** Lộ trình của tôi (trang /learning/plans): danh sách từ server; mở ra là PlanCard (tiến độ, ôn tập theo ngày, Google Calendar). */
-export function MyPlans() {
+export function MyPlans({ openId }: { openId?: string | null } = {}) {
   const router = useRouter();
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
@@ -181,6 +188,11 @@ export function MyPlans() {
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- setState chỉ sau await
   useEffect(() => { void load(); }, [load]);
+  // mở từ tag "Đang ôn" (D-83): mở sẵn lộ trình đó
+  useEffect(() => {
+    if (!openId) return;
+    api<Plan>(`/learning/plans/${encodeURIComponent(openId)}`).then(setOpenPlan).catch(() => undefined);
+  }, [openId]);
 
   async function showPlan(id: string) {
     if (openPlan?.id === id) return setOpenPlan(null);

@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.deps import bearer_token, current_session, current_user
@@ -93,7 +93,8 @@ def register(
         raise AppError("TOO_MANY_REGISTRATIONS", 429, retryable=True)
     _register_limiter.fail(("register", client_ip))  # đếm mọi lần thử, kể cả trùng tài khoản
 
-    if db.scalar(select(User).where(User.login_id == body.login_id)):
+    # So không phân biệt hoa/thường như lúc đăng nhập: "SinhVien" trùng "sinhvien" (BR-02)
+    if db.scalar(select(User).where(func.lower(User.login_id) == body.login_id.casefold())):
         raise HTTPException(400, "Tài khoản đã tồn tại")
 
     user = User(

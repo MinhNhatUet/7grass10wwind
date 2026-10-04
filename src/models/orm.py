@@ -380,3 +380,80 @@ class QuizAttempt(Base):
     late: Mapped[bool] = mapped_column(Boolean, default=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------- Lộ trình theo tiến độ (FR-03.2–03.12, D-82)
+# Tách bạch: TIẾN ĐỘ (đã học tới bài nào) ≠ MỨC NẮM VỮNG (hiểu tới đâu). Học tới bài N không có nghĩa đã nắm bài 1..N.
+
+
+class LearnerProgress(Base):
+    """Phạm vi đã học của người học trong một môn — bài đánh giá chỉ hỏi trong phạm vi này."""
+
+    __tablename__ = "learner_progress"
+    __table_args__ = (UniqueConstraint("user_id", "course_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    covered_lesson_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    current_lesson_id: Mapped[str | None] = mapped_column(String(200))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class LearningAssessment(Base):
+    """Bài đánh giá theo phạm vi đã học: mỗi câu gắn bài → chủ đề → mục tiêu (server gán, không tin LLM).
+    Đáp án/giải thích chỉ trả sau khi nộp; bài tự đánh giá, không tính điểm (BR-06)."""
+
+    __tablename__ = "learning_assessments"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("las"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    purpose: Mapped[str] = mapped_column(String(20), default="placement")  # placement | checkpoint
+    path_id: Mapped[str | None] = mapped_column(String(40))
+    step_id: Mapped[str | None] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20), default="Open")  # Open | Submitted
+    scope: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    questions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    answers: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TopicMastery(Base):
+    """Mức nắm vững theo chủ đề, cộng dồn qua các bài đánh giá (kết quả cũ giảm trọng số dần)."""
+
+    __tablename__ = "topic_mastery"
+    __table_args__ = (UniqueConstraint("user_id", "course_id", "topic_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    topic_id: Mapped[str] = mapped_column(String(200))
+    lesson_id: Mapped[str] = mapped_column(String(200))
+    topic_title: Mapped[str] = mapped_column(String(500))
+    correct: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )  # số câu đúng/đã trả lời, đã giảm trọng số theo thời gian
+    answered: Mapped[float] = mapped_column(Float, default=0.0)
+    mastery: Mapped[float | None] = mapped_column(Float)
+    level: Mapped[str] = mapped_column(String(30), default="insufficient_data")
+    confidence: Mapped[str] = mapped_column(String(10), default="low")
+    objectives: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # objective_id → {correct, answered}
+    history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    last_assessment_id: Mapped[str | None] = mapped_column(String(40))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class LearningPath(Base):
+    """Lộ trình người học CHỌN sau đánh giá: bước theo thứ tự (ôn/học mới/checkpoint) + bài kiểm tra tiếp theo."""
+
+    __tablename__ = "learning_paths"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("lp"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    assessment_id: Mapped[str | None] = mapped_column(String(40))
+    strategy: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20), default="Active")  # Active | Superseded | Completed
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
