@@ -21,6 +21,7 @@ from src.models.orm import CourseQuiz, LearnerProgress, LearningAssessment, Lear
 from src.services import acl, usage
 from src.services.assistants import (
     BASE_POLICY,
+    AssistantResult,
     LlmError,
     balance_answers,
     call_json,
@@ -63,6 +64,25 @@ def _course_curriculum(db: Session, user: User, course_id: str) -> Curriculum:
         return load_curriculum(db, user, course_id)
     except CurriculumError as e:
         raise AppError("CURRICULUM_INVALID", 409, message=f"Đề cương môn học không hợp lệ: {e}") from e
+
+
+CHAT_ENTRY_MESSAGE = (
+    "Mình đánh giá theo đúng phần bạn đã học: chọn bài bạn đã học tới rồi bấm “Làm bài đánh giá”. "
+    "Chấm xong, bạn sẽ thấy lỗ hổng theo từng chủ đề và chọn một trong 3 lộ trình để mình lập các bước cụ thể."
+)
+
+
+def chat_entry(db: Session, user: User, course_id: str) -> AssistantResult | None:
+    """Chẩn đoán trong chat (D-30) → chạy luồng đánh giá theo tiến độ ngay trong thẻ chat, để kết quả dẫn tới lộ
+    trình. Môn chưa dựng được chương trình học (chưa có tài liệu/đề cương lỗi) → None, chat dùng chẩn đoán cũ."""
+    if not acl.can_read_course(db, user, course_id):
+        return None
+    try:
+        if not load_curriculum(db, user, course_id).lessons:
+            return None
+    except CurriculumError:
+        return None
+    return AssistantResult(status="answered", content=CHAT_ENTRY_MESSAGE, payload={"kind": "learning_path"})
 
 
 def curriculum_view(db: Session, user: User, course_id: str) -> dict[str, Any]:
