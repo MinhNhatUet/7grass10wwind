@@ -520,6 +520,9 @@ export function LearningCards(props: {
         <ProgressPath courses={[course]} onPractice={(_courseId, action, topic, label) => {
           const content = `Lộ trình — ${label}`;
           props.onSend(content, { content, assistant: "learning", learning: { action, topic } });
+        }} onFind={(_courseId, query) => {
+          const content = `Tìm tài liệu học về ${query}`;
+          props.onSend(content, { content, assistant: "hub" });
         }} />
       </div>
     );

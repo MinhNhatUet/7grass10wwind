@@ -181,6 +181,21 @@ def _authored_file(course_id: str) -> Path | None:
 # ---------------------------------------------------------------- suy ra từ tài liệu
 
 
+# Viết tắt hay gặp trong slide tiếng Việt — mở rộng khi TRUY XUẤT (tên chủ đề hiển thị giữ nguyên như tài liệu)
+ABBREVIATIONS = {
+    "pm": "phần mềm", "sp": "sản phẩm", "httt": "hệ thống thông tin", "cntt": "công nghệ thông tin",
+    "csdl": "cơ sở dữ liệu", "ht": "hệ thống", "se": "software engineering", "cnpm": "công nghệ phần mềm",
+    "ktpm": "kiểm thử phần mềm", "ptpm": "phát triển phần mềm", "yc": "yêu cầu", "nd": "người dùng",
+}  # fmt: skip
+_WORD = re.compile(r"\w+")
+
+
+def expand_abbreviations(text: str) -> str:
+    """ "Vai trò của PM" → "Vai trò của PM (phần mềm)" — giữ chữ gốc, thêm nghĩa để khớp với nội dung tài liệu."""
+    extra = [ABBREVIATIONS[w.casefold()] for w in _WORD.findall(text) if w.casefold() in ABBREVIATIONS]
+    return f"{text} ({', '.join(dict.fromkeys(extra))})" if extra else text
+
+
 def _slug(text: str) -> str:
     key = dedupe_key(text)
     return hashlib.sha1(key.encode()).hexdigest()[:8]
@@ -210,7 +225,7 @@ def derive(course_id: str, chapters: list[dict[str, Any]]) -> Curriculum:
                     lid,
                     (Objective(f"{tid}:o1", f"Trình bày và vận dụng được: {s[:280]}"),),
                     (),
-                    f"{title}: {s}"[:500],
+                    expand_abbreviations(f"{title}: {s}")[:500],
                 )  # fmt: skip
             )
         doc_title = None if c.get("kind") == "lesson" else c.get("document")
