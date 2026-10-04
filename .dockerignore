@@ -1,6 +1,12 @@
 .git
 .gitignore
 .env
+.env.*
+# DB, tài liệu tải lên, bằng chứng UAT, sách gốc (~460 MB, có dữ liệu hạn chế — BR-12): compose mount ./data lúc chạy
+data/
+backup/
+test_artifacts/
+.ai-log/
 .venv
 __pycache__
 *.pyc
