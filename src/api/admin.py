@@ -53,7 +53,7 @@ class CreateUser(BaseModel):
 def create_user(body: CreateUser, admin: User = Depends(admin_only), db: Session = Depends(get_db)) -> dict[str, Any]:
     if body.role not in ROLES:
         raise bad_request("INVALID_ROLE")
-    if db.scalar(select(User.id).where(User.login_id == body.login_id)):
+    if db.scalar(select(User.id).where(func.lower(User.login_id) == body.login_id.casefold())):  # như đăng nhập
         raise conflict("LOGIN_ID_EXISTS")
     user = User(
         login_id=body.login_id,
