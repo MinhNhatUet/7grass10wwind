@@ -10,6 +10,7 @@ import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { M } from "@/components/math-text";
 import { CitationBadge } from "@/components/chat/CitationBadge";
 import { ProgressPath } from "@/components/learning-path";
+import { pinStudy } from "@/lib/study-pins";
 import type { Source } from "@/types/chat";
 
 type Meta = ChatMessage["metadata"];
@@ -20,6 +21,8 @@ const muted = "text-black/50 dark:text-white/50";
 
 /** Khoá sessionStorage của yêu cầu học tập chờ trang chat gửi (D-45). */
 export const PENDING_SEND = "pendingLearningSend";
+/** Đang ở trang chat: gửi yêu cầu học ngay trong hội thoại hiện tại (tag "Đang ôn", D-83) thay vì mở trang lại. */
+export const STUDY_SEND = "edu04:study-send";
 
 /** Loại bài KHÔNG hiện nguồn khi vừa tạo (người học tự làm trước); dẫn chứng chỉ hiện sau khi trả lời/lật/kiểm tra. */
 export const HIDE_SOURCE_KINDS = ["quiz", "diagnose", "mcq", "flashcards", "cloze", "plan", "learning_path"];
@@ -246,6 +249,14 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
 
   const [picking, setPicking] = useState<string | null>(null); // buổi đang mở bộ chọn hình thức ôn tập
   function practice(s: PlanSession, choice: PracticeChoice) {
+    // D-83: buổi vừa ôn được ghim thành tag "Đang ôn" (dùng chung với lộ trình theo tiến độ)
+    pinStudy({
+      key: `plan:${plan.id}:${s.id}`, source: "plan", title: `${dayLabel(plan.dates, s.day)}: ${noCite(s.title)}`, subtitle: plan.goal,
+      topic: `${noCite(s.title)}. ${noCite(s.objective)}`, extra: { plan_id: plan.id },
+      actions: [{ type: "explain", label: "Nhờ trợ lý giải thích" }, { type: "mcq", label: FORMAT_LABEL.mcq }, { type: "flashcards", label: FORMAT_LABEL.flashcards },
+        { type: "cloze", label: FORMAT_LABEL.cloze }, { type: "quiz", label: FORMAT_LABEL.quiz }, { type: "find", label: "Tìm tài liệu học" }],
+      href: `/learning/plans?tab=days&plan=${encodeURIComponent(plan.id)}`,
+    });
     const content = `Ôn tập ${dayLabel(plan.dates, s.day)} (${FORMAT_LABEL[choice.action]}, ${choice.count} câu): ${s.title}`;
     onSend(content, { content, assistant: "learning", learning: { action: choice.action, count: choice.count, topic: `${noCite(s.title)}. ${noCite(s.objective)}`, plan_id: plan.id } });
     setPicking(null);

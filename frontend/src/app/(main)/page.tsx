@@ -6,7 +6,7 @@ import { ArrowUp, Zap, FileText, Plus, X, ChevronRight, BookOpen } from "lucide-
 import { motion, AnimatePresence } from "framer-motion";
 import SourceReader from "@/components/source-reader";
 import { API, responseError } from "@/lib/api-errors";
-import { PENDING_SEND, QuickStart } from "@/components/learning-cards";
+import { PENDING_SEND, QuickStart, STUDY_SEND } from "@/components/learning-cards";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import type { Message, Source } from "@/types/chat";
 import type { ChatMessage as ApiMessage, Citation } from "@/lib/api";
@@ -227,6 +227,15 @@ function UnifiedChat() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- gửi yêu cầu một lần khi mở trang, như người dùng bấm Gửi
     try { void handleSend(undefined, JSON.parse(pending)); } catch { /* dữ liệu hỏng → bỏ qua */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ chạy một lần khi mở trang
+  }, []);
+
+  // D-83: tag "Đang ôn" bấm khi đang ở chat → gửi yêu cầu học vào hội thoại hiện tại
+  const sendRef = useRef(handleSend);
+  useEffect(() => { sendRef.current = handleSend; });
+  useEffect(() => {
+    const onStudy = (e: Event) => void sendRef.current(undefined, (e as CustomEvent).detail);
+    window.addEventListener(STUDY_SEND, onStudy);
+    return () => window.removeEventListener(STUDY_SEND, onStudy);
   }, []);
 
   return (

@@ -3,12 +3,15 @@
 // Lộ trình học (bố cục TV4, dữ liệu thật — D-39): tạo lộ trình bằng Learning Assistant theo môn được phép (server kiểm quyền),
 // danh sách/tiến độ lấy từ /learning/plans; mở lộ trình là PlanCard (ôn tập theo ngày, Google Calendar, .ics).
 // Tạo lộ trình / ôn tập → chuyển sang chat ngay, chat gửi yêu cầu và hiện đang trả lời (D-45).
+// D-83: một trang cho cả hai loại lộ trình — "Theo tiến độ" (đánh giá → lỗ hổng → lộ trình, D-82) và "Theo ngày";
+// phần đang ôn của cả hai được ghim thành tag "Đang ôn" ở đầu khung (StudyPinsBar).
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, Calendar, Clock, Lightbulb, ListTodo, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
 import { api, type CourseItem } from "@/lib/api";
 import { LessonPicker, MyPlans, describeLesson, goToChat, lessonLabel, type Chapter } from "@/components/learning-hub";
+import { ProgressPath } from "@/components/learning-path";
 
 const field = "w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-black/30 py-3 pr-4 text-[15px] outline-none focus:border-black focus:ring-2 focus:ring-black/10";
 
@@ -97,6 +100,16 @@ export default function LearningPlansPage() {
   const untilDates = until ? daysUntil(until) : [];
   const chosen = mode === "dates" ? dates : mode === "until" ? untilDates : null;
   const [minutes, setMinutes] = useState(45);
+  const [tab, setTab] = useState<"progress" | "days">("progress");
+  const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+
+  // ?tab=progress|days, ?plan= (mở từ tag "Đang ôn")
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc URL sau hydrate (server không có window)
+    if (q.get("tab") === "days" || q.get("plan")) setTab("days");
+    setOpenPlanId(q.get("plan"));
+  }, []);
 
   useEffect(() => {
     api<{ items: CourseItem[] }>("/me/courses")
@@ -128,9 +141,33 @@ export default function LearningPlansPage() {
         <div className="flex items-center gap-5 mb-8">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Lộ trình học tập</h1>
-            <p className="text-slate-500 text-[15px] mt-1.5">Xây dựng và theo dõi lộ trình học cá nhân hóa từ tài liệu môn học</p>
+            <p className="text-slate-500 text-[15px] mt-1.5">Xây dựng và theo dõi lộ trình học cá nhân hóa từ tài liệu môn học · bấm ôn phần nào, phần đó được ghim lên thanh &quot;Đang ôn&quot; để đổi qua lại</p>
           </div>
         </div>
+
+        <div role="tablist" aria-label="Loại lộ trình" className="mb-6 inline-flex rounded-xl bg-slate-100 dark:bg-white/10 p-1 text-sm">
+          {([["progress", "Theo tiến độ", "Đánh giá phần đã học → lỗ hổng → lộ trình"], ["days", "Theo ngày", "Lịch học theo số ngày/phút"]] as const).map(([k, v, hint]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} title={hint}
+              onClick={() => { setTab(k); window.history.replaceState(null, "", `/learning/plans?tab=${k}`); }}
+              className={`rounded-lg px-5 py-2 border-0 cursor-pointer ${tab === k ? "bg-white dark:bg-black/40 font-semibold shadow-sm" : "bg-transparent text-slate-500"}`}>{v}</button>
+          ))}
+        </div>
+
+        {tab === "progress" ? (
+          courses === null ? <p className="text-slate-500">Đang tải…</p> : courses.length === 0 ? (
+            <p className="text-slate-500">Bạn chưa được ghi danh môn nào.</p>
+          ) : (
+            <ProgressPath courses={courses}
+              onPractice={(cid, action, topic, label) => {
+                const content = `Lộ trình — ${label}`;
+                goToChat(router, content, { content, assistant: "learning", learning: { action, topic } }, cid);
+              }}
+              onFind={(cid, query) => {
+                const content = `Tìm tài liệu học về ${query}`;
+                goToChat(router, content, { content, assistant: "hub" }, cid);
+              }} />
+          )
+        ) : (
 
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8">
           <div className="space-y-6">
@@ -208,9 +245,10 @@ export default function LearningPlansPage() {
                 </div>
               </form>
             )}
-            <MyPlans />
+            <MyPlans openId={openPlanId} />
           </div>
         </div>
+        )}
       </div>
     </div>
   );
