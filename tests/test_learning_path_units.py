@@ -203,7 +203,10 @@ def test_foundation_first_reviews_prerequisites_before_dependents_then_new_lesso
         ("learn", "L3"), ("checkpoint", ["L3.T1"]),
     ]  # fmt: skip
     assert [s["order"] for s in r["steps"]] == [1, 2, 3, 4, 5]
-    assert r["steps"][1]["activities"][2]["type"] == "flashcards" and r["summary"]["new_lessons"] == ["Thiết kế"]
+    assert [a["type"] for a in r["steps"][1]["activities"]] == ["read", "find", "explain", "flashcards", "cloze"]
+    assert r["summary"]["new_lessons"] == ["Thiết kế"]
+    learn = next(x for x in r["steps"] if x["kind"] == "learn")
+    assert roadmap.gate_of(r["steps"], learn)["id"] == r["steps"][2]["id"]  # bài mới chờ đạt bài kiểm tra trước
 
 
 def test_continue_with_gaps_reviews_prerequisites_first_then_interleaves(cur):
@@ -224,7 +227,8 @@ def test_intensive_review_gates_new_lesson_behind_full_checkpoint(cur):
     gate = next(s for s in steps if s["kind"] == "checkpoint")
     assert set(gate["assessment"]["topic_ids"]) == {"L1.T1", "L1.T2", "L2.T1"}
     learn = next(s for s in steps if s["kind"] == "learn")
-    assert learn["requires"] == gate["id"] and learn["order"] > gate["order"]
+    assert roadmap.gate_of(steps, learn)["id"] == gate["id"] and learn["order"] > gate["order"]
+    assert not roadmap.gate_open(steps, learn)
     assert any(s["kind"] == "refresh" and "L1.T2" in s["topic_ids"] for s in steps)
 
 
@@ -254,3 +258,35 @@ def test_recommended_strategy(cur, mastery, covered, expected):
     assert [o["strategy"] for o in options if o["recommended"]] == [expected]
     assert options[0]["recommended"] and options[0]["rationale"] and len(options) == 3
     assert all(o["preview"] for o in options)
+
+
+def test_failed_checkpoint_inserts_remediation_round_and_regates_new_lesson(cur):
+    mastery = {"L1.T1": m("missing_foundation"), "L1.T2": m("solid")}
+    steps = roadmap.build_roadmap(cur, {"L1", "L2"}, mastery, "foundation_first")["steps"]
+    check = next(s for s in steps if s["kind"] == "checkpoint")
+    check |= {"status": "done", "result": {"passed": False}}
+    after = {"L1.T1": m("needs_reinforcement", 0.6), "L1.T2": m("solid", 1.0), "L2.T1": m("solid", 0.9)}
+    check["assessment"]["topic_ids"] = ["L1.T1", "L1.T2", "L2.T1"]
+    new = roadmap.remediation(cur, steps, check, after, concepts={"L1.T1": ["Các pha chạy tuần tự"]})
+    assert [(s["kind"], s["topic_ids"]) for s in new] == [("reinforce", ["L1.T1"]), ("checkpoint", ["L1.T1"])]
+    assert new[0]["remediation"] == 1 and new[1]["round"] == 1 and new[1]["remediation_for"] == check["id"]
+    assert new[0]["concepts"][0] == "Các pha chạy tuần tự"
+    assert not {s["id"] for s in new} & {s["id"] for s in steps}  # id mới không trùng
+    merged = roadmap.splice_after(steps, check["id"], new)
+    assert [s["order"] for s in merged] == list(range(1, len(merged) + 1))
+    learn = next(s for s in merged if s["kind"] == "learn")
+    assert roadmap.gate_of(merged, learn)["id"] == new[1]["id"] and not roadmap.gate_open(merged, learn)
+    new[1] |= {"status": "done", "result": {"passed": True}}
+    assert roadmap.gate_open(merged, learn)
+    # vòng tiếp theo đánh số lần 2
+    again = roadmap.remediation(cur, merged, new[1] | {"result": {"passed": False}}, after)
+    assert again[0]["title"].startswith("Ôn lại (lần 2)")
+
+
+def test_topic_concepts_prefer_missed_answers_then_objectives(cur):
+    qs = [q("q1", "L1.T1", "L1.T1.O1"), q("q2", "L1.T1", "L1.T1.O2"), q("q3", "L1.T2", "L1.T2.O1")]
+    concepts = diagnosis.topic_concepts(cur, qs, {"q1": 2, "q2": 0})
+    assert concepts["L1.T1"][0] == "q1-a"  # nội dung đúng của câu đã sai
+    assert concepts["L1.T1"][1:] == ["Nêu các pha của thác nước", "Chỉ ra hạn chế của thác nước"]
+    assert "q2-a" not in concepts["L1.T1"]  # câu làm đúng không phải chỗ hổng
+    assert "L1.T2" not in concepts  # mục tiêu mặc định = tên chủ đề → builder tự thêm tên chủ đề

@@ -25,7 +25,7 @@ type Result = {
   gaps: Gap[]; recommendations: { kind: string; text: string }[]; path_options: Option[]; recommended_strategy: string;
 };
 type Assessment = { id: string; purpose: string; status: string; path_id: string | null; step_id: string | null; scope: { lessons: { id: string; title: string; order: number }[]; not_assessed: { title: string; reason_text: string }[] }; questions: Question[]; result: Result | null };
-type Step = { id: string; order: number; kind: string; title: string; lesson_title?: string | null; topic_titles?: string[]; objectives: string[]; activities: { type: string; label: string }[]; sources: Ref[]; minutes: number; status: string; locked?: boolean; needs_update?: boolean; unlock?: string; result?: { score_pct: number | null; passed: boolean } };
+type Step = { id: string; order: number; kind: string; title: string; lesson_title?: string | null; topic_titles?: string[]; objectives: string[]; activities: { type: string; label: string }[]; sources: Ref[]; minutes: number; status: string; locked?: boolean; needs_update?: boolean; unlock?: string; concepts?: string[]; remediation?: number; round?: number; result?: { score_pct: number | null; passed: boolean } };
 type Path = { id: string; strategy: string; status: string; summary: { title: string; description: string; total_minutes: number }; steps: Step[]; done: number; total: number; next_step_id: string | null };
 type Row = { id: string; status: string; title?: string; purpose?: string; score_pct?: number | null; created_at: string };
 
@@ -48,7 +48,8 @@ function Level({ level }: { level: string }) {
   return <span className={`rounded-full px-2 py-0.5 text-[11px] ${LEVEL_COLOR[level] ?? LEVEL_COLOR.insufficient_data}`}>{LEVEL_LABEL[level] ?? level}</span>;
 }
 
-export function ProgressPath({ courses, onPractice }: { courses: CourseItem[]; onPractice: (courseId: string, action: string, topic: string, label: string) => void }) {
+/** onFind: tìm tài liệu học theo nội dung (Knowledge Hub trong chat) cho chủ đề của một bước lộ trình. */
+export function ProgressPath({ courses, onPractice, onFind }: { courses: CourseItem[]; onPractice: (courseId: string, action: string, topic: string, label: string) => void; onFind: (courseId: string, query: string) => void }) {
   const [courseId, setCourseId] = useState(courses[0]?.id ?? "");
   const [cur, setCur] = useState<Curriculum | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -163,7 +164,8 @@ export function ProgressPath({ courses, onPractice }: { courses: CourseItem[]; o
           {path && (
             <PathPanel path={path} busy={busy} onStep={(id, s) => void setStep(id, s)}
               onCheckpoint={(stepId) => void startAssessment({ path_id: path.id, step_id: stepId })}
-              onPractice={(action, topic, label) => onPractice(courseId, action, topic, label)} />
+              onPractice={(action, topic, label) => onPractice(courseId, action, topic, label)}
+              onFind={(query) => onFind(courseId, query)} />
           )}
 
           {history.length > 0 && (
@@ -291,38 +293,61 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
   );
 }
 
-function PathPanel({ path, busy, onStep, onCheckpoint, onPractice }: { path: Path; busy: boolean; onStep: (id: string, status: string) => void; onCheckpoint: (stepId: string) => void; onPractice: (action: string, topic: string, label: string) => void }) {
+function PathPanel({ path, busy, onStep, onCheckpoint, onPractice, onFind }: { path: Path; busy: boolean; onStep: (id: string, status: string) => void; onCheckpoint: (stepId: string) => void; onPractice: (action: string, topic: string, label: string) => void; onFind: (query: string) => void }) {
+  const [picking, setPicking] = useState<string | null>(null); // bước đang mở danh sách khái niệm để nhờ giải thích
   return (
     <div className="rounded-xl border border-black/10 dark:border-white/10 p-3">
       <p className="font-medium">{path.summary.title} <span className={`font-normal ${muted}`}>· {path.done}/{path.total} bước · ~{path.summary.total_minutes} phút</span></p>
       <p className={`text-[12px] ${muted}`}>{path.summary.description}</p>
       <ol className="mt-2 space-y-2">
-        {path.steps.map((s) => (
-          <li key={s.id} className={`rounded-lg p-2 text-[13px] ${s.id === path.next_step_id ? "bg-black/5 dark:bg-white/10" : ""}`}>
-            <p className="font-medium">{s.order}. <span className={muted}>[{STEP_KIND[s.kind] ?? s.kind}]</span> {s.title}
-              {s.status === "done" && " ✓"}{s.result && ` · ${s.result.score_pct ?? "—"}% ${s.result.passed ? "(đạt)" : "(chưa đạt)"}`}</p>
-            {!s.needs_update && (
-              <>
-                {s.objectives.length > 0 && s.kind !== "checkpoint" && <p className={muted}>Mục tiêu: {s.objectives.slice(0, 3).join("; ")}</p>}
-                {s.sources.length > 0 && <p className={muted}>Đọc: {s.sources.map(where).filter(Boolean).join("; ")}</p>}
-                {s.locked && <p className="text-amber-700 dark:text-amber-300">{s.unlock}</p>}
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {s.activities.filter((x) => CHAT_ACTIONS.has(x.type)).map((x, i) => (
-                    <button key={i} type="button" className={btn2} onClick={() => onPractice(x.type, `${s.title}. ${s.objectives.join("; ")}`.slice(0, 600), x.label)}>{x.label}</button>
-                  ))}
-                  {s.kind === "checkpoint" ? (
-                    s.status !== "done" && <button type="button" className={btn2} disabled={busy} onClick={() => onCheckpoint(s.id)}>Làm bài kiểm tra</button>
-                  ) : (
-                    <>
-                      {s.status === "not_started" && <button type="button" className={btn2} disabled={busy || s.locked} onClick={() => onStep(s.id, "in_progress")}>Bắt đầu</button>}
-                      {s.status !== "done" && <button type="button" className={btn2} disabled={busy || s.locked} onClick={() => onStep(s.id, "done")}>Đã xong</button>}
-                    </>
+        {path.steps.map((s) => {
+          const context = `${s.title}. ${s.objectives.join("; ")}`.slice(0, 600);
+          const topics = (s.topic_titles ?? []).join(", ") || s.title;
+          const failed = s.kind === "checkpoint" && s.status === "done" && s.result && !s.result.passed;
+          return (
+            <li key={s.id} className={`rounded-lg p-2 text-[13px] ${s.id === path.next_step_id ? "bg-black/5 dark:bg-white/10" : ""} ${s.remediation || s.round ? "border-l-2 border-amber-500 pl-3" : ""}`}>
+              <p className="font-medium">{s.order}. <span className={muted}>[{s.remediation ? "Ôn lại" : STEP_KIND[s.kind] ?? s.kind}]</span> {s.title}
+                {s.status === "done" && " ✓"}{s.result && ` · ${s.result.score_pct ?? "—"}% ${s.result.passed ? "(đạt)" : "(chưa đạt)"}`}</p>
+              {failed && <p className="text-amber-700 dark:text-amber-300">Chưa đạt — làm các bước “Ôn lại” bên dưới rồi kiểm tra lại; đạt mới mở bài mới.</p>}
+              {!s.needs_update && (
+                <>
+                  {s.objectives.length > 0 && s.kind !== "checkpoint" && <p className={muted}>Mục tiêu: {s.objectives.slice(0, 3).join("; ")}</p>}
+                  {s.sources.length > 0 && <p className={muted}>Đọc: {s.sources.map(where).filter(Boolean).join("; ")}</p>}
+                  {s.locked && <p className="text-amber-700 dark:text-amber-300">🔒 {s.unlock}</p>}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {s.activities.filter((x) => x.type === "find").map((x, i) => (
+                      <button key={`f${i}`} type="button" className={btn2} disabled={s.locked} onClick={() => onFind(topics)}>🔎 {x.label}</button>
+                    ))}
+                    {s.activities.filter((x) => CHAT_ACTIONS.has(x.type)).map((x, i) => (
+                      <button key={i} type="button" className={btn2} disabled={s.locked}
+                        onClick={() => (x.type === "explain" && s.concepts?.length ? setPicking(picking === s.id ? null : s.id) : onPractice(x.type, context, x.label))}>
+                        {x.label}{x.type === "explain" && s.concepts?.length ? (picking === s.id ? " ▴" : " ▾") : ""}
+                      </button>
+                    ))}
+                    {s.kind === "checkpoint" ? (
+                      s.status !== "done" && <button type="button" className={btn2} disabled={busy} onClick={() => onCheckpoint(s.id)}>Làm bài kiểm tra</button>
+                    ) : (
+                      <>
+                        {s.status === "not_started" && <button type="button" className={btn2} disabled={busy || s.locked} onClick={() => onStep(s.id, "in_progress")}>Bắt đầu</button>}
+                        {s.status !== "done" && <button type="button" className={btn2} disabled={busy || s.locked} onClick={() => onStep(s.id, "done")}>Đã xong</button>}
+                      </>
+                    )}
+                  </div>
+                  {picking === s.id && !!s.concepts?.length && (
+                    <div className="mt-2 rounded-lg border border-black/10 dark:border-white/10 p-2">
+                      <p className={`text-[12px] ${muted}`}>Chọn khái niệm bạn muốn trợ lý giải thích từng bước:</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {s.concepts.map((c) => (
+                          <button key={c} type="button" className={btn2} onClick={() => { setPicking(null); onPractice("explain", `${c} (chủ đề: ${topics})`.slice(0, 600), `Giải thích: ${c}`); }}>{c}</button>
+                        ))}
+                      </div>
+                    </div>
                   )}
-                </div>
-              </>
-            )}
-          </li>
-        ))}
+                </>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

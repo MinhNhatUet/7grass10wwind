@@ -244,6 +244,9 @@ def test_full_flow_progress_assessment_diagnosis_path_checkpoint(env):
     review, check1, learn, check2 = path["steps"]
     assert review["topic_ids"] == ["L1.T1"] and review["sources"][0]["document_title"] == "Bai 1"
     assert review["objectives"] and review["activities"]
+    assert "find" in {x["type"] for x in review["activities"]}  # nút tìm tài liệu học
+    # khái niệm gợi ý để chọn khi nhờ giải thích: nội dung đúng của các câu vừa sai, rồi mục tiêu
+    assert review["concepts"][0].endswith("đúng") and "Nêu được các pha của mô hình thác nước" in review["concepts"]
     assert learn["completes_lesson"] == "L3" and path["next_step_id"] == review["id"]
 
     # checkpoint không tự đánh dấu xong được
@@ -261,7 +264,26 @@ def test_full_flow_progress_assessment_diagnosis_path_checkpoint(env):
         len(rows["L1.T1"].history) == 2 and rows["L1.T1"].level == "needs_reinforcement"
     )  # 0/3 rồi 3/3, giảm trọng số
     path = client.get(f"/api/v1/learning/paths/{path['id']}").json()
-    assert path["steps"][1]["status"] == "done" and path["steps"][1]["result"]["assessment_id"] == c["id"]
+    failed = path["steps"][1]
+    assert failed["status"] == "done" and failed["result"]["assessment_id"] == c["id"]
+    assert not failed["result"]["passed"]  # 67% < 80%: chưa đạt
+
+    # chưa đạt → chèn vòng ôn lại ngay sau bài kiểm tra; bài mới bị khóa theo bài kiểm tra lại
+    kinds = [(s["kind"], s.get("remediation") or s.get("round")) for s in path["steps"]]
+    assert kinds == [("review", None), ("checkpoint", None), ("reinforce", 1), ("checkpoint", 1),
+                     ("learn", None), ("checkpoint", None)]  # fmt: skip
+    redo, recheck = path["steps"][2], path["steps"][3]
+    assert redo["title"].startswith("Ôn lại (lần 1)") and recheck["assessment"]["topic_ids"] == ["L1.T1"]
+    assert path["steps"][4]["locked"] and "Kiểm tra lại lần 1" in path["steps"][4]["unlock"]
+    r = client.post(f"/api/v1/learning/paths/{path['id']}/steps/{learn['id']}", json={"status": "done"})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "STEP_LOCKED"
+    client.post(f"/api/v1/learning/paths/{path['id']}/steps/{redo['id']}", json={"status": "done"})
+    c1b = client.post("/api/v1/learning/assessments",
+                      json={"course_id": "SE101", "path_id": path["id"], "step_id": recheck["id"]}).json()  # fmt: skip
+    client.post(f"/api/v1/learning/assessments/{c1b['id']}/submit", json={"answers": answer(db, c1b["id"])})
+    path = client.get(f"/api/v1/learning/paths/{path['id']}").json()
+    assert path["steps"][3]["result"]["passed"] and not path["steps"][4]["locked"]  # 86% → mở bài mới
+    assert len(path["steps"]) == 6  # đạt thì không chèn thêm vòng nào
 
     # bài mới L3 chưa học → checkpoint của nó chưa hỏi được (ngoài phạm vi)
     r = client.post(
@@ -280,7 +302,7 @@ def test_full_flow_progress_assessment_diagnosis_path_checkpoint(env):
 
     # lần đánh giá sau dùng kết quả cũ: chủ đề yếu/chưa chắc được hỏi sâu hơn chủ đề đã vững chắc
     listing = client.get("/api/v1/learning/assessments?course_id=SE101").json()["items"]
-    assert len(listing) == 3 and all(x["status"] == "Submitted" for x in listing)
+    assert len(listing) == 4 and all(x["status"] == "Submitted" for x in listing)
 
 
 def test_assessment_requires_answers_and_saves_draft(env):

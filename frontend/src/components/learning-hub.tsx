@@ -86,6 +86,10 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
         onPractice={(courseId, action, topic, label) => {
           const content = `Lộ trình — ${label}`;
           goToChat(router, content, { content, assistant: "learning", learning: { action, topic } }, courseId);
+        }}
+        onFind={(courseId, query) => {
+          const content = `Tìm tài liệu học về ${query}`;
+          goToChat(router, content, { content, assistant: "hub" }, courseId);
         }} />
 
       <TopicPractice courses={courses} busy={false}

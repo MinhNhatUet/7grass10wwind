@@ -611,8 +611,10 @@ def choose_path(db: Session, user: User, assessment_id: str, strategy: str) -> d
         raise AppError("ASSESSMENT_NOT_SUBMITTED", 409)
     curriculum = _course_curriculum(db, user, a.course_id)
     covered = _covered(curriculum, _progress_row(db, user, a.course_id))
-    refs = diagnosis.source_refs(a.questions, _unservable(db, user, a.questions))
-    built = roadmap.build_roadmap(curriculum, covered, mastery_map(db, user, a.course_id), strategy, refs)
+    hidden = _unservable(db, user, a.questions)
+    refs = diagnosis.source_refs(a.questions, hidden)
+    concepts = diagnosis.topic_concepts(curriculum, a.questions, a.answers, hidden)
+    built = roadmap.build_roadmap(curriculum, covered, mastery_map(db, user, a.course_id), strategy, refs, concepts)
     for old in db.scalars(
         select(LearningPath).where(
             LearningPath.user_id == user.id, LearningPath.course_id == a.course_id, LearningPath.status == "Active"
@@ -628,9 +630,9 @@ def choose_path(db: Session, user: User, assessment_id: str, strategy: str) -> d
     return path_view(db, user, path)
 
 
-def _gate_passed(steps: list[dict[str, Any]], gate_id: str | None) -> bool:
-    gate = next((s for s in steps if s["id"] == gate_id), None)
-    return gate is None or bool((gate.get("result") or {}).get("passed"))
+def _unlock_text(steps: list[dict[str, Any]], step: dict[str, Any]) -> str:
+    gate = roadmap.gate_of(steps, step)
+    return f"Cần đạt ≥ {round(roadmap.PASS_MASTERY * 100)}% ở “{gate['title']}” để mở bước này." if gate else ""
 
 
 def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
@@ -655,8 +657,9 @@ def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
                 servable[v] = still_servable(db, user, v)
             if not v or servable[v]:
                 sources.append({k: r.get(k) for k in ("document_title", "page", "page_end")})
-        locked = s["kind"] == "learn" and not _gate_passed(path.steps, s.get("requires"))
-        steps.append({**s, "sources": sources, "needs_update": False, "locked": locked})
+        locked = not roadmap.gate_open(path.steps, s)
+        steps.append({**s, "sources": sources, "needs_update": False, "locked": locked,
+                      "unlock": _unlock_text(path.steps, s) if locked else ""})  # fmt: skip
     nxt = next((s for s in steps if s["status"] != "done" and not s.get("needs_update") and not s.get("locked")), None)
     return {
         "id": path.id, "course_id": path.course_id, "assessment_id": path.assessment_id, "strategy": path.strategy,
@@ -668,7 +671,10 @@ def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
 
 
 def get_path(db: Session, user: User, path_id: str) -> dict[str, Any]:
-    return path_view(db, user, _owned_path(db, user, path_id))
+    path = _owned_path(db, user, path_id)
+    if _repair_remediation(db, user, path):  # lộ trình tạo trước khi có vòng ôn lại: bài kiểm tra đã trượt
+        db.commit()
+    return path_view(db, user, path)
 
 
 def list_paths(db: Session, user: User, course_id: str) -> list[dict[str, Any]]:
@@ -699,7 +705,7 @@ def update_step(db: Session, user: User, path_id: str, step_id: str, status: str
         raise not_found()
     if step["kind"] == "checkpoint" and status == "done":
         raise AppError("CHECKPOINT_NEEDS_ASSESSMENT", 409, message="Bước kiểm tra hoàn thành khi bạn nộp bài kiểm tra.")
-    if step["kind"] == "learn" and status != "not_started" and not _gate_passed(steps, step.get("requires")):
+    if status != "not_started" and not roadmap.gate_open(steps, step):
         raise AppError("STEP_LOCKED", 409, message="Cần đạt bài kiểm tra trước đó để mở bước này.")
     step["status"] = status  # theo thao tác người học (FR-03.10)
     if step["kind"] == "learn" and status == "done":
@@ -733,4 +739,42 @@ def _complete_checkpoint(db: Session, user: User, a: LearningAssessment, mastery
     step["result"] = {"assessment_id": a.id, "score_pct": summary.get("score_pct"), "mastery": round(avg, 3),
                       "passed": bool(values) and avg >= step["assessment"].get("pass_mastery", roadmap.PASS_MASTERY),
                       "gaps": len((a.result or {}).get("gaps") or [])}  # fmt: skip
+    if not step["result"]["passed"]:  # chưa đạt → phải ôn lại và kiểm tra lại trước khi đi tiếp
+        steps = _with_remediation(db, user, path, steps, step, a, mastery)
     _finish(path, steps)
+
+
+def _with_remediation(
+    db: Session,
+    user: User,
+    path: LearningPath,
+    steps: list[dict[str, Any]],
+    failed: dict[str, Any],
+    a: LearningAssessment | None,
+    mastery: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    curriculum = _course_curriculum(db, user, path.course_id)
+    questions, answers = (a.questions, a.answers) if a else ([], {})
+    hidden = _unservable(db, user, questions)
+    new = roadmap.remediation(curriculum, steps, failed, mastery, diagnosis.source_refs(questions, hidden),
+                              diagnosis.topic_concepts(curriculum, questions, answers, hidden))  # fmt: skip
+    return roadmap.splice_after(steps, failed["id"], new)
+
+
+def _repair_remediation(db: Session, user: User, path: LearningPath) -> bool:
+    """Bài kiểm tra đã trượt nhưng chưa có vòng ôn lại (lộ trình tạo trước bản này) → chèn vòng ôn lại."""
+    if path.status != "Active":
+        return False
+    steps = [dict(s) for s in path.steps]
+    handled = {s.get("remediation_for") for s in steps}
+    changed = False
+    for cp in [s for s in steps if s["kind"] == "checkpoint" and s["status"] == "done"]:
+        if (cp.get("result") or {}).get("passed") or cp["id"] in handled:
+            continue
+        a = db.get(LearningAssessment, (cp.get("result") or {}).get("assessment_id") or "")
+        a = a if a is not None and a.user_id == user.id else None
+        steps = _with_remediation(db, user, path, steps, cp, a, mastery_map(db, user, path.course_id))
+        changed = True
+    if changed:
+        path.steps = steps
+    return changed

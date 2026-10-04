@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from src.services.learning_path.curriculum import Curriculum
@@ -273,3 +274,29 @@ def prerequisite_gaps(
         prev = [x for x in curriculum.lessons if x.order == lesson.order - 1 and x.id in covered]
         cands = list(prev[0].topics) if prev else []
     return [t for t in cands if (mastery.get(t.id) or {}).get("level") in WEAK]
+
+
+_TEMPLATE_OBJECTIVE = re.compile(r"^(?:Trình bày và vận dụng được|Hiểu và vận dụng được)\s*:\s*", re.I)
+CONCEPT_MAX = 6
+
+
+def topic_concepts(
+    curriculum: Curriculum, questions: list[dict[str, Any]], answers: dict[str, Any], skip: set[str] | None = None
+) -> dict[str, list[str]]:
+    """Khái niệm cụ thể theo chủ đề để người học CHỌN khi nhờ trợ lý giải thích: trước hết nội dung đúng của các câu
+    vừa làm sai (đúng chỗ hổng), rồi mục tiêu học tập (bỏ tiền tố mẫu của chương trình suy ra). Không gọi LLM."""
+    out: dict[str, list[str]] = {}
+    for q in questions:
+        if q["id"] in (skip or set()):
+            continue
+        picked = picked_index(answers.get(q["id"]))
+        if picked is not None and picked != q["correct"]:
+            text = _option_text(q, q["correct"]).strip()
+            if text:
+                out.setdefault(q["topic_id"], []).append(text[:160])
+    for t in curriculum.topics():
+        objs = [_TEMPLATE_OBJECTIVE.sub("", o.text).strip() for o in t.objectives]
+        merged = list(dict.fromkeys([*out.get(t.id, []), *(o for o in objs if o and o != t.title)]))
+        if merged:
+            out[t.id] = merged[:CONCEPT_MAX]
+    return out
