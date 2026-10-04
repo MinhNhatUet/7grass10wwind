@@ -5,10 +5,11 @@
 // Nội dung & nguồn do backend tạo và kiểm tra; UI chỉ hiển thị + tương tác.
 
 import { useState } from "react";
-import { ApiError, type ChatMessage, type HubResult, type ItemEvidence, type PlanSession, api, downloadFile, json } from "@/lib/api";
+import { ApiError, type ChatMessage, type CourseItem, type HubResult, type ItemEvidence, type PlanSession, api, downloadFile, json } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { M } from "@/components/math-text";
 import { CitationBadge } from "@/components/chat/CitationBadge";
+import { ProgressPath } from "@/components/learning-path";
 import type { Source } from "@/types/chat";
 
 type Meta = ChatMessage["metadata"];
@@ -21,7 +22,7 @@ const muted = "text-black/50 dark:text-white/50";
 export const PENDING_SEND = "pendingLearningSend";
 
 /** Loại bài KHÔNG hiện nguồn khi vừa tạo (người học tự làm trước); dẫn chứng chỉ hiện sau khi trả lời/lật/kiểm tra. */
-export const HIDE_SOURCE_KINDS = ["quiz", "diagnose", "mcq", "flashcards", "cloze", "plan"];
+export const HIDE_SOURCE_KINDS = ["quiz", "diagnose", "mcq", "flashcards", "cloze", "plan", "learning_path"];
 /** Bỏ nhãn [n] / [1, 3] khỏi văn bản hiển thị. */
 export const noCite = (t: string) => t.replace(/\s*\[\d+(?:\s*,\s*\d+)*\]/g, "").replace(/,(\s*)(?=[.;,)]|$)/g, "");
 
@@ -70,7 +71,7 @@ const ErrLine = ({ err }: { err: string | null }) =>
   err ? <p className="mt-2 rounded-lg bg-red-50 dark:bg-red-950 px-3 py-2 text-red-700 dark:text-red-200">{err}</p> : null;
 
 /* ---------- Tự kiểm tra / chẩn đoán ---------- */
-function QuizCard({ meta, messageId, onChanged, cx }: { meta: Meta; messageId: string; onChanged: () => void; cx: CiteCtx }) {
+function QuizCard({ meta, messageId, onChanged, onSend, cx }: { meta: Meta; messageId: string; onChanged: () => void; onSend: (content: string, body: Record<string, unknown>) => void; cx: CiteCtx }) {
   const qs = meta.questions ?? [];
   const [answers, setAnswers] = useState<Record<string, string>>(meta.answers ?? {});
   const { err, busy, call } = useCall(onChanged);
@@ -106,6 +107,11 @@ function QuizCard({ meta, messageId, onChanged, cx }: { meta: Meta; messageId: s
               </li>
             ))}
           </ul>
+          {/* D-82: kết quả tự kiểm tra dẫn tới lộ trình — đánh giá theo phần đã học rồi chọn lộ trình */}
+          <button type="button" className={`${btn} mt-3`} onClick={() => {
+            const content = "Đánh giá theo phần mình đã học và lập lộ trình";
+            onSend(content, { content, assistant: "learning", learning: { action: "diagnose" } });
+          }}>Lập lộ trình học từ đây →</button>
         </div>
       )}
     </div>
@@ -505,7 +511,19 @@ export function LearningCards(props: {
   const cx: CiteCtx = { sources: props.sources ?? [], onSource: props.onSource };
   if (!meta) return null;
   if ((meta.kind === "quiz" || meta.kind === "diagnose") && meta.questions?.length)
-    return <QuizCard meta={meta} messageId={props.messageId} onChanged={props.onChanged} cx={cx} />;
+    return <QuizCard meta={meta} messageId={props.messageId} onChanged={props.onChanged} onSend={props.onSend} cx={cx} />;
+  if (meta.kind === "learning_path" && meta.course_id) {
+    // D-82: đánh giá theo tiến độ → lỗ hổng → chọn lộ trình → lộ trình, ngay trong chat (cùng khối với trang Ôn tập)
+    const course: CourseItem = { id: meta.course_id, code: null, name: meta.course_id, term: null, assigned: true, can_upload: false, can_review: false };
+    return (
+      <div className="mt-3">
+        <ProgressPath courses={[course]} onPractice={(_courseId, action, topic, label) => {
+          const content = `Lộ trình — ${label}`;
+          props.onSend(content, { content, assistant: "learning", learning: { action, topic } });
+        }} />
+      </div>
+    );
+  }
   if (meta.kind === "plan" && meta.plan) return <PlanCard meta={meta} onChanged={props.onChanged} onSend={props.onSend} />;
   if (meta.kind === "flashcards") return <Flashcards meta={meta} cx={cx} />;
   if (meta.kind === "cloze") return <Cloze meta={meta} cx={cx} />;

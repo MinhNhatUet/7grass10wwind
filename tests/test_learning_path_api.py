@@ -439,3 +439,27 @@ def test_derived_curriculum_from_published_slides_without_outline(env, tmp_path,
     assert [t["title"] for t in first["topics"]] == ["Mô hình thác nước", "Mô hình lặp"]
     topics = client.get("/api/v1/learning/topics?course_id=SE101").json()["items"]  # endpoint cũ vẫn như trước
     assert topics[0]["title"] == "Tổng quan quy trình" and topics[0]["sections"] == ["Mô hình thác nước", "Mô hình lặp"]
+
+
+def test_chat_diagnose_opens_progress_flow_or_falls_back(env, tmp_path, monkeypatch):
+    """Chẩn đoán trong chat dẫn tới luồng đánh giá → lộ trình; môn không dựng được chương trình → chẩn đoán cũ."""
+    from src.agents.nodes import orchestration
+    from src.services.assistants import AssistantResult
+
+    client, db, users, who, llm = env
+    old = AssistantResult(status="answered", content="3 câu cũ", payload={"kind": "diagnose"})
+    monkeypatch.setattr(orchestration.study_tools, "diagnose", lambda *a, **k: old)
+
+    def run(user):
+        state = {"course_id": "SE101", "route": {}, "options": {}, "question": "không biết bắt đầu từ đâu"}
+        return orchestration._learning_action({"db": db, "user": user}, state, "diagnose", "t", "t", None)["result"]
+
+    res = run(users["sv"])
+    assert res.payload == {"kind": "learning_path"} and res.status == "answered" and "lộ trình" in res.content
+    assert llm.prompts == []  # chưa soạn câu nào: người học chọn phạm vi đã học trước
+    assert run(users["outsider"]) is old  # không có quyền môn → không mở luồng
+    monkeypatch.setattr(curriculum_mod, "CURRICULA_DIR", tmp_path / "none")
+    for n in (1, 2, 3):
+        db.get(Document, f"doc{n}").current_version_id = None  # môn chưa có tài liệu phục vụ
+    db.commit()
+    assert run(users["sv"]) is old

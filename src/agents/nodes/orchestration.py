@@ -26,6 +26,7 @@ from src.services.assistants import (
     study_tools,
 )
 from src.services.errors import not_found
+from src.services.learning_path import service as learning_path
 from src.services.policy import INTEGRITY_MESSAGE, is_integrity_violation
 
 ROUTER_SYSTEM = """Bạn là bộ điều phối (router) của hệ thống trợ lý học tập. Nhiệm vụ DUY NHẤT: xác định MÔN và
@@ -223,7 +224,10 @@ def _learning_action(
     elif action == "mcq":
         result = study_tools.mcq(db, user, course_id, topic, query, count=count)
     elif action == "diagnose":
-        result = study_tools.diagnose(db, user, course_id, topic, query)
+        # D-82: môn có chương trình học → đánh giá theo phạm vi đã học, kết quả dẫn tới chọn lộ trình (trong thẻ chat)
+        result = learning_path.chat_entry(db, user, course_id) or study_tools.diagnose(
+            db, user, course_id, topic, query
+        )
     elif action in ("flashcards", "cloze"):
         result = study_tools.flashcards(db, user, course_id, topic, action, query, count=count)
     elif action == "triage":

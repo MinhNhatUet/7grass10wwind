@@ -160,7 +160,7 @@ export interface ChatMessage {
   created_at: string;
   metadata: {
     course_id: string;
-    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage" | "mcq";
+    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage" | "mcq" | "learning_path";
     items?: StudyItem[];
     sections?: TriageSections;
     notes?: string[];
