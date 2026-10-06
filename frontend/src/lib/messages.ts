@@ -69,6 +69,7 @@ export function errorMessage(code: string): string {
     EMBEDDING_QUOTA: "Dịch vụ tìm nguồn đã hết hạn mức sử dụng hôm nay. Vui lòng thử lại sau.",
     EMBEDDING_UNAVAILABLE: "Chưa thể tìm nguồn lúc này. Bạn có thể thử lại.",
     NETWORK_ERROR: MSG.serviceError,
+    NOT_FOUND: "Không tìm thấy nội dung, hoặc bạn không có quyền truy cập.",
     QUOTA_EXCEEDED: MSG.quotaExceeded,
     FORBIDDEN: MSG.forbidden,
     REVIEW_NOT_ASSIGNED: MSG.notAssignedReview,
@@ -93,7 +94,8 @@ export function errorMessage(code: string): string {
     PLAN_NOT_ACTIVE: "Kế hoạch chưa được xác nhận hoặc đã kết thúc.",
     IDEMPOTENCY_KEY_REUSED: "Yêu cầu trùng mã với yêu cầu khác. Hãy thử lại.",
   };
-  return map[code] ?? MSG.serviceError;
+  // Chỉ lỗi mạng thật mới báo "chưa kết nối được"; mã khác hiện kèm mã để tra (trước đây 404 cũng bị báo mất kết nối)
+  return map[code] ?? `Chưa thực hiện được thao tác (mã ${code}). Bạn có thể thử lại sau.`;
 }
 
 export const DOC_TYPE_LABEL: Record<string, string> = {

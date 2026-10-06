@@ -33,7 +33,12 @@ def readable_course_ids(db: Session, user: User) -> list[str]:
     if user.role in STAFF_ROLES:
         return list(db.scalars(select(Course.id).where(Course.status != "withdrawn")))
     if user.role == "student":
-        ms = db.scalars(select(Membership).where(Membership.user_id == user.id, Membership.can_read.is_(True)))
+        # Môn đã rút (withdrawn) đóng với SV như với GV — trước đây chỉ GV bị lọc (BR-03)
+        ms = db.scalars(
+            select(Membership)
+            .join(Course, Course.id == Membership.course_id)
+            .where(Membership.user_id == user.id, Membership.can_read.is_(True), Course.status != "withdrawn")
+        )
         return [m.course_id for m in ms if active_membership(db, user, m.course_id)]
     return []
 
