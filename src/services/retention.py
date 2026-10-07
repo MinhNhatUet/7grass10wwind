@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.db import get_sessionmaker
-from src.models.orm import Citation, Conversation, Message
+from src.models.orm import Citation, Conversation, Feedback, Message
 
 log = logging.getLogger(__name__)
 
@@ -18,34 +18,34 @@ INTERVAL_S = 86400
 _stop = threading.Event()
 
 
+def purge_expired(db: Session) -> int:
+    """Xoá hẳn hội thoại đã xoá mềm quá 30 ngày (chưa commit). Trả số hội thoại đã xoá."""
+    cutoff_conv = datetime.now(UTC) - timedelta(days=30)
+    expired_convs = db.scalars(select(Conversation.id).where(Conversation.deleted_at < cutoff_conv)).all()
+    if expired_convs:
+        expired_msgs = select(Message.id).where(Message.conversation_id.in_(expired_convs))
+        # Bảng trỏ tới messages (khóa ngoại không cascade) phải xóa trước — thiếu Feedback thì Postgres báo lỗi khóa
+        # ngoại, cả lượt dọn bị rollback và hội thoại có phản hồi không bao giờ được dọn
+        db.execute(delete(Citation).where(Citation.message_id.in_(expired_msgs)))
+        db.execute(delete(Feedback).where(Feedback.message_id.in_(expired_msgs)))
+        db.execute(delete(Message).where(Message.conversation_id.in_(expired_convs)))
+        db.execute(delete(Conversation).where(Conversation.id.in_(expired_convs)))
+    # Audit log KHÔNG bao giờ bị xoá: chỉ ghi thêm (BR-11) — bỏ bước xoá audit > 90 ngày của bản gốc (D-53)
+    return len(expired_convs)
+
+
 def _cleanup_worker() -> None:
     next_run = time.monotonic()
     while not _stop.is_set():
         try:
             db: Session = get_sessionmaker()()
             try:
-                # 1. Clean up soft-deleted conversations older than 30 days
-                cutoff_conv = datetime.now(UTC) - timedelta(days=30)
-                expired_convs = db.scalars(select(Conversation.id).where(Conversation.deleted_at < cutoff_conv)).all()
-
-                if expired_convs:
-                    db.execute(
-                        delete(Citation).where(
-                            Citation.message_id.in_(
-                                select(Message.id).where(Message.conversation_id.in_(expired_convs))
-                            )
-                        )
-                    )
-                    db.execute(delete(Message).where(Message.conversation_id.in_(expired_convs)))
-                    db.execute(delete(Conversation).where(Conversation.id.in_(expired_convs)))
-
-                # Audit log KHÔNG bao giờ bị xoá: chỉ ghi thêm (BR-11) — bỏ bước xoá audit > 90 ngày của bản gốc (D-53)
-
+                purged = purge_expired(db)
                 db.commit()
                 log.info(
                     "retention: dọn %d hội thoại",
-                    len(expired_convs),
-                    extra={"event": "retention.run", "conversations_deleted": len(expired_convs)},
+                    purged,
+                    extra={"event": "retention.run", "conversations_deleted": purged},
                 )
             except Exception:
                 db.rollback()
