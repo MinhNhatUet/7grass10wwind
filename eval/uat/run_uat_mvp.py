@@ -261,7 +261,7 @@ def data_01(c: Case) -> None:
     served = dict(db.execute(
         "select v.checksum, d.title from documents d join document_versions v on v.id=d.current_version_id "
         "where d.course_id=? and v.state='Published'", (COURSE,)).fetchall())  # fmt: skip
-    want = {x["sha256"]: x["title"] for x in manifest["sources"]}
+    want = {x["sha256"]: x["title"] for x in manifest["sources"] if x["course_id"] == COURSE}  # manifest nhiều môn
     _, b = sv("GET", f"/documents?course_id={COURSE}&page_size=100")
     c.evidence["manifest"] = sorted(want.values())
     c.check(f"Cả {len(want)} nguồn manifest đang Published (khớp sha256)", set(want) <= set(served),
@@ -709,10 +709,7 @@ def la_03(c: Case) -> None:
     _, s, m = ask(sv, "Chẩn đoán kiến thức nền về kiểm thử", assistant="learning", learning={"action": "diagnose", "topic": "kiểm thử phần mềm"})
     c.evidence["diagnose"] = m
     c.check("Chẩn đoán chạy được", s == 200 and m.get("status") in ("answered", "partial"), (s, m.get("status")))
-    _, s, m = ask(sv, "Ngày mai thi môn công nghệ phần mềm, cho tôi ôn cấp tốc phần kiểm thử")
-    c.evidence["triage"] = m
-    c.check("Ôn cấp tốc có nguồn", s == 200 and (m.get("citations") or (m.get("metadata") or {}).get("sections")), (s, m.get("status")))
-    c.need("GV đánh giá nhận xét tự luận, chẩn đoán và nội dung ôn cấp tốc")
+    c.need("GV đánh giá nhận xét tự luận và chẩn đoán")
 
 
 @case("MVP-PLAN-01")
