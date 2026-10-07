@@ -121,16 +121,11 @@ export interface StudyItem {
   options?: string[];
   correct?: number;
   explanation?: string;
+  misconceptions?: Record<string, string>; // trắc nghiệm: phương án sai → hiểu nhầm (cơ chế chung với bài đánh giá)
   sources: number[];
   evidence?: ItemEvidence; // đoạn trích riêng của thẻ này theo từng [n] (D-57)
 }
 export type ItemEvidence = Record<string, { quote: string; page: number; page_end?: number }>;
-
-export interface TriageSections {
-  definitions: { term?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
-  pitfalls: { text: string; sources: number[]; evidence?: ItemEvidence }[];
-  examples: { title?: string; text: string; sources: number[]; evidence?: ItemEvidence }[];
-}
 
 export interface Plan {
   id: string;
@@ -160,11 +155,9 @@ export interface ChatMessage {
   created_at: string;
   metadata: {
     course_id: string;
-    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "analogy" | "triage" | "mcq" | "learning_path";
+    kind?: "hub" | "quiz" | "plan" | "explain" | "diagnose" | "flashcards" | "cloze" | "mcq" | "learning_path";
     items?: StudyItem[];
-    sections?: TriageSections;
     notes?: string[];
-    analogy_context?: string;
     masked?: boolean;
     missing?: string[];
     results?: HubResult[];

@@ -1,10 +1,11 @@
 "use client";
 
 // Thẻ học trong chat TV4 (gộp từ frontend cũ — D-30, D-37): quiz/chẩn đoán, lộ trình (+ Google Calendar, ôn tập theo
-// ngày), flashcard, điền khuyết, cấp cứu sát giờ thi, kết quả Knowledge Hub, gợi ý bắt đầu nhanh.
+// ngày), flashcard, điền khuyết, kết quả Knowledge Hub, gợi ý bắt đầu nhanh.
 // Nội dung & nguồn do backend tạo và kiểm tra; UI chỉ hiển thị + tương tác.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { FORMAT_LABEL, PracticePicker, type PracticeChoice } from "@/components/count-picker";
 import { ApiError, type ChatMessage, type CourseItem, type HubResult, type ItemEvidence, type PlanSession, api, downloadFile, json } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { M } from "@/components/math-text";
@@ -357,12 +358,26 @@ export function PlanCard({ meta, onChanged, onSend, onDeleted }: { meta: Meta; o
   );
 }
 
-/* ---------- Flashcard / điền khuyết / cấp cứu ---------- */
-function Flashcards({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
+/** Tiến độ bài ôn lưu trên server (mở lại từ "Bài ôn tập của tôi" → làm tiếp): số thứ tự câu/thẻ → giá trị.
+ *  Lưu lỗi → vẫn làm được trên giao diện, chỉ báo "chưa lưu được tiến độ". */
+function useSavedAnswers(meta: Meta, messageId: string) {
+  const initial = Object.fromEntries(Object.entries((meta.answers ?? {}) as Record<string, unknown>).map(([k, v]) => [Number(k), v]));
+  const [saveErr, setSaveErr] = useState(false);
+  const save = (answers: Record<number, number | string>, reset = false) => {
+    api(`/learning/practice/${messageId}/answers`, { method: "PUT", body: json({ answers, reset }) })
+      .then(() => setSaveErr(false))
+      .catch(() => setSaveErr(true));
+  };
+  return { initial, save, saveNote: saveErr ? " · chưa lưu được tiến độ" : "" };
+}
+
+/* ---------- Flashcard / điền khuyết ---------- */
+function Flashcards({ meta, messageId, cx }: { meta: Meta; messageId: string; cx: CiteCtx }) {
   const items = meta.items ?? [];
+  const { initial, save, saveNote } = useSavedAnswers(meta, messageId);
   const [i, setI] = useState(0);
   const [flip, setFlip] = useState(false);
-  const [known, setKnown] = useState<Set<number>>(new Set());
+  const [known, setKnown] = useState<Set<number>>(() => new Set(Object.keys(initial).map(Number)));
   if (!items.length) return null;
   const c = items[i];
   const go = (d: number) => { setI((i + d + items.length) % items.length); setFlip(false); };
@@ -373,10 +388,10 @@ function Flashcards({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
         <span className="text-[16px] font-medium"><M>{flip ? c.back : c.front}</M></span>
       </button>
       <div className="mt-2 flex items-center justify-between">
-        <span className={`text-[12px] ${muted}`}>Thẻ {i + 1}/{items.length} · đã nhớ {known.size}</span>
+        <span className={`text-[12px] ${muted}`}>Thẻ {i + 1}/{items.length} · đã nhớ {known.size}{known.has(i) && " · thẻ này đã nhớ"}{saveNote}</span>
         <div className="flex gap-2">
           <button type="button" className={btn2} onClick={() => go(-1)} aria-label="Thẻ trước">‹</button>
-          {flip && <button type="button" className={btn2} onClick={() => { setKnown(new Set(known).add(i)); go(1); }}>Đã nhớ</button>}
+          {flip && <button type="button" className={btn2} onClick={() => { setKnown(new Set(known).add(i)); save({ [i]: 1 }); go(1); }}>Đã nhớ</button>}
           <button type="button" className={btn2} onClick={() => go(1)} aria-label="Thẻ sau">›</button>
         </div>
       </div>
@@ -386,15 +401,18 @@ function Flashcards({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
 }
 
 /* ---------- Trắc nghiệm A–D tự ôn: chọn là biết đúng/sai + giải thích + nguồn ---------- */
-function Mcq({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
+function Mcq({ meta, messageId, cx }: { meta: Meta; messageId: string; cx: CiteCtx }) {
   const items = meta.items ?? [];
-  const [picked, setPicked] = useState<Record<number, number>>({});
+  const { initial, save, saveNote } = useSavedAnswers(meta, messageId);
+  const [picked, setPicked] = useState<Record<number, number>>(() =>
+    Object.fromEntries(Object.entries(initial).map(([k, v]) => [Number(k), Number(v)])));
   const answered = Object.keys(picked).length;
   const right = items.filter((it, k) => picked[k] === it.correct).length;
+  const pick = (k: number, i: number) => { setPicked((p) => ({ ...p, [k]: i })); save({ [k]: i }); };
   return (
     <div className={card}>
       <div className="mb-3 flex items-center justify-between">
-        <span className={`text-[12px] ${muted}`}>Đã làm {answered}/{items.length}</span>
+        <span className={`text-[12px] ${muted}`}>Đã làm {answered}/{items.length}{saveNote}</span>
         <span className="text-[13px] font-semibold">Đúng {right}/{answered || 0}</span>
       </div>
       {items.map((it, k) => {
@@ -412,7 +430,7 @@ function Mcq({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
                       ? "border-red-400 bg-red-50 dark:bg-red-950/40"
                       : "border-black/10 dark:border-white/15 opacity-70";
                 return (
-                  <button key={i} type="button" disabled={done} onClick={() => setPicked({ ...picked, [k]: i })}
+                  <button key={i} type="button" disabled={done} onClick={() => pick(k, i)}
                     className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left bg-transparent cursor-pointer disabled:cursor-default ${tone}`}>
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-black/5 dark:bg-white/10 text-[12px] font-bold">{"ABCD"[i]}</span>
                     <span><M>{o}</M></span>
@@ -428,6 +446,9 @@ function Mcq({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
                   </span>{" "}
                   {it.explanation && <span className={muted}><M>{noCite(it.explanation)}</M></span>}
                 </p>
+                {picked[k] !== it.correct && it.misconceptions?.[it.options?.[picked[k]] ?? ""] && (
+                  <p className="mt-1 text-[13px] text-amber-700 dark:text-amber-300">Có thể bạn đang hiểu nhầm: <M>{it.misconceptions[it.options![picked[k]]]}</M></p>
+                )}
                 <Evidence ns={it.sources} ev={it.evidence} cx={cx} />
               </>
             )}
@@ -446,10 +467,13 @@ function Mcq({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
 
 const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
 
-function Cloze({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
+function Cloze({ meta, messageId, cx }: { meta: Meta; messageId: string; cx: CiteCtx }) {
   const items = meta.items ?? [];
-  const [vals, setVals] = useState<Record<number, string>>({});
+  const { initial, save, saveNote } = useSavedAnswers(meta, messageId);
+  const [vals, setVals] = useState<Record<number, string>>(() =>
+    Object.fromEntries(Object.entries(initial).map(([k, v]) => [Number(k), String(v)])));
   const [checked, setChecked] = useState(false);
+  const filled = Object.values(vals).filter((v) => v.trim()).length;
   const correct = items.filter((it, k) => norm(vals[k] ?? "") === norm(it.answer ?? "")).length;
   return (
     <div className={card}>
@@ -460,6 +484,7 @@ function Cloze({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
           <div key={k} className="mb-3 leading-8">
             {k + 1}. <M>{before}</M>
             <input value={vals[k] ?? ""} onChange={(e) => setVals({ ...vals, [k]: e.target.value })} aria-label={`Chỗ trống câu ${k + 1}`}
+              onBlur={() => save({ [k]: vals[k] ?? "" })}
               className={`mx-1 w-40 rounded-lg border px-2 py-0.5 outline-none bg-white dark:bg-black/30 ${checked ? (ok ? "border-green-500" : "border-red-500") : "border-black/15 dark:border-white/20"}`} />
             <M>{rest.join("____")}</M>
             {it.hint && !checked && <div className={`text-[12px] ${muted}`}>Gợi ý: <M>{it.hint}</M></div>}
@@ -469,29 +494,12 @@ function Cloze({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
         );
       })}
       <div className="flex items-center gap-2">
-        <button type="button" className={btn} onClick={() => setChecked(true)}>Kiểm tra</button>
-        {checked && <>
+        <button type="button" className={btn} onClick={() => { setChecked(true); save(vals); }}>Kiểm tra</button>
+        {checked ? <>
           <span className="text-[13px]">Đúng {correct}/{items.length}</span>
-          <button type="button" className={btn2} onClick={() => { setVals({}); setChecked(false); }}>Làm lại</button>
-        </>}
+          <button type="button" className={btn2} onClick={() => { setVals({}); setChecked(false); save({}, true); }}>Làm lại</button>
+        </> : <span className={`text-[12px] ${muted}`}>Đã điền {filled}/{items.length}{saveNote}</span>}
       </div>
-    </div>
-  );
-}
-
-function Triage({ meta, cx }: { meta: Meta; cx: CiteCtx }) {
-  const s = meta.sections;
-  if (!s) return null;
-  return (
-    <div className={card}>
-      <p className="font-semibold">1. Định nghĩa bắt buộc phải thuộc</p>
-      <ul className="mb-3 ml-5 list-disc">{s.definitions.map((d, k) => <li key={k}>{d.term && <strong><M>{d.term}</M>: </strong>}<M>{d.text}</M> <Cites ns={d.sources} ev={d.evidence} cx={cx} /></li>)}</ul>
-      <p className="font-semibold">2. Sai lầm / lưu ý cần tránh</p>
-      {s.pitfalls.length === 0 ? <p className={`mb-3 ${muted}`}>Tài liệu không nêu rõ — không tự bịa thêm.</p> :
-        <ul className="mb-3 ml-5 list-disc">{s.pitfalls.map((p, k) => <li key={k}><M>{p.text}</M> <Cites ns={p.sources} ev={p.evidence} cx={cx} /></li>)}</ul>}
-      <p className="font-semibold">3. Ví dụ cốt lõi</p>
-      <ol className="ml-5 list-decimal">{s.examples.map((e, k) => <li key={k}>{e.title && <strong><M>{e.title}</M>. </strong>}<M>{e.text}</M> <Cites ns={e.sources} ev={e.evidence} cx={cx} /></li>)}</ol>
-      {(meta.notes ?? []).map((n, k) => <p key={k} className="mt-2 text-[12px] text-amber-700">⚠ {n}</p>)}
     </div>
   );
 }
@@ -528,9 +536,9 @@ export function LearningCards(props: {
     const course: CourseItem = { id: meta.course_id, code: null, name: meta.course_id, term: null, assigned: true, can_upload: false, can_review: false };
     return (
       <div className="mt-3">
-        <ProgressPath courses={[course]} onSource={props.onSource} onPractice={(_courseId, action, topic, label) => {
-          const content = `Lộ trình — ${label}`;
-          props.onSend(content, { content, assistant: "learning", learning: { action, topic } });
+        <ProgressPath courses={[course]} onSource={props.onSource} onPractice={(_courseId, action, topic, label, count) => {
+          const content = `Lộ trình — ${label}${count ? ` (${count} ${action === "flashcards" ? "thẻ" : "câu"})` : ""}`;
+          props.onSend(content, { content, assistant: "learning", learning: { action, topic, ...(count ? { count } : {}) } });
         }} onFind={(_courseId, query) => {
           const content = `Tìm tài liệu học về ${query}`;
           props.onSend(content, { content, assistant: "hub" });
@@ -539,72 +547,40 @@ export function LearningCards(props: {
     );
   }
   if (meta.kind === "plan" && meta.plan) return <PlanCard meta={meta} onChanged={props.onChanged} onSend={props.onSend} />;
-  if (meta.kind === "flashcards") return <Flashcards meta={meta} cx={cx} />;
-  if (meta.kind === "cloze") return <Cloze meta={meta} cx={cx} />;
-  if (meta.kind === "mcq") return <Mcq meta={meta} cx={cx} />;
-  if (meta.kind === "triage") return <Triage meta={meta} cx={cx} />;
+  if (meta.kind === "flashcards") return <Flashcards meta={meta} messageId={props.messageId} cx={cx} />;
+  if (meta.kind === "cloze") return <Cloze meta={meta} messageId={props.messageId} cx={cx} />;
+  if (meta.kind === "mcq") return <Mcq meta={meta} messageId={props.messageId} cx={cx} />;
   if (meta.kind === "hub" && meta.results?.length) return <HubResults meta={meta} onOpenHub={props.onOpenHub} />;
   return null;
 }
 
-/* ---------- Bộ chọn hình thức ôn tập (dùng ở lộ trình và Trung tâm học) ---------- */
-export type PracticeChoice = { action: "mcq" | "quiz" | "flashcards" | "cloze"; count: number };
-export const FORMAT_LABEL: Record<PracticeChoice["action"], string> = {
-  mcq: "Trắc nghiệm A–D",
-  quiz: "Tự luận ngắn (AI đánh giá)",
-  flashcards: "Flashcard",
-  cloze: "Điền khuyết",
-};
-const FORMAT_HINT: Record<PracticeChoice["action"], string> = {
-  mcq: "Chọn đáp án, biết đúng/sai ngay kèm giải thích",
-  quiz: "Tự viết câu trả lời, AI đánh giá mức hiểu",
-  flashcards: "Tự nhớ lại rồi lật thẻ",
-  cloze: "Điền thuật ngữ còn thiếu",
-};
-
-export function PracticePicker({ onPick, onCancel, busy }: { onPick: (c: PracticeChoice) => void; onCancel?: () => void; busy?: boolean }) {
-  const [action, setAction] = useState<PracticeChoice["action"]>("mcq");
-  const [count, setCount] = useState(10);
-  return (
-    <div className="mt-2 rounded-xl border border-black/10 dark:border-white/15 bg-white dark:bg-black/20 p-3">
-      <p className="text-[13px] font-semibold">Ôn tập theo hình thức</p>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {(Object.keys(FORMAT_LABEL) as PracticeChoice["action"][]).map((a) => (
-          <button key={a} type="button" onClick={() => setAction(a)}
-            className={`rounded-xl border-2 p-2 text-left cursor-pointer bg-transparent ${action === a ? "border-[#4f2b96] bg-[#f5f3ff] dark:bg-white/10" : "border-black/10 dark:border-white/15"}`}>
-            <span className="block text-[13px] font-medium">{FORMAT_LABEL[a]}</span>
-            <span className={`block text-[12px] ${muted}`}>{FORMAT_HINT[a]}</span>
-          </button>
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-[13px]">Số câu:</span>
-        {[5, 10, 15, 20].map((n) => (
-          <button key={n} type="button" onClick={() => setCount(n)}
-            className={`rounded-full px-3 py-1 text-[13px] cursor-pointer border-2 ${count === n ? "border-[#4f2b96] text-[#4f2b96] bg-transparent" : "border-transparent bg-black/5 dark:bg-white/10"}`}>{n}</button>
-        ))}
-        <span className="flex-1" />
-        {onCancel && <button type="button" className={btn2} onClick={onCancel}>Hủy</button>}
-        <button type="button" className={btn} disabled={busy} onClick={() => onPick({ action, count })}>{busy ? "Đang tạo…" : "Bắt đầu ôn tập"}</button>
-      </div>
-    </div>
-  );
-}
-
+export { FORMAT_LABEL, PracticePicker, type PracticeChoice }; // chỗ cũ import từ đây vẫn chạy
 /* ---------- Gợi ý bắt đầu nhanh (gửi thẳng cho router, hoặc điền sẵn câu mẫu) ---------- */
 const QUICK: ({ icon: string; label: string } & ({ send: string } | { fill: string }))[] = [
   { icon: "🧭", label: "Tôi không biết bắt đầu từ đâu", send: "Tôi mới học, không biết bắt đầu từ đâu — kiểm tra nhanh kiến thức nền giúp mình" },
   { icon: "🃏", label: "Tạo flashcard", fill: "Tạo flashcard về " },
   { icon: "✏️", label: "Bài điền khuyết", fill: "Tạo bài điền khuyết về " },
-  { icon: "💡", label: "Giải thích bằng ví dụ đời thường", fill: "Giải thích … bằng ví dụ về " },
   { icon: "🗓️", label: "Lập lộ trình học", fill: "Lập lộ trình học … trong 7 ngày, mỗi ngày 45 phút" },
-  { icon: "🚑", label: "Cấp cứu: sắp thi", fill: "Mai thi phần …, ôn cấp tốc giúp mình" },
+];
+// Giảng viên / người duyệt: tra cứu và chuẩn bị giảng dạy — không có lộ trình (chỉ dành cho sinh viên, PRD FR-03)
+const QUICK_STAFF: typeof QUICK = [
+  { icon: "📚", label: "Tra cứu trong giáo trình", fill: "Theo tài liệu của môn, … được định nghĩa thế nào?" },
+  { icon: "🔎", label: "Tìm tài liệu trong môn", fill: "Tìm tài liệu về " },
+  { icon: "❓", label: "Gợi ý câu hỏi trắc nghiệm", fill: "Tạo câu trắc nghiệm về " },
+  { icon: "🧩", label: "Sinh viên hay hiểu nhầm gì", fill: "Những hiểu nhầm thường gặp khi học … là gì?" },
 ];
 
 export function QuickStart({ onSend, onFill }: { onSend: (text: string) => void; onFill: (text: string) => void }) {
+  const [staff, setStaff] = useState(false);
+  useEffect(() => {
+    let role: string | undefined;
+    try { role = JSON.parse(localStorage.getItem("user") || "null")?.role; } catch { /* storage bị chặn → bộ của SV */ }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc localStorage sau hydrate (server không có)
+    setStaff(role === "lecturer" || role === "reviewer");
+  }, []);
   return (
     <div className="mt-4 flex flex-wrap justify-center gap-2">
-      {QUICK.map((q) => (
+      {(staff ? QUICK_STAFF : QUICK).map((q) => (
         <button key={q.label} type="button" onClick={() => ("send" in q ? onSend(q.send) : onFill(q.fill))}
           className="rounded-full border border-black/10 dark:border-white/15 bg-white/80 dark:bg-white/5 px-3.5 py-1.5 text-[13px] cursor-pointer hover:bg-black/5 dark:hover:bg-white/10 backdrop-blur">
           <span aria-hidden="true">{q.icon}</span> {q.label}

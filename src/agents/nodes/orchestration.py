@@ -27,7 +27,7 @@ from src.services.assistants import (
 )
 from src.services.errors import not_found
 from src.services.learning_path import service as learning_path
-from src.services.policy import INTEGRITY_MESSAGE, is_integrity_violation
+from src.services.policy import INTEGRITY_MESSAGE, PLAN_STUDENT_ONLY_MESSAGE, is_integrity_violation
 
 ROUTER_SYSTEM = """Bạn là bộ điều phối (router) của hệ thống trợ lý học tập. Nhiệm vụ DUY NHẤT: xác định MÔN và
 ý định của người dùng, KHÔNG trả lời câu hỏi. Chỉ được chọn môn trong DANH SÁCH MÔN ĐƯỢC PHÉP; không bao giờ chọn
@@ -41,26 +41,23 @@ TRƯỚC. Không xác định được môn → course_id null.
   "trong slide, X cần bao nhiêu…" đều là "academic" (người dùng muốn câu TRẢ LỜI, không muốn danh sách tài liệu).
 - "learning" — chọn learning_action:
   * "explain": giải thích theo mức hiểu ("giải thích dễ hơn", "từng bước");
-  * "analogy": giải thích bằng ví dụ/ẩn dụ đời thường ("giải thích bằng ví dụ bóng đá/trà sữa…") → điền analogy_context;
   * "quiz": tự kiểm tra về một chủ đề cụ thể ("cho tôi câu hỏi ôn về…");
   * "diagnose": KHÔNG BIẾT BẮT ĐẦU TỪ ĐÂU / muốn kiểm tra kiến thức nền ("tôi mới học", "không biết bắt đầu từ đâu",
     "kiểm tra nền tảng của tôi");
   * "flashcards": muốn thẻ ghi nhớ/flashcard; "cloze": muốn bài điền khuyết/điền vào chỗ trống;
-  * "triage": sắp thi gấp / cấp cứu ("mai thi", "đêm nay cày", "ôn cấp tốc", "chỉ cần những gì phải thuộc");
   * "plan": lập/điều chỉnh lộ trình học/ôn tập nhiều ngày.
 - "clarify": ý định thật sự mơ hồ, không thể chọn một trong ba (không dùng khi chỉ thiếu chi tiết nhỏ).
 Trả về DUY NHẤT JSON:
 {"course_id":"mã môn trong danh sách hoặc null","assistant":"academic|learning|hub|clarify",
- "learning_action":"explain|analogy|quiz|mcq|diagnose|flashcards|cloze|triage|plan|null (mcq = trắc nghiệm A–D; quiz = câu hỏi tự luận ngắn)",
- "level":"short|step|detailed|null","goal":"mục tiêu/chủ đề cho lộ trình hoặc null","topic":"chủ đề/khái niệm chính (quiz, diagnose, flashcards, cloze, triage, analogy — với analogy chỉ ghi khái niệm, KHÔNG kèm bối cảnh ẩn dụ) hoặc null",
- "analogy_context":"bối cảnh ẩn dụ người dùng muốn (vd bóng đá) hoặc null",
+ "learning_action":"explain|quiz|mcq|diagnose|flashcards|cloze|plan|null (mcq = trắc nghiệm A–D; quiz = câu hỏi tự luận ngắn)",
+ "level":"short|step|detailed|null","goal":"mục tiêu/chủ đề cho lộ trình hoặc null","topic":"chủ đề/khái niệm chính (quiz, diagnose, flashcards, cloze) hoặc null",
  "search_terms":"thuật ngữ chuyên ngành chính của yêu cầu KÈM tên tiếng Anh (vd \"cây khung spanning tree\")",
  "days":số_ngày_hoặc_null,"minutes_per_day":số_phút_mỗi_ngày_hoặc_null,
  "clarification":"câu hỏi làm rõ ngắn nếu clarify, ngược lại null","reason":"lý do ngắn"}
 Chỉ điền days/minutes_per_day khi người dùng NÓI RÕ con số; không tự đoán."""
 
 ASSISTANTS = ("academic", "learning", "hub", "clarify")
-ACTIONS = ("explain", "analogy", "quiz", "mcq", "diagnose", "flashcards", "cloze", "triage", "plan")
+ACTIONS = ("explain", "quiz", "mcq", "diagnose", "flashcards", "cloze", "plan")
 LEVELS = ("short", "step", "detailed")
 
 
@@ -142,9 +139,6 @@ def router_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, A
         "goal": (str(data["goal"]).strip() or None) if data.get("goal") else None,
         "topic": (str(data["topic"]).strip() or None) if data.get("topic") else None,
         "search_terms": str(data.get("search_terms") or "").strip()[:200] or None,
-        "analogy_context": (str(data["analogy_context"]).strip()[:120] or None)
-        if data.get("analogy_context")
-        else None,
         "days": _int(data.get("days")),
         "minutes_per_day": _int(data.get("minutes_per_day")),
         "clarification": (str(data["clarification"]).strip() or None) if data.get("clarification") else None,
@@ -208,7 +202,7 @@ def learning_node(state: OrchestratorState, config: RunnableConfig) -> dict[str,
     # topic: chủ đề hiển thị/đưa vào prompt; query: topic + thuật ngữ router rút ra, CHỈ dùng để truy xuất
     topic = opts.get("topic") or route.get("topic") or question
     query = _retrieval_query(topic, route)
-    count = _int(opts.get("count"))  # số câu/thẻ người học chọn (3–20, đã kiểm ở API)
+    count = _int(opts.get("count"))  # số câu/thẻ người học chọn (3–50 theo số bài, đã kiểm ở API)
     # D-51: người học chọn nhiều chủ đề → truy xuất riêng từng chủ đề (multi_topic) để câu hỏi trải đều
     with academic.multi_topic(opts.get("topics")):
         return _learning_action(d, state, action, topic, query, count)
@@ -230,12 +224,8 @@ def _learning_action(
         )
     elif action in ("flashcards", "cloze"):
         result = study_tools.flashcards(db, user, course_id, topic, action, query, count=count)
-    elif action == "triage":
-        result = study_tools.triage(db, user, course_id, topic, query)
-    elif action == "analogy":
-        result = study_tools.analogy(
-            db, user, course_id, question, state.get("history", []), route.get("analogy_context"), query
-        )
+    elif action == "plan" and user.role != "student":  # lộ trình chỉ cho sinh viên (PRD FR-03), không tạo StudyPlan
+        result = AssistantResult(status="needs_clarification", content=PLAN_STUDENT_ONLY_MESSAGE)
     elif action == "plan":
         previous = None
         if opts.get("previous_plan_id"):

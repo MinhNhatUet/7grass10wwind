@@ -13,6 +13,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import delete as sql_delete  # `delete` của module là xóa hội thoại
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from src.models.orm import (
     Course,
     Document,
     DocumentVersion,
+    Feedback,
     Membership,
     Message,
     StudyPlan,
@@ -626,6 +628,66 @@ def delete_plan(db: Session, user: User, plan_id: str) -> None:
 
 
 # ---------------------------------------------------------------- tự kiểm tra (FR-03.3–03.4)
+
+
+PRACTICE_KINDS = ("mcq", "flashcards", "cloze")
+SELF_CHECK_KINDS = ("quiz", "diagnose", *PRACTICE_KINDS)
+
+
+def _practice_value(kind: str, v: Any) -> int | str | None:
+    """mcq: phương án 0–3; flashcards: 1 = "đã nhớ"; cloze: chữ đã điền (≤ 200 ký tự, "" = xóa ô). Sai kiểu → None (bỏ)."""
+    if kind == "mcq":
+        return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 3 else None
+    if kind == "flashcards":
+        return 1 if v == 1 and not isinstance(v, bool) else None
+    return v.strip()[:200] if isinstance(v, str) else None
+
+
+def save_practice_answers(
+    db: Session, user: User, message_id: str, answers: dict[str, Any], reset: bool = False
+) -> dict[str, Any]:
+    """Lưu tiến độ bài ôn tự làm (trắc nghiệm, flashcard, điền khuyết) để mở lại làm tiếp. Chấm vẫn ở giao diện (đáp án
+    đã có trong bài tự ôn). Trắc nghiệm: câu đã chọn giữ lựa chọn đầu (giao diện: chọn là chốt); `reset` = làm lại từ đầu.
+    Chỉ chủ hội thoại (BR-02); nguồn mất quyền → 410 (BR-03)."""
+    msg = db.get(Message, message_id)
+    kind = (msg.payload or {}).get("kind") if msg else None
+    if msg is None or kind not in PRACTICE_KINDS:
+        raise not_found()
+    get_owned(db, user, msg.conversation_id)
+    if any(not still_servable(db, user, c.version_id) for c in msg.citations):
+        raise AppError("SOURCE_UNAVAILABLE", 410, message=SOURCE_WITHDRAWN_MESSAGE)
+    payload = dict(msg.payload)
+    total = len(payload.get("items") or [])
+    valid = {str(k): val for k, v in answers.items()
+             if str(k).isdigit() and int(k) < total and (val := _practice_value(kind, v)) is not None}  # fmt: skip
+    old = {} if reset else dict(payload.get("answers") or {})
+    merged = {**valid, **old} if kind == "mcq" else {**old, **valid}
+    payload["answers"] = {k: v for k, v in merged.items() if v != ""}
+    msg.payload = payload
+    db.commit()
+    return {"answers": payload["answers"], "answered": len(payload["answers"]), "total": total}
+
+
+def delete_self_check(db: Session, user: User, message_id: str) -> None:
+    """Xóa HẲN một bài ôn (người học yêu cầu, không khôi phục): tin trả lời + tin yêu cầu đi kèm (cùng request_id) +
+    citation/feedback của chúng. Chỉ chủ hội thoại (BR-02). Audit chỉ ghi id, không ghi nội dung (BR-11)."""
+    msg = db.get(Message, message_id)
+    if msg is None or msg.role != "assistant" or (msg.payload or {}).get("kind") not in SELF_CHECK_KINDS:
+        raise not_found()
+    conv = get_owned(db, user, msg.conversation_id)
+    ids = [msg.id]
+    if msg.request_id:
+        ids += db.scalars(select(Message.id).where(Message.conversation_id == conv.id, Message.role == "user",
+                                                   Message.request_id == msg.request_id)).all()  # fmt: skip
+    kind = msg.payload.get("kind")
+    db.execute(sql_delete(Citation).where(Citation.message_id.in_(ids)))
+    db.execute(sql_delete(Feedback).where(Feedback.message_id.in_(ids)))
+    db.execute(sql_delete(Message).where(Message.id.in_(ids)))
+    if not db.scalar(select(Message.id).where(Message.conversation_id == conv.id).limit(1)):
+        conv.deleted_at = datetime.now(UTC)  # hội thoại chỉ có bài ôn này → không để vỏ rỗng trên thanh bên
+    audit.record(db, actor_id=user.id, action="practice_delete", object_type="message", object_id=message_id,
+                 course_id=message_course(msg, conv), detail={"kind": kind, "messages": len(ids)})  # fmt: skip
+    db.commit()
 
 
 def save_quiz_answers(

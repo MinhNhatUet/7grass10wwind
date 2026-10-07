@@ -12,7 +12,16 @@ from sqlalchemy.orm import Session
 
 from src.config import get_settings
 from src.models.orm import StudyPlan, User
-from src.services.assistants import BASE_POLICY, AssistantResult, call_json, format_sources, json_dicts, json_list
+from src.services.assistants import (
+    BASE_POLICY,
+    MAX_PRACTICE_COUNT,
+    AssistantResult,
+    call_json,
+    call_json_items,
+    format_sources,
+    json_dicts,
+    json_list,
+)
 from src.services.assistants.academic import answer as academic_answer
 from src.services.assistants.academic import evidence
 from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
@@ -64,16 +73,17 @@ def quiz(
     hits = evidence(db, user, course_id, retrieval_query or topic)
     if not hits:
         return AssistantResult(status="insufficient_evidence", content=INSUFFICIENT_MESSAGE, payload={"kind": "quiz"})
-    n = min(n or get_settings().learning_quiz_questions, 20)
-    data = call_json(
+    n = min(n or get_settings().learning_quiz_questions, MAX_PRACTICE_COUNT)  # trần theo số bài đã kiểm ở API
+    sources = format_sources(hits)
+    raw = call_json_items(
         BASE_POLICY,
-        f"Tạo {n} câu hỏi tự kiểm tra ngắn (không phải bài tính điểm) về CHỦ ĐỀ, chỉ dựa trên NGUỒN. "
+        lambda k: f"Tạo {k} câu hỏi tự kiểm tra ngắn (không phải bài tính điểm) về CHỦ ĐỀ, chỉ dựa trên NGUỒN. "
         'Trả về JSON {"questions":[{"topic":"...","objective":"mục tiêu kiểm tra","question":"...","source":n}]}. '
-        f"KHÔNG kèm đáp án. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. \n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
-        temperature=0.3,
-    )
+        f"KHÔNG kèm đáp án. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. \n\nNGUỒN:\n{sources}\n\nCHỦ ĐỀ: {topic}",
+        n, "questions", "question", temperature=0.3,
+    )  # fmt: skip
     questions, used_n = [], set()
-    for i, q in enumerate(json_dicts(data, "questions"), start=1):
+    for i, q in enumerate(raw[:n], start=1):
         refs = _source_refs(q.get("source"), hits, db, user)
         if not refs or not str(q.get("question") or "").strip():
             continue  # câu không có nguồn hợp lệ bị loại, không trình bày

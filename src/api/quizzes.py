@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -9,12 +10,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.api.deps import current_user
+from src.api.deps import current_user, require_role
 from src.config import get_settings
 from src.db import get_db
 from src.models.orm import Conversation, Message, StudyPlan, User
 from src.services import conversations as plan_svc
 from src.services import course_quiz as svc
+from src.services.assistants.study_tools import lessons_label
 from src.services.course_outline import course_chapters
 from src.services.errors import AppError
 from src.services.formatting import iso
@@ -123,7 +125,8 @@ def submit_attempt(
 
 
 @router.get("/learning/plans")
-def my_plans(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+def my_plans(user: User = Depends(require_role("student")), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Lộ trình chỉ dành cho sinh viên (PRD FR-03); GV/GV duyệt/quản trị → 403."""
     rows = db.scalars(
         select(StudyPlan)
         .where(StudyPlan.owner_id == user.id, StudyPlan.status != "Superseded")
@@ -145,9 +148,25 @@ def my_plans(user: User = Depends(current_user), db: Session = Depends(get_db)) 
     return {"items": items}
 
 
+SELF_CHECK_KINDS = plan_svc.SELF_CHECK_KINDS
+_LESSON_REF = re.compile(r'\b(Bài|Chương)\s+(\d+)\s+"')
+
+
+def _short_topic(p: dict[str, Any]) -> str | None:
+    """Nhãn ngắn đã lưu lúc tạo; bản cũ (topic = mô tả đầy đủ nhiều bài) → "Bài 1, 2, 3"; còn lại cắt ~80 ký tự."""
+    if p.get("label"):
+        return str(p["label"])
+    topic = str(p.get("topic") or "").strip()
+    refs = _LESSON_REF.findall(topic)
+    if len(refs) > 1:
+        return lessons_label(refs)
+    return (topic if len(topic) <= 80 else topic[:77].rsplit(" ", 1)[0] + "…") or None
+
+
 @router.get("/learning/self-checks")
 def my_self_checks(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Bài tự kiểm tra / chẩn đoán do Learning Assistant tạo trong các hội thoại CÒN HIỆN của chính user."""
+    """Bài ôn tập (trắc nghiệm, flashcard, điền khuyết), tự kiểm tra, chẩn đoán do Learning Assistant tạo trong các hội
+    thoại CÒN HIỆN của chính user — để mở lại. Chỉ tên/số câu; nội dung mở qua hội thoại (kiểm lại quyền nguồn, BR-10)."""
     rows = db.execute(
         select(Message, Conversation)
         .join(Conversation, Conversation.id == Message.conversation_id)
@@ -158,14 +177,15 @@ def my_self_checks(user: User = Depends(current_user), db: Session = Depends(get
     items = []
     for m, c in rows:
         p = m.payload or {}
-        if p.get("kind") not in ("quiz", "diagnose") or not p.get("questions"):
+        entries = p.get("questions") or p.get("items")
+        if p.get("kind") not in SELF_CHECK_KINDS or not entries or p.get("masked"):
             continue
         topics = (p.get("assessment") or {}).get("topics") or []
         items.append(
             {
                 "message_id": m.id, "conversation_id": c.id, "conversation_title": c.title, "kind": p["kind"],
-                "topic": p.get("topic") or (p["questions"][0].get("topic") if p["questions"] else None),
-                "questions": len(p["questions"]), "answered": len([v for v in (p.get("answers") or {}).values() if str(v).strip()]),
+                "topic": _short_topic(p) or (entries[0].get("topic") if p.get("questions") else None),
+                "questions": len(entries), "answered": len([v for v in (p.get("answers") or {}).values() if str(v).strip()]),
                 "assessed": bool(topics), "levels": [t.get("level") for t in topics], "created_at": iso(m.created_at),
             }
         )  # fmt: skip

@@ -7,7 +7,7 @@ import logging
 import math
 import re
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -72,7 +72,7 @@ def balance_answers(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def strip_citations(text: str) -> str:
-    """Bỏ nhãn [n] khỏi nội dung thẻ/mục có trường nguồn riêng (flashcard, cấp cứu)."""
+    """Bỏ nhãn [n] khỏi nội dung thẻ/mục có trường nguồn riêng (flashcard, điền khuyết)."""
     return ANY_CITATION_RE.sub("", text).strip()
 
 
@@ -318,7 +318,7 @@ def name_sources(text: str, used: list[tuple[int, Hit]]) -> str:
 
 
 def _cited_parts(node: Any) -> list[dict[str, Any]]:
-    """Mọi mục trong payload có trường "sources" (thẻ, câu hỏi, mục cấp cứu…), ở bất kỳ độ sâu nào."""
+    """Mọi mục trong payload có trường "sources" (thẻ, câu hỏi…), ở bất kỳ độ sâu nào."""
     if isinstance(node, list):
         return [d for v in node for d in _cited_parts(v)]
     if not isinstance(node, dict):
@@ -334,7 +334,7 @@ def _part_text(part: dict[str, Any]) -> str:
 
 
 def attach_evidence(payload: dict[str, Any], used: list[tuple[int, Hit]]) -> str:
-    """Hoạt động học (flashcard, điền khuyết, trắc nghiệm, quiz, cấp cứu…) gắn nguồn ở từng mục chứ không ở câu trong
+    """Hoạt động học (flashcard, điền khuyết, trắc nghiệm, quiz…) gắn nguồn ở từng mục chứ không ở câu trong
     nội dung tin nhắn (D-57). Mỗi mục được gắn `evidence = {n: {quote, page}}` (đoạn trích + trang theo chính nội dung
     mục). Trả về các ý dạng "nội dung [n]." để tính trang và đoạn trích chung của citation; nếu không có các ý này, trang
     mặc định là trang đầu chunk (sai)."""
@@ -452,6 +452,44 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
         if attempt == 1:
             raise LlmError("INVALID_JSON")
     raise LlmError("INVALID_JSON")  # không tới được; giữ cho kiểu trả về rõ ràng
+
+
+GEN_BATCH = 12  # mục mỗi lượt gọi LLM: 50 câu trong MỘT lượt → JSON output rất dài, dễ bị cắt cụt/hỏng
+MAX_PRACTICE_COUNT = 50
+
+
+MIN_PER_LESSON = 2
+MAX_PRACTICE_LESSONS = 30  # trần an toàn (mỗi bài 1 lượt truy xuất); giao diện giới hạn theo số bài thật của môn
+
+
+def max_practice_count(lessons: int) -> int:
+    """Số câu/thẻ tối đa khi ôn theo bài: 1–5 bài → 20, mỗi 5 bài thêm → +10, trần 50."""
+    return min(MAX_PRACTICE_COUNT, 10 + 10 * max(1, -(-lessons // 5)))
+
+
+def min_practice_count(lessons: int) -> int:
+    """Tối thiểu 2 câu/thẻ mỗi bài đã chọn (1 bài → 2, 2 bài → 4…), không vượt trần; không chọn bài → 3 như cũ."""
+    return min(MIN_PER_LESSON * lessons, max_practice_count(lessons)) if lessons else 3
+
+
+def call_json_items(
+    system: str, prompt: Callable[[int], str], n: int, key: str, avoid_key: str, temperature: float, spare: bool = False
+) -> list[dict[str, Any]]:
+    """Sinh `n` mục theo lô ≤ GEN_BATCH (n nhỏ → đúng 1 lượt như trước). `prompt(k)` dựng yêu cầu k mục; từ lô thứ 2
+    kèm danh sách mục đã có để model không lặp. `spare`: hàm cũ xin dư (mục không kiểm được bị loại) — áp cho từng lô."""
+    out: list[dict[str, Any]] = []
+    for done in range(0, n, GEN_BATCH):
+        k = min(GEN_BATCH, n - done)
+        k += max(2, k // 2) if spare else 0
+        avoid = [str(it.get(avoid_key) or "").strip()[:150] for it in out]
+        text = prompt(k) + (
+            "\n\nĐÃ CÓ các mục sau — KHÔNG lặp lại, chọn ý khác:\n- " + "\n- ".join(avoid) if avoid else ""
+        )
+        batch = json_dicts(call_json(system, text, temperature), key)[:k]
+        if not batch:
+            break
+        out += batch
+    return out
 
 
 def json_list(data: dict[str, Any], key: str) -> list[Any]:

@@ -6,13 +6,19 @@ from datetime import date, time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from src.api.deps import Idempotency, current_user, idempotency_key, require_role
 from src.db import get_db
 from src.models.orm import Conversation, User
 from src.services import conversations as svc
+from src.services.assistants import (
+    MAX_PRACTICE_COUNT,
+    MAX_PRACTICE_LESSONS,
+    max_practice_count,
+    min_practice_count,
+)
 from src.services.errors import AppError
 from src.services.formatting import iso
 from src.services.plan_calendar import plan_ics, require_exportable_plan
@@ -20,6 +26,8 @@ from src.services.plan_calendar import plan_ics, require_exportable_plan
 router = APIRouter()
 # D-61: admin quản trị hệ thống, không dùng Hỏi đáp (cũng không đọc nội dung học tập — AC-01.6)
 chat_user = require_role("student", "lecturer", "reviewer")
+# Lộ trình học chỉ dành cho sinh viên (PRD FR-03); GV/GV duyệt/quản trị → 403
+plan_owner = require_role("student")
 
 
 def conv_view(c: Conversation) -> dict[str, Any]:
@@ -108,11 +116,19 @@ class LearningOptions(BaseModel):
     minutes_per_day: int | None = None
     previous_plan_id: str | None = None
     plan_id: str | None = None
-    count: int | None = Field(
-        None, ge=3, le=20
-    )  # số câu/thẻ người học chọn khi ôn tập  # D-37: ôn tập một buổi của lộ trình → server lấy môn từ lộ trình
+    # số câu/thẻ khi ôn tập: theo số bài đã chọn — tối thiểu 2/bài, tối đa 20/30/40/50 (min/max_practice_count)
+    count: int | None = Field(None, ge=2, le=MAX_PRACTICE_COUNT)
     dates: list[str] | None = Field(None, max_length=60)  # D-46: ngày học cụ thể (YYYY-MM-DD) do người học chọn
-    topics: list[str] | None = Field(None, max_length=15)  # D-51/D-52: bài/chương đã chọn (ôn tập ≤ 5, lộ trình ≤ 15)
+    # D-51/D-52: bài/chương đã chọn — giao diện giới hạn theo số bài của môn; server giữ trần an toàn
+    topics: list[str] | None = Field(None, max_length=MAX_PRACTICE_LESSONS)
+
+    @model_validator(mode="after")
+    def _count_by_lessons(self) -> LearningOptions:
+        n = len(self.topics or [])
+        low, high = min_practice_count(n), max_practice_count(n)
+        if self.count is not None and not low <= self.count <= high:
+            raise ValueError(f"count phải trong {low}–{high} cho {n} bài đã chọn")
+        return self
 
     @field_validator("topics")
     @classmethod
@@ -162,6 +178,26 @@ class QuizAnswers(BaseModel):
     submit: bool = False
 
 
+class PracticeAnswers(BaseModel):
+    # số thứ tự câu/thẻ (0…) → trắc nghiệm: phương án 0–3; flashcard: 1 (đã nhớ); điền khuyết: chữ đã điền
+    answers: dict[str, int | str] = Field(default_factory=dict, max_length=MAX_PRACTICE_COUNT)
+    reset: bool = False  # làm lại từ đầu
+
+
+@router.put("/learning/practice/{message_id}/answers")
+def practice_answers(
+    message_id: str, body: PracticeAnswers, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Lưu tiến độ bài ôn (trắc nghiệm, flashcard, điền khuyết) để mở lại làm tiếp."""
+    return svc.save_practice_answers(db, user, message_id, body.answers, body.reset)
+
+
+@router.delete("/learning/self-checks/{message_id}", status_code=204)
+def delete_self_check(message_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    """Xóa hẳn một bài ôn (cả trong hội thoại), không khôi phục."""
+    svc.delete_self_check(db, user, message_id)
+
+
 @router.post("/learning/quizzes/{message_id}/answers")
 def quiz_answers(
     message_id: str, body: QuizAnswers, user: User = Depends(current_user), db: Session = Depends(get_db)
@@ -174,7 +210,7 @@ def plan_calendar(
     plan_id: str,
     start: date | None = None,  # bắt buộc trừ khi lộ trình có ngày cụ thể (D-46)
     at: time = time(19, 0),
-    user: User = Depends(current_user),
+    user: User = Depends(plan_owner),
     db: Session = Depends(get_db),
 ) -> Response:
     """D-37: xuất lộ trình ĐÃ XÁC NHẬN ra iCalendar để nhập Google Calendar (chỉ chủ sở hữu, AC-03.10)."""
@@ -196,12 +232,12 @@ def plan_calendar(
 
 
 @router.get("/learning/plans/{plan_id}")
-def get_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_plan(plan_id: str, user: User = Depends(plan_owner), db: Session = Depends(get_db)) -> dict[str, Any]:
     return svc.plan_view(db, user, svc.get_plan(db, user, plan_id))
 
 
 @router.post("/learning/plans/{plan_id}/confirm")
-def confirm_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
+def confirm_plan(plan_id: str, user: User = Depends(plan_owner), db: Session = Depends(get_db)) -> dict[str, Any]:
     return svc.plan_view(db, user, svc.confirm_plan(db, user, plan_id))
 
 
@@ -214,7 +250,7 @@ def session_status(
     plan_id: str,
     session_id: str,
     body: SessionStatus,
-    user: User = Depends(current_user),
+    user: User = Depends(plan_owner),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return svc.plan_view(db, user, svc.update_session(db, user, plan_id, session_id, body.status))
@@ -237,14 +273,14 @@ class PlanEdit(BaseModel):
 
 @router.put("/learning/plans/{plan_id}")
 def edit_plan(
-    plan_id: str, body: PlanEdit, user: User = Depends(current_user), db: Session = Depends(get_db)
+    plan_id: str, body: PlanEdit, user: User = Depends(plan_owner), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     sessions = [s.model_dump() for s in body.sessions]
     return svc.plan_view(db, user, svc.update_plan(db, user, plan_id, body.goal.strip(), sessions))
 
 
 @router.delete("/learning/plans/{plan_id}", status_code=204)
-def delete_plan(plan_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+def delete_plan(plan_id: str, user: User = Depends(plan_owner), db: Session = Depends(get_db)) -> None:
     svc.delete_plan(db, user, plan_id)
 
 
@@ -254,6 +290,6 @@ class PlanStatus(BaseModel):
 
 @router.post("/learning/plans/{plan_id}/status")
 def plan_status(
-    plan_id: str, body: PlanStatus, user: User = Depends(current_user), db: Session = Depends(get_db)
+    plan_id: str, body: PlanStatus, user: User = Depends(plan_owner), db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     return svc.plan_view(db, user, svc.set_plan_status(db, user, plan_id, body.status))

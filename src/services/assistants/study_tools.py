@@ -3,9 +3,6 @@
 - diagnose  : chẩn đoán chủ động — 3 câu tình huống về kiến thức nền, chấm xong chỉ ra phần hổng + trang cần đọc.
 - flashcards: thẻ ghi nhớ (active recall) — mỗi thẻ gắn nguồn.
 - cloze     : bài điền khuyết — đáp án phải xuất hiện nguyên văn trong đoạn nguồn được gắn, nếu không bỏ thẻ.
-- analogy   : giải thích bằng ẩn dụ đời thường — nguyên lý có [n], phần ẩn dụ đánh dấu rõ không phải nguồn.
-- triage    : cấp cứu sát giờ thi — đúng 3 phần (định nghĩa, sai lầm phổ biến, 2 ví dụ), mọi mục có nguồn;
-              "sai lầm" chỉ lấy từ lưu ý/cảnh báo có trong tài liệu, không có thì ghi rõ.
 
 Chung: chỉ dùng nguồn Published đúng quyền trong môn router đã chốt (BR-01/02/03), mục không có nguồn hợp lệ bị loại
 (BR-04), không đưa đáp án bài tính điểm (BR-06; bài điền khuyết/flashcard là tự học, không tính điểm).
@@ -19,34 +16,27 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.config import get_settings
 from src.models.orm import User
 from src.services.assistants import (
     BASE_POLICY,
+    MAX_PRACTICE_COUNT,
     AssistantResult,
     balance_answers,
     call_json,
+    call_json_items,
     dedupe_key,
     format_sources,
     json_dicts,
     strip_citations,
     verified_quote,
 )
-from src.services.assistants.academic import answer as academic_answer
-from src.services.assistants.academic import evidence
+from src.services.assistants.academic import evidence, selected_topics
 from src.services.policy import INSUFFICIENT_MESSAGE
-from src.services.retrieval import Hit, search, still_servable
+from src.services.retrieval import Hit, still_servable
 
 log = logging.getLogger(__name__)
 
 MAX_CARDS = 10
-TRIAGE_LIMITS = {"definitions": 8, "pitfalls": 5, "examples": 2}
-# Truy vấn phụ để gom đúng loại nội dung cho chế độ cấp cứu (sách dev là tiếng Anh)
-TRIAGE_PROBES = {
-    "definitions": "definition is called defined as",
-    "pitfalls": "note that be careful common mistake warning not always does not",
-    "examples": "example for instance",
-}
 
 
 def _refs(raw: Any, hits: list[Hit], db: Session, user: User) -> list[int]:
@@ -79,6 +69,26 @@ def _spare(n: int) -> int:
 
 def _used(hits: list[Hit], ns: set[int]) -> list[tuple[int, Hit]]:
     return [(k, hits[k - 1]) for k in sorted(ns)]
+
+
+_UNIT_NO = re.compile(r"^(Bài|Chương)\s+(\d+)")
+
+
+def _about(topic: str) -> str:
+    """Tên ngắn cho câu giới thiệu: ôn nhiều bài → "Bài 1, 3, 5" (lấy từ đầu mô tả "Bài N …" frontend gửi; mô tả đầy
+    đủ chỉ dùng để truy xuất/prompt). Không nhận ra số bài → "N bài đã chọn"."""
+    if picked := selected_topics():
+        found = [m.groups() for t in picked if (m := _UNIT_NO.match(t.strip()))]
+        return lessons_label(found) if len(found) == len(picked) else f"{len(picked)} bài đã chọn"
+    return f"“{topic}”" if len(topic) <= 80 else f"“{topic[:77].rsplit(' ', 1)[0]}…”"
+
+
+def lessons_label(refs: list[tuple[str, str]]) -> str:
+    """[("Bài","3"), ("Bài","1"), ("Chương","5")] → "Bài 1, 3 và Chương 5"."""
+    groups: dict[str, list[int]] = {}
+    for unit, no in refs:
+        groups.setdefault(unit, []).append(int(no))
+    return " và ".join(f"{unit} {', '.join(map(str, sorted(set(nos))))}" for unit, nos in groups.items())
 
 
 def _empty(kind: str) -> AssistantResult:
@@ -140,27 +150,27 @@ def flashcards(
     count: int | None = None,
 ) -> AssistantResult:
     """mode: "flashcards" | "cloze". retrieval_query chỉ dùng để truy xuất; topic là chủ đề hiển thị."""
-    max_cards = min(count or MAX_CARDS, 20)
+    max_cards = min(count or MAX_CARDS, MAX_PRACTICE_COUNT)  # trần theo số bài đã kiểm ở API (max_practice_count)
     hits = evidence(db, user, course_id, retrieval_query or topic)
     if not hits:
         return _empty(mode)
     if mode == "cloze":
         instruction = (
-            f"Tạo {_spare(max_cards)} câu ĐIỀN KHUYẾT từ NGUỒN về CHỦ ĐỀ. Mỗi câu thay một thuật ngữ/khái niệm then chốt "
+            "Tạo {k} câu ĐIỀN KHUYẾT từ NGUỒN về CHỦ ĐỀ. Mỗi câu thay một thuật ngữ/khái niệm then chốt "
             'bằng "____". "answer" phải là cụm từ CHÉP NGUYÊN VĂN từ nguồn n (giữ nguyên ngôn ngữ gốc). '
             'Trả về JSON {"items":[{"sentence":"câu có ____","answer":"...","hint":"gợi ý ngắn","source":n,"proof":"câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn n chứng minh đáp án"}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         )
     else:
         instruction = (
-            f"Tạo {_spare(max_cards)} THẺ GHI NHỚ từ NGUỒN về CHỦ ĐỀ: mặt trước là câu hỏi ngắn buộc người học nhớ lại, "
+            "Tạo {k} THẺ GHI NHỚ từ NGUỒN về CHỦ ĐỀ: mặt trước là câu hỏi ngắn buộc người học nhớ lại, "
             "mặt sau là câu trả lời ngắn gọn đúng theo nguồn n (tiếng Việt, giữ thuật ngữ gốc). "
             'Trả về JSON {"items":[{"front":"...","back":"...","source":n,"proof":"câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn n chứng minh đáp án"}]}. Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
         )
-    data = call_json(
-        BASE_POLICY, f"{instruction}\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}", temperature=0.3
-    )
+    tail = f"\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}"
+    raw = call_json_items(BASE_POLICY, lambda k: instruction.replace("{k}", str(k)) + tail, max_cards, "items",
+                          "sentence" if mode == "cloze" else "front", temperature=0.3, spare=True)  # fmt: skip
     items, used, seen, unproven = [], set(), set(), 0
-    for it in json_dicts(data, "items")[: _spare(max_cards)]:
+    for it in raw:
         if len(items) == max_cards:
             break
         refs = _refs(it.get("source"), hits, db, user)
@@ -217,62 +227,92 @@ def flashcards(
     label = "câu điền khuyết" if mode == "cloze" else "thẻ ghi nhớ"
     return AssistantResult(
         status="answered",
-        content=f"Đây là {len(items)} {label} về “{topic}”. Tự nhớ lại trước khi xem đáp án — mỗi thẻ có nguồn để đối chiếu.",
+        content=f"{len(items)} {label} về {_about(topic)} — tự nhớ lại trước khi xem đáp án.",
         used=_used(hits, used),
-        payload={"kind": mode, "topic": topic, "items": items},
+        payload={"kind": mode, "topic": topic, "label": _about(topic).strip("“”"), "items": items},
     )
+
+
+# ---------------------------------------------------------------- trắc nghiệm A–D: cơ chế CHUNG cho tự ôn (`mcq`) và bài
+# đánh giá theo lộ trình (learning_path.service) — cùng luật soạn, cùng cách kiểm từng câu; mỗi luồng chỉ khác cách chọn
+# nguồn/chủ đề và cách làm bài (tự ôn: biết đúng/sai ngay; đánh giá: nộp rồi chấm).
+
+MCQ_RULES = """- 4 lựa chọn, đúng 1 đáp án đúng; 3 phương án nhiễu là các HIỂU NHẦM thường gặp, hợp lý, không đánh đố; không
+  nhắc chữ cái A/B/C/D trong lựa chọn hay giải thích (thứ tự lựa chọn sẽ được xáo).
+- "correct": chỉ số 0–3 của đáp án đúng.
+- "misconceptions": mảng 4 chuỗi theo thứ tự options — với phương án sai, 1 câu nêu hiểu nhầm mà người chọn nó đang mắc;
+  phương án đúng để "".
+- "explanation": 1–2 câu vì sao đáp án đúng, theo nguồn.
+- "proof": câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn "source" chứng minh đáp án đúng.
+- Không viết [n] trong câu hỏi/lựa chọn. Không đủ căn cứ thì bỏ câu đó, không bịa."""
+
+
+def mcq_item(db: Session, user: User, it: dict[str, Any], candidates: list[tuple[int, Hit]]) -> dict[str, Any] | None:
+    """Kiểm một câu model trả: nội dung, đúng 4 lựa chọn khác nhau, đáp án 0–3, câu trích chứng minh có NGUYÊN VĂN trong
+    một nguồn ứng viên còn phục vụ (D-74, BR-03) — theo thứ tự ưu tiên của `candidates`. Không đạt → None (loại câu).
+    Trả câu đã làm sạch kèm (số nguồn, hit) chứng minh."""
+    text = strip_citations(str(it.get("question") or "")).strip()
+    opts = [strip_citations(str(o)).strip()[:300] for o in (it.get("options") or [])]
+    try:
+        correct = int(it.get("correct"))
+    except (TypeError, ValueError):
+        return None
+    if not text or len(opts) != 4 or not all(opts) or len(set(opts)) != 4 or not 0 <= correct <= 3:
+        return None
+    for n, hit in candidates:
+        if (proof := verified_quote(it.get("proof"), hit.chunk.text)) and still_servable(db, user, hit.version.id):
+            break
+    else:
+        return None
+    raw_mis = it.get("misconceptions") if isinstance(it.get("misconceptions"), list) else []
+    return {
+        "text": text[:800], "options": opts, "correct": correct,
+        "explanation": strip_citations(str(it.get("explanation") or ""))[:600],
+        "misconceptions": {opts[i]: strip_citations(str(raw_mis[i]))[:300] for i in range(4)
+                           if i != correct and i < len(raw_mis) and str(raw_mis[i] or "").strip()},
+        "proof": proof, "n": n, "hit": hit,
+    }  # fmt: skip
 
 
 def mcq(
     db: Session, user: User, course_id: str, topic: str, retrieval_query: str | None = None, count: int | None = None
 ) -> AssistantResult:
-    """Trắc nghiệm A–D để TỰ ÔN (không phải bài tính điểm): mỗi câu 4 lựa chọn, 1 đáp án, giải thích + nguồn n.
+    """Trắc nghiệm A–D để TỰ ÔN (không phải bài tính điểm), dùng cơ chế chung `MCQ_RULES` + `mcq_item`.
     Câu thiếu lựa chọn/đáp án/nguồn hợp lệ bị loại (không bịa)."""
-    n = min(count or 10, 20)
+    n = min(count or 10, MAX_PRACTICE_COUNT)  # trần theo số bài đã kiểm ở API (max_practice_count)
     hits = evidence(db, user, course_id, retrieval_query or topic)
     if not hits:
         return _empty("mcq")
-    data = call_json(
+    sources = format_sources(hits)
+    raw = call_json_items(
         BASE_POLICY,
-        f"Tạo {_spare(n)} câu TRẮC NGHIỆM tự ôn về CHỦ ĐỀ, chỉ dựa trên NGUỒN. Mỗi câu 4 lựa chọn, đúng 1 đáp án đúng; các "
-        "lựa chọn sai phải hợp lý (lỗi hiểu nhầm thường gặp), không đánh đố. Giải thích ngắn vì sao đáp án đúng, theo nguồn n; "
-        "KHÔNG nhắc chữ cái A/B/C/D trong giải thích hay lựa chọn (thứ tự lựa chọn sẽ được xáo). "
-        'Trả về JSON {"items":[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...","source":n,"proof":"câu CHÉP NGUYÊN VĂN (không dịch, 20–300 ký tự) từ nguồn n chứng minh đáp án đúng"}]} Nếu NGUỒN không đủ để tạo nội dung về CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi. '
-        f"(correct là chỉ số 0–3).\n\nNGUỒN:\n{format_sources(hits)}\n\nCHỦ ĐỀ: {topic}",
-        temperature=0.4,
-    )
+        lambda k: f"Tạo {k} câu TRẮC NGHIỆM tự ôn về CHỦ ĐỀ, chỉ dựa trên NGUỒN.\n{MCQ_RULES}\n"
+        'JSON: {"items":[{"question":"...","options":["...","...","...","..."],"correct":0,"explanation":"...",'
+        '"misconceptions":["","...","...","..."],"source":n,"proof":"..."}]} Nếu NGUỒN không đủ để tạo nội dung về '
+        "CHỦ ĐỀ, trả về đúng JSON rỗng như mẫu (danh sách rỗng), KHÔNG viết văn xuôi."
+        f"\n\nNGUỒN:\n{sources}\n\nCHỦ ĐỀ: {topic}",
+        n, "items", "question", temperature=0.4, spare=True,
+    )  # fmt: skip
     items, used, seen, unproven = [], set(), set(), 0
-    for it in json_dicts(data, "items")[: _spare(n)]:
+    for it in raw:
         if len(items) == n:
             break
         refs = _refs(it.get("source"), hits, db, user)
-        opts = [strip_citations(str(o)).strip()[:300] for o in (it.get("options") or [])]
-        q = strip_citations(str(it.get("question") or "")).strip()
-        try:
-            correct = int(it.get("correct"))
-        except (TypeError, ValueError):
+        if not refs:
             continue
-        if not refs or not q or len(opts) != 4 or not all(opts) or len(set(opts)) != 4 or not 0 <= correct <= 3:
-            continue
-        # D-74: đáp án đúng phải có câu trích nguyên văn trong nguồn chứng minh — không có thì loại câu
-        proof, refs = _proof(it.get("proof"), refs, hits, db, user)
-        if not proof:
+        # nguồn model gắn trước; câu trích có thật ở nguồn khác (đúng quyền) → nhận nguồn thật đó
+        order = refs + [k for k in range(1, len(hits) + 1) if k not in refs]
+        q = mcq_item(db, user, it, [(k, hits[k - 1]) for k in order])
+        if q is None:
             unproven += 1
             continue
-        if dedupe_key(q) in seen:
+        if dedupe_key(q["text"]) in seen:
             continue
-        seen.add(dedupe_key(q))
-        items.append(
-            {
-                "question": q[:600],
-                "options": opts,
-                "correct": correct,
-                "explanation": strip_citations(str(it.get("explanation") or ""))[:600],
-                "proof": proof,
-                "sources": refs[:1],
-            }
-        )
-        used.update(refs[:1])
+        seen.add(dedupe_key(q["text"]))
+        items.append({"question": q["text"][:600], "options": q["options"], "correct": q["correct"],
+                      "explanation": q["explanation"], "misconceptions": q["misconceptions"], "proof": q["proof"],
+                      "sources": [q["n"]]})  # fmt: skip
+        used.add(q["n"])
     log.info(
         "study_items_verified",
         extra={"event": "study_items_verified", "kind": "mcq", "kept": len(items), "unproven": unproven},
@@ -282,111 +322,9 @@ def mcq(
         return _empty("mcq")
     return AssistantResult(
         status="answered",
-        content=f"Đây là {len(items)} câu trắc nghiệm về “{topic}”. Chọn đáp án để biết đúng/sai ngay — mỗi câu có giải thích và nguồn.",
+        content=f"{len(items)} câu trắc nghiệm về {_about(topic)} — chọn đáp án để biết đúng/sai ngay.",
         used=_used(hits, used),
-        payload={"kind": "mcq", "topic": topic, "items": items},
-    )
-
-
-# ---------------------------------------------------------------- giải thích bằng ẩn dụ
-
-
-def analogy(
-    db: Session, user: User, course_id: str, question: str, history: list, context: str | None, retrieval_query: str
-) -> AssistantResult:
-    """Bước 1: trả lời có nguồn như Academic. Bước 2: diễn lại ĐÚNG nội dung đó bằng ẩn dụ đời thường — chỉ dựa trên
-    câu trả lời bước 1 (không thêm kiến thức), không có [n], đặt dưới tiêu đề đánh dấu là ẩn dụ minh họa."""
-    ctx = (context or "một tình huống đời thường quen thuộc với sinh viên").strip()[:120]
-    # Bước 1 chỉ hỏi về khái niệm (không kèm bối cảnh ẩn dụ) — nguồn không có "trà sữa" không làm câu trả lời bị partial
-    concept = f"Giải thích {retrieval_query}"
-    result = academic_answer(db, user, course_id, concept, history, retrieval_query=retrieval_query)
-    result.payload.update({"kind": "analogy", "analogy_context": ctx})
-    if result.status not in ("answered", "partial") or not result.used:
-        return result  # không có nguyên lý có nguồn thì không dựng ẩn dụ
-    data = call_json(
-        BASE_POLICY,
-        f"Dưới đây là NGUYÊN LÝ đã được kiểm chứng. Hãy diễn giải lại đúng nguyên lý đó bằng ẩn dụ về {ctx} cho sinh viên "
-        "dễ hiểu (4–7 câu). KHÔNG thêm kiến thức mới ngoài nguyên lý, KHÔNG dùng [n]. Kết thúc bằng 1 câu nêu chỗ ẩn dụ "
-        'không khớp hoàn toàn với khái niệm gốc. JSON: {"analogy":"...","limit":"chỗ ẩn dụ không khớp"}'
-        f"\n\nNGUYÊN LÝ:\n{strip_citations(result.content)}",
-        temperature=0.6,
-    )
-    story = strip_citations(str(data.get("analogy") or "")).strip()
-    limit = strip_citations(str(data.get("limit") or "")).strip()
-    if story:
-        result.content += f"\n\nVí dụ đời thường — {ctx} (ẩn dụ minh họa, KHÔNG phải nội dung nguồn):\n{story}" + (
-            f"\nLưu ý: {limit}" if limit else ""
-        )
-    return result
-
-
-# ---------------------------------------------------------------- cấp cứu sát giờ thi
-
-
-def _triage_hits(db: Session, user: User, course_id: str, query: str) -> list[Hit]:
-    """Gom nguồn cho 3 phần bằng truy vấn chủ đề + truy vấn phụ; vẫn qua evidence gate của chủ đề."""
-    base = evidence(db, user, course_id, query)
-    if not base:
-        return []
-    min_score = get_settings().retrieval_min_score
-    seen = {h.chunk.id for h in base}
-    hits = list(base)
-    for probe in TRIAGE_PROBES.values():
-        for h in search(db, user, course_id, f"{query} {probe}", k=4):
-            if h.chunk.id not in seen and h.score >= min_score:
-                seen.add(h.chunk.id)
-                hits.append(h)
-    return hits[:14]
-
-
-def triage(db: Session, user: User, course_id: str, topic: str, retrieval_query: str | None = None) -> AssistantResult:
-    hits = _triage_hits(db, user, course_id, retrieval_query or topic)
-    if not hits:
-        return _empty("triage")
-    data = call_json(
-        BASE_POLICY,
-        "CHẾ ĐỘ CẤP CỨU: sinh viên thi sát giờ. Chỉ dựa trên NGUỒN, trả về ĐÚNG 3 phần, ngắn gọn, bỏ lý thuyết rườm rà:\n"
-        f"- definitions: tối đa {TRIAGE_LIMITS['definitions']} định nghĩa bắt buộc phải thuộc (term + nội dung cốt lõi);\n"
-        f"- pitfalls: tối đa {TRIAGE_LIMITS['pitfalls']} sai lầm/nhầm lẫn cần tránh — CHỈ lấy từ lưu ý, cảnh báo, "
-        "phản ví dụ, điều kiện hay bị bỏ sót CÓ TRONG NGUỒN; nếu nguồn không nêu thì để mảng rỗng, KHÔNG tự nghĩ ra;\n"
-        f"- examples: đúng {TRIAGE_LIMITS['examples']} ví dụ cốt lõi nhất có trong nguồn (tóm tắt đề + ý chính lời giải "
-        "của VÍ DỤ minh họa trong sách, không phải bài tập tính điểm).\n"
-        'JSON: {"definitions":[{"term":"...","text":"...","source":n}],"pitfalls":[{"text":"...","source":n}],'
-        '"examples":[{"title":"...","text":"...","source":n}]}'
-        f"\n\nNGUỒN:\n{format_sources(hits)}\n\nPHẠM VI THI: {topic}",
-        temperature=0.2,
-    )
-    sections: dict[str, list[dict]] = {}
-    used: set[int] = set()
-    for key, limit in TRIAGE_LIMITS.items():
-        items = []
-        for it in json_dicts(data, key)[: limit * 2]:
-            refs = _refs(it.get("source"), hits, db, user)
-            text = str(it.get("text") or "").strip()
-            if not refs or not text:
-                continue  # mục không có nguồn hợp lệ bị loại (BR-04)
-            item = {"text": strip_citations(text)[:600], "sources": refs[:1]}
-            if key == "definitions":
-                item["term"] = str(it.get("term") or "")[:120]
-            if key == "examples":
-                item["title"] = str(it.get("title") or "")[:160]
-            items.append(item)
-            used.update(refs[:1])
-            if len(items) == limit:
-                break
-        sections[key] = items
-    if not any(sections.values()):
-        return _empty("triage")
-    notes = []
-    if not sections["pitfalls"]:
-        notes.append("Tài liệu được phép không nêu rõ sai lầm/lưu ý nào cho phạm vi này — mình không tự bịa thêm.")
-    if len(sections["examples"]) < TRIAGE_LIMITS["examples"]:
-        notes.append("Không tìm đủ 2 ví dụ trong tài liệu cho phạm vi này.")
-    return AssistantResult(
-        status="partial" if notes else "answered",
-        content=f"Phao cứu sinh cho “{topic}”: định nghĩa phải thuộc, sai lầm cần tránh và ví dụ cốt lõi — bấm [n] để đối chiếu nguồn.",
-        used=_used(hits, used),
-        payload={"kind": "triage", "topic": topic, "sections": sections, "notes": notes},
+        payload={"kind": "mcq", "topic": topic, "label": _about(topic).strip("“”"), "items": items},
     )
 
 

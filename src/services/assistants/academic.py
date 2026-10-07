@@ -59,6 +59,11 @@ def multi_topic(queries: list[str] | None):
         _topic_queries.reset(token)
 
 
+def selected_topics() -> list[str]:
+    """Mô tả các bài/chủ đề của lượt ôn nhiều bài đang chạy ([] = ôn một chủ đề)."""
+    return list(_topic_queries.get() or [])
+
+
 def evidence(db: Session, user: User, course_id: str, query: str) -> list[Hit]:
     floor = get_settings().retrieval_min_score
     queries = _topic_queries.get()

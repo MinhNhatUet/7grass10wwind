@@ -37,6 +37,8 @@ function UnifiedChat() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [documentScope, setDocumentScope] = useState<{ id: string; title: string } | null>(null);
   const [conversationLoading, setConversationLoading] = useState(false);
+  const [focusMsg, setFocusMsg] = useState<string | null>(null); // ?msg= — mở lại một bài ôn: cuộn tới đúng tin
+  const [flashMsg, setFlashMsg] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const hasMessages = messages.length > 0;
@@ -51,6 +53,23 @@ function UnifiedChat() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  // Chạy SAU auto-scroll ở trên: có ?msg= thì cuộn tới tin đó (đầu tin) và tô sáng một lúc
+  useEffect(() => {
+    if (!focusMsg) return;
+    const el = document.getElementById(`msg-${focusMsg}`);
+    if (!el) return; // hội thoại chưa tải xong
+    el.scrollIntoView({ block: "start" });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- tô sáng tin vừa cuộn tới, một lần
+    setFlashMsg(focusMsg);
+    setFocusMsg(null);
+  }, [messages, focusMsg]);
+
+  useEffect(() => {
+    if (!flashMsg) return;
+    const t = setTimeout(() => setFlashMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [flashMsg]);
 
   // ── Send feedback ──────────────────────────────────────────
   const submitFeedback = async (msgId: string, type: string) => {
@@ -73,7 +92,8 @@ function UnifiedChat() {
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem("token") : "";
       if (!token) return;
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/${convId}/messages`, {
+      // limit=100 (trần API): mặc định 30 → hội thoại dài thiếu tin cuối, ?msg= không tìm thấy bài cần mở
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/conversations/${convId}/messages?limit=100`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) {
@@ -115,9 +135,11 @@ function UnifiedChat() {
     const conv = searchParams.get("conv");
     const doc = searchParams.get("document");
     const q = searchParams.get("q");
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- đồng bộ trạng thái chat theo URL do thanh bên đặt
-    if (conv) void loadConversation(conv);
-    else if (searchParams.get("new") || doc) {
+    if (conv) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- đồng bộ trạng thái chat theo URL do thanh bên đặt
+      setFocusMsg(searchParams.get("msg"));
+      void loadConversation(conv);
+    } else if (searchParams.get("new") || doc) {
       setMessages([]); setActiveSource(null); setActiveConversationId(null);
       setDocumentScope(doc ? { id: doc, title: searchParams.get("title") || "Tài liệu đã chọn" } : null);
       if (searchParams.get("new")) window.history.replaceState(null, "", "/");
@@ -293,14 +315,16 @@ function UnifiedChat() {
               >
                 <div className="max-w-[768px] mx-auto flex flex-col gap-6 pt-4 pb-8">
                   {messages.map((msg) => (
-                    <ChatMessage
-                      key={msg.id}
-                      msg={msg}
-                      onSourceClick={setActiveSource}
-                      onSubmitFeedback={submitFeedback}
-                      onChanged={() => { if (activeConversationId) void loadConversation(activeConversationId); }}
-                      onSend={(content, body) => void handleSend(undefined, { content, body })}
-                    />
+                    <div key={msg.id} id={`msg-${msg.id}`}
+                      className={`scroll-mt-4 rounded-2xl transition-shadow duration-700 ${flashMsg === msg.id ? "ring-2 ring-[#8c55db]/60" : "ring-0"}`}>
+                      <ChatMessage
+                        msg={msg}
+                        onSourceClick={setActiveSource}
+                        onSubmitFeedback={submitFeedback}
+                        onChanged={() => { if (activeConversationId) void loadConversation(activeConversationId); }}
+                        onSend={(content, body) => void handleSend(undefined, { content, body })}
+                      />
+                    </div>
                   ))}
                   
                   {isLoading && (
