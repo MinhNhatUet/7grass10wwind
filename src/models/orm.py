@@ -7,10 +7,38 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+import numpy as np
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator, TypeEngine
 
 from src.db import Base
+
+
+class Embedding(TypeDecorator):
+    """Embedding float32 đã chuẩn hóa. Phía Python luôn là bytes (như BLOB cũ); Postgres lưu cột `vector` (pgvector)
+    để tìm cosine trong SQL, SQLite lưu BLOB và tính bằng NumPy (D-21)."""
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[Any]:
+        if dialect.name == "postgresql":
+            from pgvector.sqlalchemy import Vector
+
+            return dialect.type_descriptor(Vector())
+        return dialect.type_descriptor(LargeBinary())
+
+    def process_bind_param(self, value: bytes | None, dialect: Dialect) -> Any:
+        if value is None or dialect.name != "postgresql":
+            return value
+        return np.frombuffer(value, dtype=np.float32)
+
+    def process_result_value(self, value: Any, dialect: Dialect) -> bytes | None:
+        if value is None or dialect.name != "postgresql":
+            return value
+        return np.asarray(value, dtype=np.float32).tobytes()
 
 
 def now() -> datetime:
@@ -168,7 +196,7 @@ class Chunk(Base):
     section: Mapped[str | None] = mapped_column(String(1000))
     text: Mapped[str] = mapped_column(Text)
     extraction_quality: Mapped[str] = mapped_column(String(20), default="ok")
-    embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
+    embedding: Mapped[bytes | None] = mapped_column(Embedding)
     # Chunk nhiều trang (nhập sẵn từ pipeline, D-49): [[vị trí ký tự bắt đầu, trang], …] tăng dần; None = cả chunk 1 trang
     page_map: Mapped[list[list[int]] | None] = mapped_column(JSON)
 

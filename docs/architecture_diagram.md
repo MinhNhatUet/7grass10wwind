@@ -26,7 +26,7 @@ graph TB
 
     AA & LA & LP & QUIZ & ORCH --> LLM[LLM tương thích OpenAI<br/>get_llm, AI_*]
     RET & HRET & JOBS --> EMB[Embedding<br/>Gemini / OpenAI]
-    Backend --> DB[(SQLite mặc định / Postgres<br/>bảng nghiệp vụ + embedding dạng BLOB)]
+    Backend --> DB[(Postgres + pgvector<br/>bảng nghiệp vụ + cột embedding vector)]
     DOCS & JOBS --> FS[(Kho file riêng tư<br/>data/storage, theo sha256)]
 ```
 
@@ -46,7 +46,7 @@ sequenceDiagram
     G->>G: policy: yêu cầu lời giải bài tính điểm → chuyển hướng (BR-06)
     G->>L: router chọn MÔN (chỉ trong môn được đọc) + trợ lý
     G->>R: truy xuất trong phiên bản Published, đúng ACL (BR-01/03)
-    R->>DB: chỉ nạp embedding của version được phép → cosine NumPy
+    R->>DB: chỉ chấm embedding của version được phép → top-k cosine pgvector
     R-->>G: đoạn nguồn (thiếu bằng chứng → báo không đủ căn cứ, BR-05)
     G->>L: sinh câu trả lời, nguồn là DỮ LIỆU không phải chỉ thị (BR-09)
     G-->>API: câu trả lời + [n]
@@ -96,7 +96,7 @@ graph LR
 graph LR
     subgraph docker compose
         FEC[frontend<br/>Next.js standalone :3000] --> BEC[backend<br/>uvicorn :8000]
-        BEC --> PG[(Postgres 15)]
-        BEC --- VOL[./data mount<br/>file tài liệu, log]
+        BEC --> PGC[(db<br/>Postgres + pgvector)]
+        BEC --- VOL[./data mount<br/>file tài liệu]
     end
 ```

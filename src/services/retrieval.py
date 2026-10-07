@@ -1,7 +1,7 @@
 """Retrieval đúng quyền (BL-15; BR-01, BR-03, BR-13; PRD 10.1 bước 5; D-21).
 
-Thứ tự: xác định tập version được phép bằng SQL + ACL → CHỈ nạp embedding của các version đó →
-cosine bằng numpy → top-k. Không bao giờ tính similarity trên toàn kho rồi mới lọc.
+Thứ tự: xác định tập version được phép bằng SQL + ACL → CHỈ chấm embedding của các version đó (Postgres: pgvector
+trong SQL, D-84; SQLite: cosine bằng numpy) → top-k. Không bao giờ tính similarity trên toàn kho rồi mới lọc.
 """
 
 from __future__ import annotations
@@ -15,11 +15,11 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import Float, func, literal, select
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
-from src.models.orm import PUBLISHED, Chunk, Document, DocumentVersion, User
+from src.models.orm import PUBLISHED, Chunk, Document, DocumentVersion, Embedding, User
 from src.services import acl
 
 # version_id → (chunk_ids, ma trận đã chuẩn hóa, tập từ của từng chunk — cho điểm khớp từ khóa D-68). LRU có trần:
@@ -95,10 +95,17 @@ def embed_texts(texts: list[str]) -> list[bytes]:
     return out
 
 
+# ponytail: cắt theo ký tự, không đếm token. Chunk rất dài (vd 20k ký tự công thức) vượt 8.191 token của
+# text-embedding-3-large → cả lô bị từ chối. Phần sau mốc không vào vector (text chunk/trích dẫn vẫn đủ). Cần chính xác
+# hơn thì đếm token bằng tokenizer của model hoặc chia chunk ở bước pipeline.
+EMBED_MAX_CHARS = 8000
+
+
 def chunk_embedding_text(chunk: Chunk) -> str:
     """Include section hierarchy in embeddings without polluting the source excerpt."""
     text = chunk.text.strip()
-    return f"Section: {chunk.section.strip()}\n\n{text}" if chunk.section and chunk.section.strip() else text
+    text = f"Section: {chunk.section.strip()}\n\n{text}" if chunk.section and chunk.section.strip() else text
+    return text[:EMBED_MAX_CHARS]
 
 
 def embed_query(text: str) -> np.ndarray:
@@ -133,14 +140,16 @@ def _matrix(db: Session, version_id: str) -> tuple[list[str], np.ndarray, list[s
         if version_id in _cache:
             _cache.move_to_end(version_id)
             return _cache[version_id]
-    rows = db.execute(
-        select(Chunk.id, Chunk.embedding, Chunk.text).where(
-            Chunk.version_id == version_id, Chunk.embedding.is_not(None)
-        )
-    ).all()
+    # Postgres (D-84): cosine tính trong SQL bằng pgvector → cache chỉ giữ tập từ cho điểm từ khóa, không nạp vector
+    pg = db.get_bind().dialect.name == "postgresql"
+    cols = (Chunk.id, Chunk.text) if pg else (Chunk.id, Chunk.text, Chunk.embedding)
+    rows = db.execute(select(*cols).where(Chunk.version_id == version_id, Chunk.embedding.is_not(None))).all()
     ids = [r[0] for r in rows]
-    mat = np.vstack([np.frombuffer(r[1], dtype=np.float32) for r in rows]) if rows else np.zeros((0, 1), np.float32)
-    words = [set(_WORD.findall(r[2].casefold())) for r in rows]
+    if pg or not rows:
+        mat = np.zeros((0, 1), np.float32)
+    else:
+        mat = np.vstack([np.frombuffer(r[2], dtype=np.float32) for r in rows])
+    words = [set(_WORD.findall(r[1].casefold())) for r in rows]
     with _cache_lock:
         _cache[version_id] = (ids, mat, words)
         while len(_cache) > CACHE_MAX_VERSIONS:
@@ -161,26 +170,52 @@ def search(db: Session, user: User, course_id: str, query: str, k: int | None = 
     if not allowed:
         return []
     q = embed_query(query)
+    k = k or get_settings().retrieval_top_k
     data = [(version.id, *_matrix(db, version.id)) for version, _doc in allowed]
-    data = [d for d in data if d[1] and d[2].shape[1] == q.shape[0]]
-    bonus = _keyword_bonus(query, [w for d in data for w in d[3]])
-    scored: list[tuple[float, str, str]] = []
-    offset = 0
-    for version_id, ids, mat, _words in data:
-        sims = mat @ q + bonus[offset : offset + len(ids)]
-        offset += len(ids)
-        top = np.argsort(-sims)[: (k or get_settings().retrieval_top_k)]
-        scored += [(float(sims[i]), ids[i], version_id) for i in top]
+    if db.get_bind().dialect.name == "postgresql":
+        scored = _pg_scored(db, data, query, q, k)
+    else:
+        data = [d for d in data if d[1] and d[2].shape[1] == q.shape[0]]
+        bonus = _keyword_bonus(query, [w for d in data for w in d[3]])
+        scored = []
+        offset = 0
+        for version_id, ids, mat, _words in data:
+            sims = mat @ q + bonus[offset : offset + len(ids)]
+            offset += len(ids)
+            top = np.argsort(-sims)[:k]
+            scored += [(float(sims[i]), ids[i], version_id) for i in top]
     scored.sort(reverse=True)
     by_version = {v.id: (v, d) for v, d in allowed}
     hits = []
-    for score, chunk_id, version_id in scored[: (k or get_settings().retrieval_top_k)]:
+    for score, chunk_id, version_id in scored[:k]:
         chunk = db.get(Chunk, chunk_id)
         if chunk is None:
             continue
         v, d = by_version[version_id]
         hits.append(Hit(chunk=chunk, version=v, document=d, score=score))
     return hits
+
+
+def _pg_scored(
+    db: Session, data: list[tuple[str, list[str], np.ndarray, list[set[str]]]], query: str, q: np.ndarray, k: int
+) -> list[tuple[float, str, str]]:
+    """D-84: top-k cosine bằng pgvector, CHỈ trên các version đã qua ACL (`data`). Ứng viên = k chunk gần nhất ∪ mọi
+    chunk được cộng điểm từ khóa (D-68): chunk ngoài hai tập này có điểm thấp hơn k chunk gần nhất nên kết quả trùng với
+    nhánh NumPy. Không có index ANN: lọc theo version trước rồi quét đúng (exact) — đủ nhanh ở cỡ vài chục nghìn chunk.
+    ponytail: quét exact theo course; khi lên ~10^5 chunk mỗi môn thì thêm HNSW + `hnsw.iterative_scan`."""
+    ids = [cid for _v, cids, _m, _w in data for cid in cids]
+    if not ids:
+        return []
+    bonus = _keyword_bonus(query, [w for d in data for w in d[3]])
+    boosted = {ids[i]: float(bonus[i]) for i in np.flatnonzero(bonus)}
+    dist = Chunk.embedding.op("<=>", return_type=Float)(literal(q.tobytes(), Embedding()))
+    same_dim = func.vector_dims(Chunk.embedding) == q.shape[0]  # version embed bằng model khác số chiều → bỏ qua
+    stmt = select(Chunk.id, Chunk.version_id, dist).where(Chunk.embedding.is_not(None), same_dim)
+    rows = db.execute(stmt.where(Chunk.version_id.in_([d[0] for d in data])).order_by(dist).limit(k)).all()
+    extra = set(boosted) - {r[0] for r in rows}
+    if extra:
+        rows += db.execute(stmt.where(Chunk.id.in_(extra))).all()
+    return [(1.0 - float(d) + boosted.get(cid, 0.0), cid, vid) for cid, vid, d in rows]
 
 
 def _keyword_bonus(query: str, chunk_words: list[set[str]]) -> np.ndarray:

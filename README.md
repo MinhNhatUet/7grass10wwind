@@ -60,10 +60,13 @@ cd frontend && npm run dev   # chỉ frontend, http://localhost:3000
 Bằng Docker:
 
 ```bash
-docker compose up --build    # frontend :3000, backend :8000, Postgres 15; cần POSTGRES_PASSWORD trong .env
+docker compose up -d db      # chỉ Postgres + pgvector (localhost:5432) cho make dev / make run
+docker compose up --build    # db + backend :8000 + frontend :3000
 ```
 
-Image backend không chứa `.env`, `data/`, bản sao DB; dữ liệu được mount từ `./data` lúc chạy.
+Image backend không chứa `.env`, `data/`, bản sao DB; `./data` được mount lúc chạy nên container dùng đúng DB và tài
+liệu đã có. DB nằm ở service `db` (volume `pgdata`, D-84). Tắt backend/frontend đang chạy ngoài Docker (`make dev`)
+trước khi chạy cả stack — trùng cổng.
 
 **Đăng nhập demo:** đặt `DEMO_LOGIN_ENABLED=true` (chỉ môi trường demo, luôn tắt ở production), trang đăng nhập
 hiện nút "Đăng nhập demo" theo vai trò sinh viên / giảng viên.
@@ -81,7 +84,7 @@ hiện nút "Đăng nhập demo" theo vai trò sinh viên / giảng viên.
 | `GEMINI_API_KEY` | — | Key cho embedding Gemini |
 | `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL` | — | Key/endpoint riêng cho embedding OpenAI |
 | `RETRIEVAL_MIN_SCORE` | `0.55` | Ngưỡng bằng chứng; đổi model embedding phải hiệu chỉnh lại |
-| `DATABASE_URL` | `sqlite:///./data/app.db` | DB; compose dùng Postgres |
+| `DATABASE_URL` | `sqlite:///./data/app.db` | DB. Dùng Postgres + pgvector (D-84): `postgresql+psycopg2://edu04:<mật khẩu>@localhost:5432/edu04` |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Origin frontend, phân tách bằng dấu phẩy |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Địa chỉ backend cho frontend |
 | `DEMO_LOGIN_ENABLED` | `false` | Bật nút đăng nhập demo |
@@ -90,7 +93,6 @@ hiện nút "Đăng nhập demo" theo vai trò sinh viên / giảng viên.
 | `AUTH_SESSION_TTL_MINUTES` | `480` | Thời hạn phiên đăng nhập |
 | `UPLOAD_MAX_MB` | `100` | Dung lượng tối đa mỗi tệp upload |
 | `LLM_PRICE_INPUT_PER_1M`, `LLM_PRICE_OUTPUT_PER_1M`, `USD_TO_VND` | `0.10`, `0.40`, `26000` | Bảng giá ước tính cho trang Chi phí AI |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | — | Chỉ cho `docker compose` |
 | `AI_LOG_API_KEY` | — | Key cá nhân để gửi log AI lên hệ thống chấm |
 
 ## Câu hỏi mẫu (môn Công nghệ phần mềm)

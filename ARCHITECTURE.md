@@ -16,7 +16,7 @@ graph TB
     API --> ORCH[LangGraph: policy → router → academic / learning / hub / clarify]
     ORCH --> RET[Retrieval lọc ACL trước]
     ORCH --> LLM[LLM tương thích OpenAI]
-    RET --> DB[(SQLite / Postgres + embedding)]
+    RET --> DB[(Postgres + pgvector)]
     API --> DB
     API --> FS[(Kho file riêng tư)]
 ```
@@ -57,7 +57,9 @@ graph TB
 - Câu hỏi do LLM soạn phải kèm câu trích nguyên văn trong nguồn chứng minh đáp án, không có thì bị loại.
 
 ### 5. Database (`src/models/orm.py`, SQLAlchemy 2 + Alembic)
-- **Mặc định:** SQLite `data/app.db`; docker compose dùng Postgres 15.
+- **Postgres 17 + pgvector** (D-84), service `db` trong docker compose (volume `pgdata`). Trước D-84 dùng SQLite
+  `data/app.db` (D-20) — vẫn chạy được khi đặt `DATABASE_URL=sqlite:///./data/app.db`. Đổi DB bằng `DATABASE_URL`
+  (SQLAlchemy; đã có driver Postgres `psycopg2-binary`).
 - **Bảng:** `users`, `courses`, `memberships`, `documents`, `document_versions`, `chunks`, `ingestion_jobs`,
   `approvals`, `audit_events`, `conversations`, `messages`, `citations`, `feedback`, `study_plans`,
   `idempotency_records`, `usage_events`, `course_quizzes`, `quiz_attempts`, `learner_progress`,
@@ -65,7 +67,8 @@ graph TB
 - **Migrations:** `migrations/` (Alembic).
 
 ### 6. Vector search
-- Không dùng vector DB riêng: embedding lưu dạng BLOB trong `chunks`, cosine bằng NumPy (D-21), cache LRU theo version.
+- Không dùng vector DB riêng: embedding lưu trong `chunks.embedding` — Postgres: cột `vector`, top-k cosine bằng
+  pgvector trong SQL (D-84, quét exact sau khi lọc version, chưa có index ANN); SQLite: BLOB + NumPy (D-21).
 - **Thứ tự bắt buộc:** xác định tập version được phép bằng SQL + ACL → CHỈ nạp embedding của các version đó → top-k.
   Không bao giờ tính trên toàn kho rồi mới lọc (BR-03).
 - **Embedding:** Gemini (`gemini-embedding-001`) hoặc OpenAI, cấu hình `EMBEDDING_*`.
@@ -92,9 +95,9 @@ graph TB
 graph LR
     subgraph docker compose
         FE[frontend :3000] --> BE[backend :8000]
-        BE --> DB[(postgres:15)]
     end
-    BE --- DATA[./data mount]
+    BE --> PG[(db: Postgres + pgvector)]
+    BE --- DATA[./data mount: file tài liệu]
 ```
 
 - `Dockerfile` backend: multi-stage Python 3.11, chạy bằng user không phải root; `data/`, `.env` không vào image.
@@ -115,7 +118,7 @@ graph LR
 |----------|--------|--------|
 | Framework | FastAPI | Async, tự sinh docs, type-safe với Pydantic |
 | Agent | LangGraph | Graph điều phối rõ ràng, giới hạn số bước |
-| Database | SQLite (MVP) / Postgres (compose) | Chạy local không cần dịch vụ; SQLAlchemy cho phép đổi |
-| Vector store | Embedding trong DB + NumPy | Lọc ACL bằng SQL trước khi tính tương đồng; kho nhỏ, không cần vector DB |
+| Database | Postgres 17 + pgvector (D-84) | Ghi đồng thời (ingest + chat), một DB cho cả dữ liệu và vector |
+| Vector store | pgvector trong cùng Postgres | Lọc ACL và tìm cosine trong cùng câu SQL; thu hồi tài liệu trong một transaction (BR-03, BR-07) |
 | LLM | Endpoint tương thích OpenAI | Đổi nhà cung cấp/model bằng `.env` |
 | Frontend | Next.js | Routing theo trang, build standalone cho Docker |

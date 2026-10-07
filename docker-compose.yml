@@ -1,25 +1,22 @@
-version: "3.8"
-
 services:
+  # D-84: Postgres + pgvector thay SQLite. Mật khẩu đặt POSTGRES_PASSWORD trong .env (mặc định chỉ dùng cho máy dev).
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg17
     container_name: edu04-db
     environment:
-      # Không viết cứng mật khẩu: đặt POSTGRES_PASSWORD trong .env (compose đọc .env ở gốc repo).
-      # Volume Postgres đã tạo trước đây dùng mật khẩu cũ: đặt đúng giá trị đó hoặc xóa volume để khởi tạo lại.
-      POSTGRES_USER: ${POSTGRES_USER:-user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
-      POSTGRES_DB: ${POSTGRES_DB:-ai20k}
+      - POSTGRES_DB=edu04
+      - POSTGRES_USER=edu04
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-edu04}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"  # cho backend chạy ngoài Docker (make run); chỉ mở trên localhost
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U edu04 -d edu04"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   backend:
     build:
@@ -31,16 +28,17 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}@db:5432/${POSTGRES_DB:-ai20k}
+      # D-84: Postgres + pgvector (service db). ./data vẫn mount cho file tải lên và corpus.
+      - DATABASE_URL=postgresql+psycopg2://edu04:${POSTGRES_PASSWORD:-edu04}@db:5432/edu04
       # Conservative defaults for Gemini free-tier ingestion, including resumed jobs.
       - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-4}
       - EMBEDDING_PAUSE_SECONDS=${EMBEDDING_PAUSE_SECONDS:-15}
     volumes:
       - ./data:/app/data
-    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -57,9 +55,8 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
 
 volumes:
-  postgres_data:
+  pgdata:

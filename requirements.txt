@@ -12,10 +12,11 @@ langchain-openai>=0.3.0
 langchain-google-genai>=1.0.0
 langgraph>=0.2.0
 
-# Database (D-20: SQLite + SQLAlchemy cho MVP)
+# Database (D-84: Postgres + pgvector; SQLite vẫn dùng được cho dev/CI)
 sqlalchemy>=2.1,<3
 alembic>=1.14,<2  # M-09: migration có phiên bản (migrations/)
 psycopg2-binary>=2.9.0
+pgvector>=0.3,<1  # D-84: kiểu cột vector cho SQLAlchemy
 
 # Ingestion + retrieval MVP (D-21, D-22, D-23)
 pypdf>=6.19,<7
@@ -26,7 +27,7 @@ PyMuPDF>=1.24.0  # src/ingestion: parser PDF, cắt ảnh công thức (import k
 python-multipart>=0.0.32
 numpy>=2.0,<3
 
-# Vector store: embedding lưu trong DB, cosine bằng NumPy (D-21) — không dùng ChromaDB
+# Vector store: embedding lưu trong DB — Postgres: pgvector (D-84), SQLite: cosine bằng NumPy (D-21)
 
 # Evaluation (RAGAS) tách sang eval/requirements.txt (M-11): ghim langchain-community cho RAGAS không còn chặn
 # bản vá của langchain trong app
