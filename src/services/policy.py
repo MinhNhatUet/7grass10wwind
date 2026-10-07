@@ -18,6 +18,7 @@ INSUFFICIENT_MESSAGE = (
 )
 SERVICE_ERROR_MESSAGE = "Chưa thể tạo câu trả lời lúc này. Bạn có thể thử lại hoặc tìm tài liệu trong Knowledge Hub."
 SOURCE_WITHDRAWN_MESSAGE = "Nguồn này hiện không còn khả dụng. Hãy tìm phiên bản đang được phép sử dụng."
+PLAN_STUDENT_ONLY_MESSAGE = "Lộ trình học chỉ dành cho sinh viên. Bạn vẫn có thể hỏi đáp có trích dẫn, nhờ giải thích hoặc tìm tài liệu của môn."
 HUB_EMPTY_MESSAGE = "Không tìm thấy tài liệu phù hợp trong phạm vi môn hiện tại. Thử bỏ bớt bộ lọc hoặc đổi từ khóa."
 
 

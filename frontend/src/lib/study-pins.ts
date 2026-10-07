@@ -74,6 +74,11 @@ export function unpinStudy(key: string): void {
   write(read().filter((p) => p.key !== key));
 }
 
+/** Bỏ mọi ghim có key bắt đầu bằng `prefix` (vd. xóa lộ trình → bỏ ghim mọi bước "path:<id>:"). */
+export function unpinPrefix(prefix: string): void {
+  write(read().filter((p) => !p.key.startsWith(prefix)));
+}
+
 function subscribe(onChange: () => void): () => void {
   window.addEventListener(EVENT, onChange);
   window.addEventListener("storage", onChange); // tab khác ghim/bỏ ghim

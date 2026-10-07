@@ -260,8 +260,9 @@ def test_roadmap_never_checks_unlearned_lessons_except_after_learn_step(cur):
 def test_recommended_strategy(cur, mastery, covered, expected):
     options = roadmap.path_options(cur, covered, mastery)
     assert [o["strategy"] for o in options if o["recommended"]] == [expected]
-    assert options[0]["recommended"] and options[0]["rationale"] and len(options) == 3
-    assert all(o["preview"] for o in options)
+    # 1–3 phương án: phương án vô nghĩa hoặc ra đúng các bước như phương án khác bị bỏ, đề xuất luôn còn và đứng đầu
+    assert options[0]["recommended"] and options[0]["rationale"] and 1 <= len(options) <= 3
+    assert len({o["strategy"] for o in options}) == len(options) and all(o["preview"] for o in options)
 
 
 def test_failed_checkpoint_inserts_remediation_round_and_regates_new_lesson(cur):

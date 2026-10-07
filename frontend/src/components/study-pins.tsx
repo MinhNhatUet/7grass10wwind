@@ -8,20 +8,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Pin, X } from "lucide-react";
 import { goToChat } from "@/components/learning-hub";
+import { COUNTED_ACTIONS, CountPicker } from "@/components/count-picker";
 import { pinStudy, unpinStudy, useStudyPins, type StudyPin } from "@/lib/study-pins";
 
 const CHAT_ACTIONS = new Set(["explain", "quiz", "mcq", "flashcards", "cloze"]);
 const chip = "rounded-full px-3 py-1 text-[12px] cursor-pointer border border-black/10 dark:border-white/15 bg-transparent hover:bg-black/5 dark:hover:bg-white/10";
 
 /** Gửi hoạt động học của một tag vào chat (đang ở chat thì gửi ngay trong hội thoại hiện tại). */
-export function studyFromPin(router: ReturnType<typeof useRouter>, pin: StudyPin, type: string, label: string, topic?: string) {
+export function studyFromPin(router: ReturnType<typeof useRouter>, pin: StudyPin, type: string, label: string, topic?: string, count?: number) {
   pinStudy(pin); // phần vừa ôn lên đầu
   if (type === "find") {
     const content = `Tìm tài liệu học về ${pin.title}`;
     return goToChat(router, content, { content, assistant: "hub" }, pin.courseId);
   }
-  const content = `${pin.title} — ${label}`;
-  goToChat(router, content, { content, assistant: "learning", learning: { action: type, topic: (topic ?? pin.topic).slice(0, 600), ...pin.extra } }, pin.courseId);
+  const content = `${pin.title} — ${label}${count ? ` (${count} ${type === "flashcards" ? "thẻ" : "câu"})` : ""}`;
+  goToChat(router, content, { content, assistant: "learning", learning: { action: type, topic: (topic ?? pin.topic).slice(0, 600), ...(count ? { count } : {}), ...pin.extra } }, pin.courseId);
 }
 
 export function StudyPinsBar() {
@@ -29,6 +30,7 @@ export function StudyPinsBar() {
   const pins = useStudyPins();
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
+  const [counting, setCounting] = useState<{ type: string; label: string } | null>(null); // hình thức đang chọn số câu
   const open = pins.find((p) => p.key === openKey) ?? null;
   if (!pins.length) return null;
   return (
@@ -38,7 +40,7 @@ export function StudyPinsBar() {
         {pins.map((p, i) => (
           <span key={p.key} className={`flex shrink-0 items-center rounded-full border ${p.key === openKey ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black" : i === 0 ? "border-black/40 dark:border-white/40" : "border-black/10 dark:border-white/15"}`}>
             <button type="button" aria-expanded={p.key === openKey} title={`${p.subtitle} — ${p.title}`}
-              onClick={() => { setOpenKey(p.key === openKey ? null : p.key); setExplaining(false); }}
+              onClick={() => { setOpenKey(p.key === openKey ? null : p.key); setExplaining(false); setCounting(null); }}
               className="max-w-[220px] truncate cursor-pointer border-0 bg-transparent py-1 pl-3 pr-1 text-inherit">
               {p.source === "plan" ? "📅 " : "🧭 "}{p.title}
             </button>
@@ -58,12 +60,18 @@ export function StudyPinsBar() {
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {open.actions.filter((a) => a.type === "find" || CHAT_ACTIONS.has(a.type)).map((a, i) => (
-              <button key={i} type="button" className={chip}
-                onClick={() => (a.type === "explain" && open.concepts?.length ? setExplaining(!explaining) : (setOpenKey(null), studyFromPin(router, open, a.type, a.label)))}>
+              <button key={i} type="button" className={`${chip} ${counting?.type === a.type ? "border-[#4f2b96] text-[#4f2b96]" : ""}`} aria-pressed={counting?.type === a.type}
+                onClick={() => (a.type === "explain" && open.concepts?.length ? (setCounting(null), setExplaining(!explaining))
+                  : COUNTED_ACTIONS.has(a.type) ? (setExplaining(false), setCounting({ type: a.type, label: a.label }))
+                  : (setOpenKey(null), studyFromPin(router, open, a.type, a.label)))}>
                 {a.type === "find" ? "🔎 " : ""}{a.label}{a.type === "explain" && open.concepts?.length ? (explaining ? " ▴" : " ▾") : ""}
               </button>
             ))}
           </div>
+          {counting && (
+            <CountPicker action={counting.type} onCancel={() => setCounting(null)}
+              onConfirm={(n) => { const c = counting; setCounting(null); setOpenKey(null); studyFromPin(router, open, c.type, c.label, undefined, n); }} />
+          )}
           {explaining && !!open.concepts?.length && (
             <div className="mt-2 flex flex-wrap gap-1">
               <span className="w-full text-[12px] text-black/50 dark:text-white/50">Chọn khái niệm để trợ lý giải thích từng bước:</span>

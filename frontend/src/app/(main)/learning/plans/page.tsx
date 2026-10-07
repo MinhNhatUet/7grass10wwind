@@ -158,9 +158,9 @@ export default function LearningPlansPage() {
             <p className="text-slate-500">Bạn chưa được ghi danh môn nào.</p>
           ) : (
             <ProgressPath courses={courses}
-              onPractice={(cid, action, topic, label) => {
-                const content = `Lộ trình — ${label}`;
-                goToChat(router, content, { content, assistant: "learning", learning: { action, topic } }, cid);
+              onPractice={(cid, action, topic, label, count) => {
+                const content = `Lộ trình — ${label}${count ? ` (${count} ${action === "flashcards" ? "thẻ" : "câu"})` : ""}`;
+                goToChat(router, content, { content, assistant: "learning", learning: { action, topic, ...(count ? { count } : {}) } }, cid);
               }}
               onFind={(cid, query) => {
                 const content = `Tìm tài liệu học về ${query}`;

@@ -223,10 +223,11 @@ def recommendations(
     for level, verb in ((MISSING, "Ôn lại nền tảng"), (REINFORCE, "Luyện thêm")):
         for t in (t for t in in_scope if (mastery.get(t.id) or {}).get("level") == level):
             lesson = curriculum.lesson_of(t)
-            where = _where(refs.get(t.id) or _lesson_ref(lesson))
             how = "đọc lại lý thuyết, làm thẻ ghi nhớ và điền khuyết" if level == MISSING else "làm trắc nghiệm tự ôn"
+            # nguồn tách riêng (không ghép vào câu) → giao diện hiện thành trích dẫn bấm mở trang; kiểm quyền lúc trả
             out.append({"kind": level, "topic_id": t.id, "lesson_id": lesson.id,
-                        "text": f"{verb} “{t.title}” (bài {lesson.order}: {lesson.title}){where} — {how}."})  # fmt: skip
+                        "text": f"{verb} “{t.title}” (bài {lesson.order}: {lesson.title}) — {how}.",
+                        "sources": (refs.get(t.id) or _lesson_ref(lesson))[:2]})  # fmt: skip
     unknown = [t for t in in_scope if (mastery.get(t.id) or {}).get("level", INSUFFICIENT) == INSUFFICIENT]
     if unknown:
         names = ", ".join(f"“{t.title}”" for t in unknown[:5]) + ("…" if len(unknown) > 5 else "")
@@ -258,30 +259,23 @@ def recommendations(
     return out
 
 
-def _where(refs: list[dict[str, Any]]) -> str:
-    parts = []
-    for r in refs[:2]:
-        if not r.get("document_title"):
-            continue
-        page = r.get("page")
-        end = r.get("page_end")
-        pages = f", trang {page}" + (f"–{end}" if end and end != page else "") if page else ""
-        parts.append(f"“{r['document_title']}”{pages}")
-    return f" — xem {'; '.join(parts)}" if parts else ""
+def prerequisite_topics(curriculum: Curriculum, covered: set[str], lesson: Any) -> list:
+    """Chủ đề (đã học) mà bài `lesson` phụ thuộc. Đề cương có khai báo tiên quyết → dùng đúng khai báo; không có (chương
+    trình suy ra) → giả định bài liền trước là nền của bài sau (đề xuất, FR-03.6)."""
+    explicit = {p for t in lesson.topics for p in t.prerequisites}
+    if explicit:
+        return [t for t in curriculum.topics(covered) if t.id in explicit]
+    prev = [x for x in curriculum.lessons if x.order == lesson.order - 1 and x.id in covered]
+    return list(prev[0].topics) if prev else []
 
 
 def prerequisite_gaps(
     curriculum: Curriculum, covered: set[str], mastery: dict[str, dict[str, Any]], lesson: Any
 ) -> list:
-    """Chủ đề yếu mà bài `lesson` phụ thuộc. Đề cương có khai báo tiên quyết → dùng đúng khai báo; không có (chương
-    trình suy ra) → giả định bài liền trước là nền của bài sau (đề xuất, FR-03.6)."""
-    explicit = {p for t in lesson.topics for p in t.prerequisites}
-    if explicit:
-        cands = [t for t in curriculum.topics(covered) if t.id in explicit]
-    else:
-        prev = [x for x in curriculum.lessons if x.order == lesson.order - 1 and x.id in covered]
-        cands = list(prev[0].topics) if prev else []
-    return [t for t in cands if (mastery.get(t.id) or {}).get("level") in WEAK]
+    """Chủ đề nền của bài `lesson` mà người học còn yếu."""
+    return [
+        t for t in prerequisite_topics(curriculum, covered, lesson) if (mastery.get(t.id) or {}).get("level") in WEAK
+    ]
 
 
 _TEMPLATE_OBJECTIVE = re.compile(r"^(?:Trình bày và vận dụng được|Hiểu và vận dụng được)\s*:\s*", re.I)

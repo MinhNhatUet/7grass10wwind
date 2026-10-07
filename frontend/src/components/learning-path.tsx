@@ -1,17 +1,18 @@
 "use client";
 
 // Lộ trình theo tiến độ (D-82): khai báo đã học tới bài nào → bài đánh giá CHỈ trong phạm vi đó → kết quả theo bài/chủ đề/
-// mục tiêu + lỗ hổng có giải thích → chọn 1 trong 3 phương án lộ trình → lộ trình có thứ tự, hoạt động, checkpoint.
+// mục tiêu + lỗ hổng có giải thích → nhận xét của LLM → chọn 1 trong 1–3 phương án lộ trình phù hợp → lộ trình có thứ tự, hoạt động, checkpoint.
 // Mọi quyết định (phạm vi, chấm, chẩn đoán, lộ trình) ở server; trang chỉ hiển thị và gửi thao tác của người học.
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Compass, X } from "lucide-react";
+import { ChevronRight, Compass, Loader2, X } from "lucide-react";
 import { ApiError, api, json, type CourseItem } from "@/lib/api";
 import { LEVEL_LABEL, MSG, errorMessage } from "@/lib/messages";
 import { CitationBadge } from "@/components/chat/CitationBadge";
 import SourceReader from "@/components/source-reader";
 import type { Source } from "@/types/chat";
-import { pinStudy } from "@/lib/study-pins";
+import { pinStudy, unpinPrefix } from "@/lib/study-pins";
+import { FORMAT_LABEL, PracticePicker } from "@/components/count-picker";
 
 type Lesson = { id: string; order: number; title: string; topics: { id: string; title: string }[] };
 type Curriculum = { course_id: string; source: "authored" | "derived"; notes: string[]; lessons: Lesson[] };
@@ -20,14 +21,15 @@ type MasteryTopic = { topic_id: string; title: string; level: string; mastery: n
 type Mastery = { lessons: { lesson_id: string; order: number; title: string; covered: boolean; topics: MasteryTopic[] }[] };
 // Nguồn từ server: đã kiểm quyền lúc trả; có bản (version_id) thì mở được trang, quote = đoạn dẫn chứng nguyên văn
 type Ref = { document_id?: string | null; version_id?: string | null; document_title: string | null; page: number | null; page_end: number | null; quote?: string };
-type Question = { id: string; text: string; options: string[]; withdrawn?: boolean; lesson_title?: string | null; topic_title?: string | null; objective?: string | null; picked?: number | null; correct?: number; explanation?: string; proof?: string; source?: Ref | null };
+type Question = { id: string; topic_id?: string; text: string; options: string[]; withdrawn?: boolean; lesson_title?: string | null; topic_title?: string | null; objective?: string | null; picked?: number | null; correct?: number; explanation?: string; proof?: string; source?: Ref | null };
 type Gap = { topic_id: string; topic_title: string; lesson_title: string; lesson_order: number; level: string; missing_concepts: string[]; why: string; evidence: { question: string; picked_text: string; correct_text: string; indicates: string }[]; review: { lesson_title: string; topic_title: string; sources: Ref[] }; root_causes: { title: string; lesson_title: string }[] };
 type Option = { strategy: string; title: string; description: string; suits: string; recommended: boolean; rationale: string; preview: string[]; summary: { steps: number; total_minutes: number; checkpoints: number; new_lessons: string[] } };
 type Result = {
   summary: { total: number; answered: number; correct: number; score_pct: number | null };
   lessons: { lesson_id: string; title: string; order: number; answered: number; correct: number; level: string }[];
   topics: { topic_id: string; title: string; lesson_title: string; answered: number; correct: number; level: string; confidence: string; objectives: { id: string; text: string; status: string }[] }[];
-  gaps: Gap[]; recommendations: { kind: string; text: string }[]; path_options: Option[]; recommended_strategy: string;
+  gaps: Gap[]; recommendations: { kind: string; text: string; topic_id?: string; sources?: Ref[] }[]; path_options: Option[]; recommended_strategy: string;
+  review?: { overview: string; advice: string[]; path_hint: string } | null; // LLM nhận xét trên kết quả đã chấm bằng code
 };
 type Assessment = { id: string; purpose: string; status: string; path_id: string | null; step_id: string | null; scope: { lessons: { id: string; title: string; order: number }[] }; questions: Question[]; result: Result | null };
 type Step = { id: string; order: number; kind: string; title: string; lesson_title?: string | null; topic_titles?: string[]; objectives: string[]; activities: { type: string; label: string }[]; sources: Ref[]; minutes: number; status: string; locked?: boolean; needs_update?: boolean; unlock?: string; concepts?: string[]; remediation?: number; round?: number; result?: { score_pct: number | null; passed: boolean } };
@@ -44,10 +46,30 @@ const LEVEL_COLOR: Record<string, string> = {
   missing_foundation: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
   insufficient_data: "bg-black/5 text-black/60 dark:bg-white/10 dark:text-white/60",
 };
-const STEP_KIND: Record<string, string> = { review: "Ôn nền tảng", reinforce: "Củng cố", refresh: "Ôn nhanh", learn: "Học bài mới", checkpoint: "Kiểm tra" };
+const PASS_PCT = 80; // = roadmap.PASS_MASTERY (backend quyết định đạt/chưa đạt; chỉ để hiển thị)
+const STEP_KIND: Record<string, string> ={ review: "Ôn nền tảng", reinforce: "Củng cố", refresh: "Ôn nhanh", learn: "Học bài mới", checkpoint: "Kiểm tra" };
 const CHAT_ACTIONS = new Set(["explain", "quiz", "mcq", "flashcards", "cloze"]);
 const errText = (e: unknown) => (e instanceof ApiError ? e.detail || errorMessage(e.code) : MSG.serviceError);
 const where = (r: Ref) => (r.document_title ? `${r.document_title}${r.page ? `, trang ${r.page}${r.page_end && r.page_end !== r.page ? `–${r.page_end}` : ""}` : ""}` : "");
+
+/** Đang chờ server (soạn đề / chấm + nhận xét có gọi LLM — có thể vài chục giây): vòng quay + số giây đã chờ để người
+ *  học không tưởng là bị treo/lỗi. Dính trên cùng khung để luôn thấy dù đang cuộn ở cuối bài. */
+function Pending({ text }: { text: string }) {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSec((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div role="status" aria-live="polite" className="sticky top-2 z-20 flex items-center gap-3 rounded-xl border border-black/10 dark:border-white/15 bg-white/95 dark:bg-[#12181f]/95 px-4 py-3 text-sm shadow-md backdrop-blur">
+      <Loader2 size={20} className="shrink-0 animate-spin" aria-hidden="true" />
+      <div>
+        <p className="font-medium">{text}</p>
+        <p className={`text-[12px] ${muted}`}>Đã chờ {sec} giây · thường mất 20–60 giây, vui lòng không tải lại trang.</p>
+      </div>
+    </div>
+  );
+}
 
 function Level({ level }: { level: string }) {
   return <span className={`rounded-full px-2 py-0.5 text-[11px] ${LEVEL_COLOR[level] ?? LEVEL_COLOR.insufficient_data}`}>{LEVEL_LABEL[level] ?? level}</span>;
@@ -58,23 +80,24 @@ function Level({ level }: { level: string }) {
 const OpenSource = createContext<(s: Source) => void>(() => {});
 
 /** Nguồn dạng trích dẫn như trong chat: rê chuột hiện đoạn dẫn chứng + trang, bấm mở trang tài liệu. */
-function Refs({ refs }: { refs: Ref[] }) {
+/** `bare`: chỉ nút trang (bấm mở) — không lặp tên tài liệu khi ngữ cảnh đã rõ. */
+function Refs({ refs, bare = false }: { refs: Ref[]; bare?: boolean }) {
   const open = useContext(OpenSource);
   return (
     <>
       {refs.map((r, i) => {
-        if (!r.document_id || !r.version_id) return where(r) ? <span key={i}> · {where(r)}</span> : null;
+        if (!r.document_id || !r.version_id) return where(r) && !bare ? <span key={i}> · {where(r)}</span> : null;
         const page = r.page ?? 1;
         const label = r.page ? `tr. ${r.page}${r.page_end && r.page_end !== r.page ? `–${r.page_end}` : ""}` : "mở";
         const source: Source = { id: `${r.version_id}-${page}-${i}`, title: r.document_title ?? "", page, pageEnd: r.page_end ?? null,
           content: r.quote ?? "", documentId: r.document_id, versionId: r.version_id };
-        return <span key={i} className="whitespace-nowrap"> · {r.document_title}<CitationBadge source={source} onClick={open} label={label} /></span>;
+        return <span key={i} className="whitespace-nowrap">{bare ? " " : ` · ${r.document_title}`}<CitationBadge source={source} onClick={open} label={label} /></span>;
       })}
     </>
   );
 }
 
-type ProgressPathProps = { courses: CourseItem[]; onPractice: (courseId: string, action: string, topic: string, label: string) => void; onFind: (courseId: string, query: string) => void };
+type ProgressPathProps = { courses: CourseItem[]; onPractice: (courseId: string, action: string, topic: string, label: string, count?: number) => void; onFind: (courseId: string, query: string) => void };
 
 /** onSource: cách mở trang nguồn của nơi chứa (chat có khung nguồn riêng); không truyền → khung trượt của khối này. */
 export function ProgressPath({ onSource, ...props }: ProgressPathProps & { onSource?: (s: Source) => void }) {
@@ -107,6 +130,7 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
   const [history, setHistory] = useState<Row[]>([]);
   const [open, setOpen] = useState<Assessment | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null); // thao tác chậm đang chạy → hiện <Pending>
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -129,9 +153,9 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
-  async function run<T>(f: () => Promise<T>): Promise<T | undefined> {
-    setBusy(true); setErr(null);
-    try { return await f(); } catch (e) { setErr(errText(e)); return undefined; } finally { setBusy(false); }
+  async function run<T>(f: () => Promise<T>, slow?: string): Promise<T | undefined> {
+    setBusy(true); setErr(null); setPending(slow ?? null);
+    try { return await f(); } catch (e) { setErr(errText(e)); return undefined; } finally { setBusy(false); setPending(null); }
   }
 
   const setLesson = (lessonId: string) => run(async () => {
@@ -140,22 +164,32 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
   });
   const startAssessment = (extra: Record<string, unknown> = {}) => run(async () => {
     setOpen(await api<Assessment>("/learning/assessments", { method: "POST", body: json({ course_id: courseId, ...extra }) }));
-  });
+  }, "Đang soạn đề từ tài liệu các bài đã học…");
   const choose = (assessmentId: string, strategy: string) => run(async () => {
     setPath(await api<Path>(`/learning/assessments/${assessmentId}/path`, { method: "POST", body: json({ strategy }) }));
     setOpen(null);
     await load();
-  });
+  }, "Đang lập lộ trình…");
   const setStep = (stepId: string, status: string) => run(async () => {
     if (!path) return;
     setPath(await api<Path>(`/learning/paths/${path.id}/steps/${stepId}`, { method: "POST", body: json({ status }) }));
     await load();
   });
+  const removePath = () => {
+    if (!path || !window.confirm(`Xoá lộ trình "${path.summary.title}"? Không khôi phục được. Kết quả các bài đánh giá và mức nắm vững vẫn được giữ.`)) return;
+    void run(async () => {
+      await api(`/learning/paths/${path.id}`, { method: "DELETE" });
+      unpinPrefix(`path:${path.id}:`); // bỏ ghim "Đang ôn" của các bước thuộc lộ trình đã xoá
+      setPath(null);
+      await load();
+    });
+  };
 
   if (open) {
     return (
-      <AssessmentPanel a={open} busy={busy} err={err} onClose={() => { setOpen(null); void load(); }}
-        onSubmit={(answers) => run(async () => setOpen(await api<Assessment>(`/learning/assessments/${open.id}/submit`, { method: "POST", body: json({ answers }) })))}
+      <AssessmentPanel a={open} busy={busy} pending={pending} err={err} onClose={() => { setOpen(null); void load(); }}
+        onSubmit={(answers) => run(async () => setOpen(await api<Assessment>(`/learning/assessments/${open.id}/submit`, { method: "POST", body: json({ answers }) })),
+          open.purpose === "placement" ? "Đang chấm bài và viết nhận xét, lời khuyên…" : "Đang chấm bài…")}
         onChoose={(s) => void choose(open.id, s)} />
     );
   }
@@ -175,7 +209,8 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
         )}
       </div>
       {err && <p className="mt-3 rounded-xl bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-700 dark:text-red-200">{err}</p>}
-      {!cur ? <p className={`mt-3 text-sm ${muted}`}>Đang tải…</p> : cur.lessons.length === 0 ? (
+      {pending && <div className="mt-3"><Pending text={pending} /></div>}
+      {!cur ?<p className={`mt-3 text-sm ${muted}`}>Đang tải…</p> : cur.lessons.length === 0 ? (
         <p className={`mt-3 text-sm ${muted}`}>Môn này chưa có tài liệu/đề cương để dựng chương trình học.</p>
       ) : (
         <div className="mt-4 space-y-4">
@@ -211,9 +246,9 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
           )}
 
           {path && (
-            <PathPanel path={path} courseId={courseId} busy={busy} onStep={(id, s) => void setStep(id, s)}
+            <PathPanel path={path} courseId={courseId} busy={busy} onStep={(id, s) => void setStep(id, s)} onDelete={removePath}
               onCheckpoint={(stepId) => void startAssessment({ path_id: path.id, step_id: stepId })}
-              onPractice={(action, topic, label) => onPractice(courseId, action, topic, label)}
+              onPractice={(action, topic, label, count) => onPractice(courseId, action, topic, label, count)}
               onFind={(query) => onFind(courseId, query)} />
           )}
 
@@ -239,11 +274,39 @@ function ProgressPathBody({ courses, onPractice, onFind }: ProgressPathProps) {
   );
 }
 
-function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Assessment; busy: boolean; err: string | null; onClose: () => void; onSubmit: (answers: Record<string, number>) => void; onChoose: (strategy: string) => void }) {
+/** Câu đã chấm: 4 phương án (đúng: xanh ✓; đã chọn sai: đỏ ✗), giải thích + trích dẫn mở trang nguồn. */
+function ReviewQuestion({ q, n }: { q: Question; n: number }) {
+  const unanswered = q.picked == null;
+  return (
+    <li className="rounded-lg border border-black/5 dark:border-white/10 p-2.5">
+      <p className="font-medium">
+        {n}. {q.text}
+        {unanswered ? <span className={`ml-1 font-normal ${muted}`}>(chưa trả lời)</span>
+          : <span className={`ml-1 ${q.picked === q.correct ? "text-emerald-600" : "text-red-600"}`}>{q.picked === q.correct ? "✓ Đúng" : "✗ Sai"}</span>}
+      </p>
+      <ul className="mt-1.5 grid gap-1">
+        {q.options.map((o, k) => {
+          const right = k === q.correct;
+          const wrongPick = k === q.picked && !right;
+          return (
+            <li key={k} className={`rounded-md px-2 py-1 ${right ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200" : wrongPick ? "bg-red-50 text-red-900 dark:bg-red-950/50 dark:text-red-200" : ""}`}>
+              {String.fromCharCode(65 + k)}. {o}{right ? " ✓" : wrongPick ? " ✗ (bạn chọn)" : ""}
+            </li>
+          );
+        })}
+      </ul>
+      {(q.explanation || q.source) && <p className={`mt-1.5 text-[12px] ${muted}`}>{q.explanation}{q.source && <Refs refs={[q.source]} />}</p>}
+    </li>
+  );
+}
+
+function AssessmentPanel({ a, busy, pending, err, onClose, onSubmit, onChoose }: { a: Assessment; busy: boolean; pending: string | null; err: string | null; onClose: () => void; onSubmit: (answers: Record<string, number>) => void; onChoose: (strategy: string) => void }) {
   const [picked, setPicked] = useState<Record<string, number>>(() =>
     Object.fromEntries(a.questions.filter((q) => q.picked != null).map((q) => [q.id, q.picked as number])));
   const done = a.status === "Submitted";
   const r = a.result;
+  const gapOf = new Map((r?.gaps ?? []).map((g) => [g.topic_id, g]));
+  const withdrawn = a.questions.filter((q) => q.withdrawn).length;
   return (
     <section className={`${card} space-y-4`}>
       <div className="flex items-center justify-between gap-3">
@@ -254,42 +317,67 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
         <button type="button" className={btn2} onClick={onClose}>Đóng</button>
       </div>
       {err && <p className="rounded-xl bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-700 dark:text-red-200">{err}</p>}
+      {pending && <Pending text={pending} />}
 
       {r && (
         <div className="space-y-3">
-          <p className="text-sm">Đúng {r.summary.correct}/{r.summary.answered} câu đã trả lời{r.summary.score_pct != null && ` (${r.summary.score_pct}%)`}.</p>
-          <div className="grid gap-2 md:grid-cols-2">
-            {r.topics.map((t) => (
-              <div key={t.topic_id} className="rounded-xl border border-black/5 dark:border-white/10 p-3 text-[13px]">
-                <p className="flex items-center justify-between gap-2 font-medium">{t.title} <Level level={t.level} /></p>
-                <p className={muted}>{t.lesson_title} · đúng {t.correct}/{t.answered}{t.confidence === "low" && " · cần thêm câu để chắc chắn"}</p>
-                <ul className="mt-1 list-disc pl-4">{t.objectives.map((o) => <li key={o.id}>{o.status === "met" ? "✓" : o.status === "not_answered" ? "…" : "✗"} {o.text}</li>)}</ul>
-              </div>
-            ))}
-          </div>
-          {r.gaps.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="font-semibold">Lỗ hổng kiến thức</h3>
-              {r.gaps.map((g) => (
-                <div key={g.topic_id} className="rounded-xl border border-black/5 dark:border-white/10 p-3 text-[13px]">
-                  <p className="flex items-center gap-2 font-medium">{g.topic_title} <Level level={g.level} /></p>
-                  <p><b>Còn thiếu:</b> {g.missing_concepts.join("; ")}</p>
-                  <p><b>Vì sao:</b> {g.why}</p>
-                  <ul className="list-disc pl-4">{g.evidence.map((e, i) => <li key={i}>Chọn “{e.picked_text}” — {e.indicates}</li>)}</ul>
-                  {g.root_causes.length > 0 && <p><b>Nguyên nhân gốc:</b> chưa vững {g.root_causes.map((x) => `“${x.title}” (${x.lesson_title})`).join(", ")}</p>}
-                  <p><b>Xem lại:</b> Bài {g.lesson_order}: {g.review.lesson_title} — {g.review.topic_title}<Refs refs={g.review.sources} /></p>
-                </div>
-              ))}
+          {/* Kết quả theo chủ đề + lỗ hổng GỘP làm một: mỗi chủ đề một dòng (▸ mở chi tiết); chủ đề còn hổng xếp lên đầu */}
+          <details open className="group/res rounded-xl border border-black/10 dark:border-white/10">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm [&::-webkit-details-marker]:hidden">
+              <ChevronRight size={16} className="shrink-0 transition group-open/res:rotate-90" aria-hidden="true" />
+              <span className="font-semibold">Kết quả bài làm</span>
+              <span className={muted}>· đúng {r.summary.correct}/{r.summary.answered} câu đã trả lời{r.summary.score_pct != null && ` (${r.summary.score_pct}%)`}
+                {r.gaps.length > 0 && ` · ${r.gaps.length} chủ đề còn hổng`}</span>
+            </summary>
+            <ul className="divide-y divide-black/5 border-t border-black/5 dark:divide-white/10 dark:border-white/10">
+              {[...r.topics].sort((x, y) => Number(!gapOf.has(x.topic_id)) - Number(!gapOf.has(y.topic_id))).map((t) => {
+                const g = gapOf.get(t.topic_id);
+                return (
+                  <li key={t.topic_id}>
+                    <details className="group/t">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[13px] hover:bg-black/[0.02] dark:hover:bg-white/[0.03] [&::-webkit-details-marker]:hidden">
+                        <ChevronRight size={14} className={`shrink-0 transition group-open/t:rotate-90 ${muted}`} aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
+                        <span className={`hidden shrink-0 sm:inline ${muted}`}>{t.lesson_title} · đúng {t.correct}/{t.answered}</span>
+                        <Level level={t.level} />
+                      </summary>
+                      <div className="space-y-1 px-9 pb-3 text-[13px]">
+                        {/* câu hỏi + đáp án lên ĐẦU; mục tiêu / vì sao / xem lại ở dưới */}
+                        <ol className="mb-2 space-y-2">
+                          {a.questions.map((q, i) => q.topic_id === t.topic_id && !q.withdrawn && <ReviewQuestion key={q.id} q={q} n={i + 1} />)}
+                        </ol>
+                        <p className={muted}>{t.lesson_title} · đúng {t.correct}/{t.answered}{t.confidence === "low" && " · cần thêm câu để chắc chắn"}</p>
+                        <ul className="list-disc pl-4">{t.objectives.map((o) => <li key={o.id}>{o.status === "met" ? "✓" : o.status === "not_answered" ? "…" : "✗"} {o.text}</li>)}</ul>
+                        {g && <>
+                          <p><b>Vì sao:</b> {g.why}</p>
+                          {g.evidence.length > 0 && <ul className="list-disc pl-4">{g.evidence.map((e, i) => <li key={i}>Chọn “{e.picked_text}” — {e.indicates}</li>)}</ul>}
+                          {g.root_causes.length > 0 && <p><b>Nguyên nhân gốc:</b> chưa vững {g.root_causes.map((x) => `“${x.title}” (${x.lesson_title})`).join(", ")}</p>}
+                        </>}
+                        {g && (
+                          <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+                            <b>Xem lại:</b> Bài {g.lesson_order}: {g.review.lesson_title}<Refs refs={g.review.sources} bare />
+                          </p>
+                        )}
+                      </div>
+                    </details>
+                  </li>
+                );
+              })}
+            </ul>
+            {withdrawn > 0 && <p className={`border-t border-black/5 px-3 py-2 text-[12px] dark:border-white/10 ${muted}`}>{withdrawn} câu bị ẩn và không chấm vì nguồn không còn khả dụng.</p>}
+          </details>
+          {r.review && (
+            <div className="rounded-xl bg-black/[0.03] dark:bg-white/[0.04] p-3 text-[13px] space-y-1">
+              <h3 className="font-semibold">Nhận xét và lời khuyên</h3>
+              {r.review.overview && <p>{r.review.overview}</p>}
+              {r.review.advice.length > 0 && <ol className="list-decimal pl-5">{r.review.advice.map((x, i) => <li key={i}>{x}</li>)}</ol>}
+              {r.review.path_hint && <p><b>Lộ trình:</b> {r.review.path_hint}</p>}
             </div>
           )}
-          <div>
-            <h3 className="font-semibold">Gợi ý cho bạn</h3>
-            <ul className="mt-1 list-disc pl-5 text-[13px]">{r.recommendations.map((x, i) => <li key={i}>{x.text}</li>)}</ul>
-          </div>
           {!a.path_id && (
             <div>
-              <h3 className="font-semibold">Chọn lộ trình</h3>
-              <div className="mt-2 grid gap-2 md:grid-cols-3">
+              <h3 className="font-semibold">{r.path_options.length > 1 ? "Chọn lộ trình" : "Lộ trình phù hợp"}</h3>
+              <div className={`mt-2 grid gap-2 ${["", "", "md:grid-cols-2", "md:grid-cols-3"][r.path_options.length] ?? ""}`}>
                 {r.path_options.map((o) => (
                   <div key={o.strategy} className={`rounded-xl border p-3 text-[13px] ${o.recommended ? "border-black dark:border-white" : "border-black/10 dark:border-white/10"}`}>
                     <p className="font-medium">{o.title}{o.recommended && " · đề xuất"}</p>
@@ -306,7 +394,8 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
         </div>
       )}
 
-      <ol className="space-y-3">
+      {/* đang làm bài: danh sách câu để chọn; đã nộp: câu nằm trong từng chủ đề ở "Kết quả bài làm" */}
+      {!done && <ol className="space-y-3">
         {a.questions.map((q, i) => (
           <li key={q.id} className="rounded-xl border border-black/5 dark:border-white/10 p-3 text-sm">
             {q.withdrawn ? <p className={muted}>{q.text}</p> : (
@@ -329,7 +418,7 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
             )}
           </li>
         ))}
-      </ol>
+      </ol>}
       {!done && (
         <button type="button" className={btn} disabled={busy || Object.keys(picked).length === 0} onClick={() => onSubmit(picked)}>
           {busy ? "Đang chấm…" : `Nộp bài (${Object.keys(picked).length}/${a.questions.length} câu)`}
@@ -339,8 +428,14 @@ function AssessmentPanel({ a, busy, err, onClose, onSubmit, onChoose }: { a: Ass
   );
 }
 
-function PathPanel({ path, courseId, busy, onStep, onCheckpoint, onPractice, onFind }: { path: Path; courseId: string; busy: boolean; onStep: (id: string, status: string) => void; onCheckpoint: (stepId: string) => void; onPractice: (action: string, topic: string, label: string) => void; onFind: (query: string) => void }) {
-  const [picking, setPicking] = useState<string | null>(null); // bước đang mở danh sách khái niệm để nhờ giải thích
+/** Lộ trình làm TỪNG BƯỚC: (1) khung các bước để người học xem và xác nhận; (2) xác nhận xong mỗi lần chỉ hiện một
+ *  bước, thanh số 1·2·3… + Quay lại / Tiếp theo; trong bước chỉ có ô chọn hình thức ôn tập (không liệt kê mọi hoạt động).
+ *  "Đã xác nhận" = có bước khác "chưa bắt đầu" (lưu ở server qua API bước — tải lại trang không phải xác nhận lại). */
+function PathPanel({ path, courseId, busy, onStep, onDelete, onCheckpoint, onPractice, onFind }: { path: Path; courseId: string; busy: boolean; onStep: (id: string, status: string) => void; onDelete: () => void; onCheckpoint: (stepId: string) => void; onPractice: (action: string, topic: string, label: string, count?: number) => void; onFind: (query: string) => void }) {
+  const steps = path.steps;
+  const started = steps.some((x) => x.status !== "not_started");
+  const [idx, setIdx] = useState(() => Math.max(0, steps.findIndex((x) => x.id === path.next_step_id)));
+  const [explaining, setExplaining] = useState(false);
   // D-83: bấm ôn một bước → ghim bước đó thành tag "Đang ôn" (đổi qua lại giữa các phần, kể cả khi đang trong chat)
   const pin = (s: Step) => pinStudy({
     key: `path:${path.id}:${s.id}`, source: "path", title: s.title, subtitle: path.summary.title, courseId,
@@ -348,65 +443,129 @@ function PathPanel({ path, courseId, busy, onStep, onCheckpoint, onPractice, onF
     actions: s.activities.filter((x) => x.type === "find" || CHAT_ACTIONS.has(x.type)),
     href: `/learning/plans?tab=progress&step=${encodeURIComponent(s.id)}`,
   });
-  // mở từ tag → cuộn tới đúng bước
+  // mở từ tag "Đang ôn" (?step=) → đúng bước đó
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("step");
-    if (id) document.getElementById(`step-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const k = id ? steps.findIndex((x) => x.id === id) : -1;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc URL sau hydrate (server không có window)
+    if (k >= 0) setIdx(k);
+    // chỉ khi đổi lộ trình — không nhảy lại mỗi lần tải lại bước
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path.id]);
+
+  const header = (
+    <div className="flex items-start justify-between gap-2">
+      <div>
+        <p className="font-medium">{path.summary.title} <span className={`font-normal ${muted}`}>· {path.done}/{path.total} bước · ~{path.summary.total_minutes} phút</span></p>
+        <p className={`text-[12px] ${muted}`}>{path.summary.description}</p>
+      </div>
+      <button type="button" className={`${btn2} shrink-0 text-red-600`} disabled={busy} onClick={onDelete}>🗑 Xoá</button>
+    </div>
+  );
+  const kindOf = (x: Step) => (x.remediation ? "Ôn lại" : STEP_KIND[x.kind] ?? x.kind);
+
+  if (!started) {
+    return (
+      <div className="rounded-xl border border-black/10 dark:border-white/10 p-3">
+        {header}
+        <p className="mt-3 text-[13px] font-medium">Khung lộ trình — {steps.length} bước. Xem qua rồi xác nhận để bắt đầu làm từng bước:</p>
+        <p className={`mt-1 text-[12px] ${muted}`}>Cách đi: ôn tập → kiểm tra → đạt ≥ {PASS_PCT}% mới mở bài mới (đạt thì phần ôn tập trước đó được tính là xong); chưa đạt thì ôn lại rồi kiểm tra lại. Sang bài mới vẫn quay lại được bài cũ.</p>
+        <ol className="mt-2 space-y-1 text-[13px]">
+          {steps.map((x) => (
+            <li key={x.id} className="flex gap-2">
+              <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-black/5 dark:bg-white/10 text-[11px]">{x.order}</span>
+              <span><span className={muted}>[{kindOf(x)}]</span> {x.title} <span className={muted}>· ~{x.minutes} phút</span></span>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className={btn} disabled={busy || !steps.length} onClick={() => { setIdx(0); onStep(steps[0].id, "in_progress"); }}>Xác nhận, bắt đầu bước 1</button>
+          <button type="button" className={btn2} disabled={busy} onClick={onDelete}>Chọn lộ trình khác</button>
+        </div>
+      </div>
+    );
+  }
+
+  const i = Math.min(idx, steps.length - 1);
+  const s = steps[i];
+  const last = i === steps.length - 1;
+  const context = `${s.title}. ${s.objectives.join("; ")}`.slice(0, 600);
+  const topics = (s.topic_titles ?? []).join(", ") || s.title;
+  const failed = s.kind === "checkpoint" && s.status === "done" && s.result && !s.result.passed;
+  // bài kiểm tra: phải làm xong mới đi tiếp; bước bị khóa: chưa đi tiếp được; bước nguồn đã thu hồi: cho bỏ qua
+  const canNext = s.needs_update || (s.kind === "checkpoint" ? s.status === "done" : !s.locked);
+  const go = (k: number) => { setIdx(k); setExplaining(false); };
+  const next = () => {
+    if (!s.needs_update && s.kind !== "checkpoint" && s.status !== "done") onStep(s.id, "done"); // làm xong bước này
+    if (!last) go(i + 1);
+  };
+
   return (
     <div className="rounded-xl border border-black/10 dark:border-white/10 p-3">
-      <p className="font-medium">{path.summary.title} <span className={`font-normal ${muted}`}>· {path.done}/{path.total} bước · ~{path.summary.total_minutes} phút</span></p>
-      <p className={`text-[12px] ${muted}`}>{path.summary.description}</p>
-      <ol className="mt-2 space-y-2">
-        {path.steps.map((s) => {
-          const context = `${s.title}. ${s.objectives.join("; ")}`.slice(0, 600);
-          const topics = (s.topic_titles ?? []).join(", ") || s.title;
-          const failed = s.kind === "checkpoint" && s.status === "done" && s.result && !s.result.passed;
-          return (
-            <li key={s.id} id={`step-${s.id}`} className={`scroll-mt-24 rounded-lg p-2 text-[13px] ${s.id === path.next_step_id ? "bg-black/5 dark:bg-white/10" : ""} ${s.remediation || s.round ? "border-l-2 border-amber-500 pl-3" : ""}`}>
-              <p className="font-medium">{s.order}. <span className={muted}>[{s.remediation ? "Ôn lại" : STEP_KIND[s.kind] ?? s.kind}]</span> {s.title}
-                {s.status === "done" && " ✓"}{s.result && ` · ${s.result.score_pct ?? "—"}% ${s.result.passed ? "(đạt)" : "(chưa đạt)"}`}</p>
-              {failed && <p className="text-amber-700 dark:text-amber-300">Chưa đạt — làm các bước “Ôn lại” bên dưới rồi kiểm tra lại; đạt mới mở bài mới.</p>}
-              {!s.needs_update && (
+      {header}
+      <ol className="mt-3 flex flex-wrap gap-1.5" aria-label="Các bước của lộ trình">
+        {steps.map((x, k) => (
+          <li key={x.id}>
+            <button type="button" title={`${k + 1}. ${x.title}`} aria-current={k === i ? "step" : undefined} onClick={() => go(k)}
+              className={`grid h-7 w-7 place-items-center rounded-full border-0 text-[12px] cursor-pointer ${k === i ? "bg-black text-white dark:bg-white dark:text-black"
+                : x.status === "done" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                  : x.locked ? "bg-black/5 dark:bg-white/10 opacity-50" : "bg-black/5 dark:bg-white/10"}`}>
+              {x.status === "done" && k !== i ? "✓" : k + 1}
+            </button>
+          </li>
+        ))}
+      </ol>
+
+      <div id={`step-${s.id}`} className={`mt-3 rounded-lg bg-black/[0.03] dark:bg-white/5 p-3 text-[13px] ${s.remediation || s.round ? "border-l-2 border-amber-500" : ""}`}>
+        <p className={`text-[12px] ${muted}`}>Bước {i + 1}/{steps.length} · {kindOf(s)} · ~{s.minutes} phút</p>
+        <p className="mt-0.5 text-[14px] font-semibold">{s.title}{s.status === "done" && " ✓"}
+          {s.result && <span className="font-normal"> · {s.result.score_pct ?? "—"}% {s.result.passed ? "(đạt)" : "(chưa đạt)"}</span>}</p>
+        {failed && <p className="mt-1 text-amber-700 dark:text-amber-300">Chưa đạt — sang các bước “Ôn lại” tiếp theo rồi kiểm tra lại; đạt mới mở bài mới.</p>}
+        {s.needs_update ? <p className={`mt-1 ${muted}`}>Nguồn của bước này không còn khả dụng — có thể bỏ qua.</p> : (
+          <>
+            {s.objectives.length > 0 && s.kind !== "checkpoint" && <p className={`mt-1 ${muted}`}>Mục tiêu: {s.objectives.slice(0, 3).join("; ")}</p>}
+            {s.sources.length > 0 && <p className={muted}>Đọc<Refs refs={s.sources} /></p>}
+            {s.locked ? <p className="mt-2 text-amber-700 dark:text-amber-300">🔒 {s.unlock}</p>
+              : s.kind === "checkpoint" ? (
+                s.status !== "done" && (
+                  <>
+                    <p className={`mt-1 ${muted}`}>Đạt ≥ {PASS_PCT}% thì coi như đã qua phần ôn tập trước đó và mở bước tiếp theo; chưa đạt sẽ có các bước ôn lại rồi kiểm tra lại.</p>
+                    <button type="button" className={`${btn} mt-2`} disabled={busy} onClick={() => onCheckpoint(s.id)}>Làm bài kiểm tra</button>
+                  </>
+                )
+              ) : (
                 <>
-                  {s.objectives.length > 0 && s.kind !== "checkpoint" && <p className={muted}>Mục tiêu: {s.objectives.slice(0, 3).join("; ")}</p>}
-                  {s.sources.length > 0 && <p className={muted}>Đọc<Refs refs={s.sources} /></p>}
-                  {s.locked && <p className="text-amber-700 dark:text-amber-300">🔒 {s.unlock}</p>}
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {s.activities.filter((x) => x.type === "find").map((x, i) => (
-                      <button key={`f${i}`} type="button" className={btn2} disabled={s.locked} onClick={() => { pin(s); onFind(topics); }}>🔎 {x.label}</button>
-                    ))}
-                    {s.activities.filter((x) => CHAT_ACTIONS.has(x.type)).map((x, i) => (
-                      <button key={i} type="button" className={btn2} disabled={s.locked}
-                        onClick={() => (x.type === "explain" && s.concepts?.length ? setPicking(picking === s.id ? null : s.id) : (pin(s), onPractice(x.type, context, x.label)))}>
-                        {x.label}{x.type === "explain" && s.concepts?.length ? (picking === s.id ? " ▴" : " ▾") : ""}
-                      </button>
-                    ))}
-                    {s.kind === "checkpoint" ? (
-                      s.status !== "done" && <button type="button" className={btn2} disabled={busy} onClick={() => onCheckpoint(s.id)}>Làm bài kiểm tra</button>
-                    ) : (
-                      <>
-                        {s.status === "not_started" && <button type="button" className={btn2} disabled={busy || s.locked} onClick={() => onStep(s.id, "in_progress")}>Bắt đầu</button>}
-                        {s.status !== "done" && <button type="button" className={btn2} disabled={busy || s.locked} onClick={() => onStep(s.id, "done")}>Đã xong</button>}
-                      </>
-                    )}
+                  <PracticePicker key={s.id} busy={busy} onPick={(c) => { pin(s); onPractice(c.action, context, FORMAT_LABEL[c.action], c.count); }} />
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <button type="button" className={btn2} onClick={() => { pin(s); onFind(topics); }}>🔎 Tìm tài liệu học</button>
+                    <button type="button" className={btn2} aria-expanded={explaining}
+                      onClick={() => (s.concepts?.length ? setExplaining(!explaining) : (pin(s), onPractice("explain", context, "Nhờ giải thích")))}>
+                      💬 Nhờ giải thích{s.concepts?.length ? (explaining ? " ▴" : " ▾") : ""}
+                    </button>
                   </div>
-                  {picking === s.id && !!s.concepts?.length && (
+                  {explaining && !!s.concepts?.length && (
                     <div className="mt-2 rounded-lg border border-black/10 dark:border-white/10 p-2">
                       <p className={`text-[12px] ${muted}`}>Chọn khái niệm bạn muốn trợ lý giải thích từng bước:</p>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {s.concepts.map((c) => (
-                          <button key={c} type="button" className={btn2} onClick={() => { setPicking(null); pin(s); onPractice("explain", `${c} (chủ đề: ${topics})`.slice(0, 600), `Giải thích: ${c}`); }}>{c}</button>
+                          <button key={c} type="button" className={btn2} onClick={() => { setExplaining(false); pin(s); onPractice("explain", `${c} (chủ đề: ${topics})`.slice(0, 600), `Giải thích: ${c}`); }}>{c}</button>
                         ))}
                       </div>
                     </div>
                   )}
                 </>
               )}
-            </li>
-          );
-        })}
-      </ol>
+          </>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button type="button" className={btn2} disabled={i === 0} onClick={() => go(i - 1)}>← Quay lại</button>
+        {!canNext && <span className={`text-[12px] ${muted}`}>{s.kind === "checkpoint" ? "Làm bài kiểm tra để sang bước tiếp theo" : "Bước này chưa mở"}</span>}
+        <button type="button" className={btn} disabled={busy || !canNext || (last && s.status === "done")} onClick={next}>
+          {last ? (s.status === "done" ? "Đã hoàn thành lộ trình" : "Hoàn thành lộ trình") : "Tiếp theo →"}
+        </button>
+      </div>
     </div>
   );
 }

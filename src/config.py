@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     learning_quiz_questions: int = Field(default=3, gt=0)
     # D-82: bài đánh giá theo tiến độ — trần số câu (phủ mọi chủ đề đã học trước, dư thì hỏi sâu chủ đề yếu/chưa rõ)
     learning_assessment_max_questions: int = Field(default=15, gt=0, le=60)  # 10–15 câu cho người học đỡ rối
+    learning_assessment_min_questions: int = Field(default=10, gt=0, le=60)
 
     # Database
     database_url: str = "sqlite:///./data/app.db"

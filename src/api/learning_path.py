@@ -1,7 +1,7 @@
 """API lộ trình học theo tiến độ (D-82, FR-03.2–03.12): chương trình học, tiến độ, đánh giá, mức nắm vững, lộ trình.
 
-Người dùng lấy từ token (BR-02); dữ liệu học tập chỉ của chính người học. Quản trị không có quyền nội dung học tập
-(D-61) — `can_read_course` trả False nên mọi endpoint trả 404/rỗng.
+Người dùng lấy từ token (BR-02); dữ liệu học tập chỉ của chính người học. Chỉ vai trò sinh viên (GV, GV duyệt, quản trị
+→ 403); quản trị cũng không có quyền nội dung học tập (D-61).
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from src.models.orm import User
 from src.services.learning_path import service as svc
 
 router = APIRouter()
-learner = require_role("student", "lecturer", "reviewer")
+# Lộ trình là của người học (PRD FR-03: "Là Sinh viên…"); GV/GV duyệt/quản trị → 403 (BR-02, mặc định từ chối)
+learner = require_role("student")
 
 
 class ProgressIn(BaseModel):
@@ -113,6 +114,12 @@ def list_paths(course_id: str, user: User = Depends(learner), db: Session = Depe
 @router.get("/learning/paths/{path_id}")
 def get_path(path_id: str, user: User = Depends(learner), db: Session = Depends(get_db)) -> dict[str, Any]:
     return svc.get_path(db, user, path_id)
+
+
+@router.delete("/learning/paths/{path_id}", status_code=204)
+def delete_path(path_id: str, user: User = Depends(learner), db: Session = Depends(get_db)) -> None:
+    """Chỉ chủ sở hữu; lộ trình của người khác / môn mất quyền → 404 (BR-02, BR-10)."""
+    svc.delete_path(db, user, path_id)
 
 
 @router.post("/learning/paths/{path_id}/steps/{step_id}")

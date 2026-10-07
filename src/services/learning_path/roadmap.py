@@ -22,6 +22,7 @@ from src.services.learning_path.diagnosis import (
     SOLID,
     lesson_ref,
     prerequisite_gaps,
+    prerequisite_topics,
 )
 
 STRATEGIES: dict[str, dict[str, str]] = {
@@ -43,6 +44,7 @@ STRATEGIES: dict[str, dict[str, str]] = {
     },
 }
 LOOKAHEAD_LESSONS = 2
+MAX_STUDY_STEPS = 4  # tối đa 4 bước học liền nhau, bước thứ 5 phải sau một bài kiểm tra (người dùng chốt 07/10)
 PASS_MASTERY = 0.8
 MINUTES = {"review": 40, "reinforce": 25, "refresh": 15, "learn": 45, "checkpoint": 15}
 
@@ -74,6 +76,19 @@ class _Builder:
         start: int = 0,
     ) -> None:
         self.c, self.refs, self.concepts, self.start, self.steps = curriculum, refs, concepts or {}, start, []
+        self.pending: list[Topic] = []  # chủ đề của các bước học từ bài kiểm tra gần nhất tới giờ
+        self.studied_since_check = 0
+        self.checked: set[str] = set()  # chủ đề đã có bài kiểm tra giữa chặng trong lộ trình này
+
+    def _before_study(self) -> None:
+        """Đủ MAX_STUDY_STEPS bước học liền nhau chưa kiểm tra → chèn bài kiểm tra các chủ đề vừa học trước bước kế tiếp
+        (không để ôn một mạch dài rồi mới kiểm tra một lần)."""
+        if self.studied_since_check >= MAX_STUDY_STEPS:
+            self.checkpoint(list(self.pending), "Kiểm tra giữa chặng: {topics}")
+
+    def _studied(self, topics: list[Topic]) -> None:
+        self.pending += topics
+        self.studied_since_check += 1
 
     def _concepts(self, topics: list[Topic]) -> list[str]:
         out = [c for t in topics for c in self.concepts.get(t.id, [])] + [t.title for t in topics]
@@ -97,6 +112,8 @@ class _Builder:
 
     def gap(self, t: Topic, level: str, again: int = 0) -> str:
         """`again` > 0: vòng ôn lại thứ `again` sau khi bài kiểm tra chưa đạt."""
+        self._before_study()
+        self._studied([t])
         lesson = self.c.lesson_of(t)
         prefix = f"Ôn lại (lần {again}): " if again else ""
         find = _act("find", f"Tìm tài liệu học về “{t.title}”")
@@ -112,34 +129,60 @@ class _Builder:
         return self._add("reinforce", f"{prefix or 'Củng cố: '}{t.title}", lesson, [t], acts, **extra)
 
     def refresh(self, lesson: Lesson, topics: list[Topic]) -> str:
+        self._before_study()
+        self._studied(topics)
         acts = [_act("flashcards", f"Ôn nhanh bằng thẻ ghi nhớ bài {lesson.order}")]
         return self._add("refresh", f"Ôn nhanh bài {lesson.order}: {lesson.title}", lesson, topics, acts)
 
-    def learn(self, lesson: Lesson) -> str:
-        """Bước học bài mới bị khóa tới khi ĐẠT bài kiểm tra gần nhất phía trước (nếu có) — xem `gate_of`."""
+    def learn(self, lesson: Lesson, covered: set[str]) -> str:
+        """Bước học bài mới bị khóa tới khi ĐẠT bài kiểm tra gần nhất phía trước — xem `gate_of`. Quy tắc chung cho mọi
+        lộ trình: ôn tập → kiểm tra → (đạt) học bài mới; ngay trước chưa có bài kiểm tra thì chèn bài kiểm tra phần nền
+        của bài mới (không xác định được nền → bài đã học gần nhất)."""
+        if not self.steps or self.steps[-1]["kind"] != "checkpoint":
+            base = prerequisite_topics(self.c, covered, lesson)
+            if not base:
+                learned = [x for x in self.c.lessons if x.id in covered]
+                base = list(max(learned, key=lambda x: x.order).topics) if learned else []
+            self.checkpoint(base, f"Kiểm tra trước khi học bài {lesson.order}")
         acts = [_act("read", f"Học bài {lesson.order}: {lesson.title}"),
                 _act("find", f"Tìm tài liệu học bài {lesson.order}"),
                 _act("explain", "Hỏi trợ lý phần chưa hiểu (giải thích từng bước)"),
                 _act("quiz", "Tự kiểm tra nhanh sau khi học")]  # fmt: skip
+        self._studied(list(lesson.topics))  # ngay trước luôn là bài kiểm tra (ở trên) → không cần _before_study
         return self._add("learn", f"Học bài mới: {lesson.title}", lesson, list(lesson.topics), acts,
                          completes_lesson=lesson.id)  # fmt: skip
 
-    def checkpoint(self, topics: list[Topic], title: str, **extra: Any) -> str | None:
-        uniq = list({t.id: t for t in topics}.values())
+    def checkpoint(self, topics: list[Topic], title: str, cumulative: bool = False, **extra: Any) -> str | None:
+        """Chủ đề đã có bài kiểm tra giữa chặng thì không hỏi lại ở bài kiểm tra sau (trừ `cumulative` — kiểm tra tổng);
+        chủ đề vừa học từ bài kiểm tra trước mà chưa có trong danh sách vẫn được thêm vào (không bỏ sót)."""
+        recent = [t for t in self.pending if t.id not in self.checked]
+        want = topics if cumulative else [t for t in topics if t.id not in self.checked] + recent
+        uniq = list({t.id: t for t in want}.values())
+        self.pending, self.studied_since_check = [], 0
         if not uniq:
             return None
+        self.checked |= {t.id for t in uniq}
+        # "{topics}" trong tiêu đề → tên các chủ đề THỰC SỰ được kiểm tra (sau khi bỏ chủ đề đã kiểm tra giữa chặng)
+        title = title.replace("{topics}", ", ".join(t.title for t in uniq[:3]) + ("…" if len(uniq) > 3 else ""))
         acts = [_act("assessment", f"Làm bài kiểm tra {len(uniq)} chủ đề — chỉ trong phạm vi đã học")]
         return self._add("checkpoint", title, None, uniq, acts,
                          assessment={"topic_ids": [t.id for t in uniq], "pass_mastery": PASS_MASTERY}, **extra)  # fmt: skip
 
 
 def gate_of(steps: list[dict[str, Any]], step: dict[str, Any]) -> dict[str, Any] | None:
-    """Bài kiểm tra gần nhất ĐỨNG TRƯỚC một bước học bài mới — phải đạt mới mở bài mới (kể cả bài kiểm tra của vòng
-    ôn lại được chèn sau khi chưa đạt). Không có bài kiểm tra phía trước → không khóa."""
-    if step["kind"] != "learn":
-        return None
-    before = [s for s in steps if s["kind"] == "checkpoint" and s["order"] < step["order"]]
-    return max(before, key=lambda s: s["order"]) if before else None
+    """Bài kiểm tra gần nhất ĐỨNG TRƯỚC một bước — phải ĐẠT mới mở bước đó (mọi loại bước: ôn, củng cố, học bài mới,
+    kiểm tra sau). Ngoại lệ: bài kiểm tra đã trượt và đã có vòng ôn lại (bước `remediation_for` = nó) không chặn vòng ôn
+    lại chèn ngay sau nó — bỏ qua nó, xét bài kiểm tra trước đó; các bước gốc phía sau bị chặn bởi bài kiểm tra lại.
+    Không có bài kiểm tra phía trước → không khóa."""
+    remediated = {s.get("remediation_for") for s in steps if s.get("remediation_for")}
+    before = sorted((s for s in steps if s["kind"] == "checkpoint" and s["order"] < step["order"]),
+                    key=lambda s: s["order"], reverse=True)  # fmt: skip
+    for cp in before:
+        failed = cp["status"] == "done" and not (cp.get("result") or {}).get("passed")
+        if failed and cp["id"] in remediated:
+            continue
+        return cp
+    return None
 
 
 def gate_open(steps: list[dict[str, Any]], step: dict[str, Any]) -> bool:
@@ -166,8 +209,7 @@ def remediation(
     for t in weak:
         level = (mastery.get(t.id) or {}).get("level")
         b.gap(t, level if level in (MISSING, REINFORCE) else MISSING, again=again)
-    b.checkpoint(weak, f"Kiểm tra lại lần {again}: " + ", ".join(t.title for t in weak[:3]) + ("…" if len(weak) > 3 else ""),
-                 round=again, remediation_for=failed["id"])  # fmt: skip
+    b.checkpoint(weak, f"Kiểm tra lại lần {again}: {{topics}}", round=again, remediation_for=failed["id"])
     return b.steps
 
 
@@ -209,7 +251,7 @@ def build_roadmap(
             b.gap(t, level)
         b.checkpoint([t for t, _ in weak] + g[INSUFFICIENT], "Kiểm tra lại các chủ đề vừa ôn")
         if upcoming:
-            b.learn(upcoming[0])
+            b.learn(upcoming[0], covered)
             b.checkpoint(list(upcoming[0].topics), f"Kiểm tra bài {upcoming[0].order}: {upcoming[0].title}")
     elif strategy == "continue_with_gaps":
         first = {t.id for t in prerequisite_gaps(curriculum, covered, mastery, upcoming[0])} if upcoming else set()
@@ -221,7 +263,7 @@ def build_roadmap(
         b.checkpoint(prereq, "Kiểm tra phần nền trước khi học bài mới")
         rest = [(t, level) for t, level in weak if t.id not in first]
         for lesson in upcoming:
-            b.learn(lesson)
+            b.learn(lesson, covered)
             patch, rest = rest[:2], rest[2:]
             for t, level in patch:
                 b.gap(t, level)
@@ -237,9 +279,9 @@ def build_roadmap(
             others = [t for t in lesson.topics if t in g[SOLID] or t in g[INSUFFICIENT]]
             if lesson.id in covered and others:
                 b.refresh(lesson, others)
-        b.checkpoint(curriculum.topics(covered), "Kiểm tra tổng toàn bộ phạm vi đã học")
+        b.checkpoint(curriculum.topics(covered), "Kiểm tra tổng toàn bộ phạm vi đã học", cumulative=True)
         if upcoming:
-            b.learn(upcoming[0])
+            b.learn(upcoming[0], covered)
             b.checkpoint(list(upcoming[0].topics), f"Kiểm tra bài {upcoming[0].order}: {upcoming[0].title}")
 
     meta = STRATEGIES[strategy]
@@ -283,13 +325,25 @@ def path_options(
     mastery: dict[str, dict[str, Any]],
     refs: dict[str, list[dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
+    """1–3 phương án tùy tình hình: bỏ phương án không có nghĩa (không còn lỗ hổng → không cần "củng cố nền trước";
+    học hết bài → không còn "học tiếp") và phương án ra đúng các bước như phương án đã giữ. Đề xuất luôn được giữ."""
     best, why = recommend_strategy(curriculum, covered, mastery)
-    out = []
-    for key, meta in STRATEGIES.items():
+    g = _classify(curriculum, covered, mastery)
+    pointless = {
+        "foundation_first": not (g[MISSING] or g[REINFORCE]),
+        "continue_with_gaps": not curriculum.next_lessons(covered),
+    }
+    out, seen = [], set()
+    for key in sorted(STRATEGIES, key=lambda k: k != best):
+        if key != best and pointless.get(key):
+            continue
         r = build_roadmap(curriculum, covered, mastery, key, refs)
+        sig = tuple((s["kind"], s["lesson_id"], tuple(s["topic_ids"])) for s in r["steps"])
+        if sig in seen:
+            continue
+        seen.add(sig)
         out.append({
-            "strategy": key, **meta, "recommended": key == best, "rationale": why if key == best else "",
+            "strategy": key, **STRATEGIES[key], "recommended": key == best, "rationale": why if key == best else "",
             "summary": r["summary"], "preview": [s["title"] for s in r["steps"][:5]],
         })  # fmt: skip
-    out.sort(key=lambda o: not o["recommended"])
     return out
