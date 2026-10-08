@@ -26,6 +26,7 @@ from src.services.assistants import (
     mark_uncited,
     split_sentences,
     supporting_quotes,
+    unlabel_unsupported,
     validate_citations,
 )
 from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
@@ -42,7 +43,10 @@ INSTRUCTION = """Trả lời CÂU HỎI chỉ dựa trên NGUỒN. Trả về DU
 - "partial": chỉ một số phần có căn cứ — liệt kê phần thiếu trong "missing".
 - "needs_clarification": câu hỏi mơ hồ về phạm vi/chủ thể/viết tắt.
 - "insufficient_evidence": CHỈ khi không NGUỒN nào nói về điều được hỏi. Nếu có nguồn định nghĩa/mô tả trực tiếp khái
-  niệm được hỏi (kể cả bằng tiếng Anh hoặc chỉ một phần) thì trả lời "answered"/"partial" dựa trên phần đó."""
+  niệm được hỏi (kể cả bằng tiếng Anh hoặc chỉ một phần) thì trả lời "answered"/"partial" dựa trên phần đó.
+- Hỏi khái niệm/công thức/định lý TỔNG QUÁT mà NGUỒN chỉ có trường hợp riêng hoặc một ví dụ áp dụng (vd nguồn chỉ có
+  kết quả cho một hàm cụ thể trong một bài giải) → "partial": nói rõ đó là trường hợp riêng/ví dụ trong ngữ cảnh nào
+  của tài liệu, KHÔNG trình bày như câu trả lời cho dạng tổng quát; đưa dạng tổng quát vào "missing"."""
 
 
 _topic_queries: ContextVar[list[str] | None] = ContextVar("topic_queries", default=None)
@@ -179,7 +183,10 @@ def answer(
     missing = [str(m) for m in json_list(data, "missing") if str(m).strip()]
     if dropped and status == "answered":
         status = "partial"
-    text = _inherit_labels(text, dict(used))
+    text = unlabel_unsupported(_inherit_labels(text, dict(used)), dict(used))
+    used = [(n, h) for n, h in used if f"[{n}]" in text]  # nguồn chỉ còn được câu bịa trỏ tới → không hiện
+    if not used:
+        return AssistantResult(status="insufficient_evidence", content=INSUFFICIENT_MESSAGE)
     text, uncited = mark_uncited(text)  # D-73 — BR-04: câu khẳng định không có [n] được đánh dấu ngay tại câu
     if uncited and status == "answered":
         status = "partial"

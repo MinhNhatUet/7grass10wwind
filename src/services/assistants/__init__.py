@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+import threading
 import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -402,6 +403,7 @@ def _latex_safe(text: str) -> str:
 # D-60: token của mọi lần gọi LLM trong một yêu cầu → usage_events (chi phí cho admin). Hộp [vào, ra] dùng chung theo
 # tham chiếu nên vẫn cộng đúng khi LangGraph chạy node trong context sao chép.
 _usage: ContextVar[list[int] | None] = ContextVar("llm_usage", default=None)
+_usage_lock = threading.Lock()
 
 
 @contextmanager
@@ -420,9 +422,10 @@ def _count_usage(resp: Any, prompt_chars: int, output: str) -> None:
     if box is None:
         return
     meta = getattr(resp, "usage_metadata", None) or {}
-    # provider không trả usage → ước lượng ~4 ký tự/token
-    box[0] += int(meta.get("input_tokens") or prompt_chars // 4)
-    box[1] += int(meta.get("output_tokens") or len(output) // 4)
+    # provider không trả usage → ước lượng ~4 ký tự/token; khóa vì có nơi gọi LLM song song nhiều luồng
+    with _usage_lock:
+        box[0] += int(meta.get("input_tokens") or prompt_chars // 4)
+        box[1] += int(meta.get("output_tokens") or len(output) // 4)
 
 
 def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any]:
@@ -555,6 +558,39 @@ def validate_citations(db: Session, user: User, text: str, hits: list[Hit]) -> t
         used.update({n: hits[n - 1] for n in ns})
         kept.append([sent, sep])
     return join_sentences(kept), sorted(used.items()), dropped_revoked
+
+
+_VI = re.compile(r"[à-ỹđ]", re.I)
+_WORDS = re.compile(r"\w+")
+
+
+def _vietnamese(text: str) -> bool:
+    toks = re.findall(r"[^\W\d_]+", text)
+    return sum(bool(_VI.search(t)) for t in toks) >= 0.1 * max(1, len(toks))  # kho hiện tại: mọi chunk ≥ 0.2
+
+
+def unlabel_unsupported(text: str, used: dict[int, Hit]) -> str:
+    """BR-04/BR-05: model gắn [n] cho câu KHÔNG có trong nguồn n (vd "tài liệu chưa trình bày … [1]") → validate_citations
+    chỉ kiểm số [n] nên câu bịa vẫn mang nhãn. Câu có nhãn mà ít âm tiết (≥ 3 ký tự) và ít cặp âm tiết liền nhau nằm
+    trong chunk của các nguồn nó gắn → bỏ nhãn để mark_uncited đánh dấu. Đo trên câu trả lời thật: câu đúng ≥ 0.67 âm
+    tiết / ≥ 0.47 cặp, câu bịa 0.45 / 0.17.
+    ponytail: so từ, không hiểu nghĩa; chỉ áp khi nguồn tiếng Việt (nguồn tiếng Anh + câu dịch → bỏ qua, chưa kiểm được)."""
+    sents = split_sentences(text)
+    for s in sents:
+        ns = [int(x) for x in CITATION_RE.findall(s[0])]
+        hits = [used[n] for n in ns if n in used]
+        if not hits or s[0].strip().endswith(":") or not all(_vietnamese(h.chunk.text) for h in hits):
+            continue
+        st = _WORDS.findall(CITATION_RE.sub("", s[0]).casefold())
+        uni = [t for t in st if len(t) >= 3]
+        if len(uni) < 4:  # câu quá ngắn / tiêu đề — không đủ để đo
+            continue
+        ct = _WORDS.findall(" ".join(h.chunk.text for h in hits).casefold())
+        cset, cpairs = set(ct), set(zip(ct, ct[1:], strict=False))
+        pairs = list(zip(st, st[1:], strict=False))
+        if sum(t in cset for t in uni) / len(uni) < 0.55 and sum(p in cpairs for p in pairs) / len(pairs) < 0.3:
+            s[0] = ANY_CITATION_RE.sub("", s[0])
+    return join_sentences(sents)
 
 
 # Câu "dẫn dắt" không phải khẳng định học thuật (BR-04 không yêu cầu nguồn)
