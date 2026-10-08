@@ -7,7 +7,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message, Source } from "@/types/chat";
 import type { HubResult } from "@/lib/api";
-import { mathDelims, rehypeMathPlugins, remarkMathPlugins } from "@/components/math-text";
+import { MathP, citesOutOfMath, mathDelims, rehypeMathPlugins, remarkMathPlugins } from "@/components/math-text";
 import { HIDE_SOURCE_KINDS, LearningCards, noCite } from "@/components/learning-cards";
 import { CitationBadge } from "./CitationBadge";
 import { WarningBubble } from "./WarningBubble";
@@ -64,9 +64,10 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
   const [feedbackSent, setFeedbackSent] = useState<string | null>(null);
   const hideSources = HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "");
   const sourceIds = new Set((msg.sources ?? []).map((x) => String(x.id)));
-  const labels = citeLabels(msg.content, sourceIds, (msg.meta as { evidence?: Evidence } | undefined)?.evidence);
+  const content = citesOutOfMath(msg.content); // [n] lẫn trong công thức → ra ngoài trước khi đánh số/gắn link
+  const labels = citeLabels(content, sourceIds, (msg.meta as { evidence?: Evidence } | undefined)?.evidence);
   // Có nguồn nhưng câu trả lời không gắn [n] nào → vẫn cho xem nguồn bằng hàng chip nhỏ (không mất nguồn)
-  const unlinked = !hideSources && !!msg.sources?.length && !linkCites(msg.content, sourceIds).includes("](#cite-");
+  const unlinked = !hideSources && !!msg.sources?.length && !linkCites(content, sourceIds).includes("](#cite-");
 
   const handleFeedback = (type: string) => {
     setFeedbackSent(type);
@@ -107,6 +108,7 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
                 remarkPlugins={[remarkGfm, ...remarkMathPlugins]}
                 rehypePlugins={rehypeMathPlugins}
                 components={{
+                  p: MathP,
                   a: ({node, ...props}) => {
                     const m = props.href?.match(/^#cite-(\d+)-(\d+)$/);
                     const cite = m ? msg.sources?.find((s) => String(s.id) === m[1]) : undefined;
@@ -130,7 +132,7 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
                   }
                 }}
               >
-                {mathDelims(hideSources ? noCite(msg.content) : linkCites(msg.content, sourceIds))}
+                {mathDelims(hideSources ? noCite(content) : linkCites(content, sourceIds), true)}
               </ReactMarkdown>
             </div>
           )}
