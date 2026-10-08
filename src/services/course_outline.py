@@ -53,6 +53,17 @@ _SLIDE_TITLE = re.compile(r"^Slide\s+\d+\s*:\s*", re.I)
 _GENERIC_SLIDE = {"nội dung", "tổng kết", "mục tiêu", "câu hỏi", "thảo luận", "tài liệu tham khảo", "bài tập"}
 
 
+def _meaningful(line: str, course_name: str) -> bool:
+    """Dòng trang bìa dùng được làm tên bài: không phải tên môn / "Chapter N" / chữ tách rời từng ký tự do PDF vỡ font
+    ("N T Ư T Ư Ở N G") / quá ngắn ("hcm")."""
+    return (
+        len(line) >= 6
+        and line.casefold() != course_name.casefold()
+        and not page_render.GENERIC_TITLE.match(line)
+        and not re.match(r"^(\S\s){3,}", line)
+    )
+
+
 def _slide_lesson(
     db: Session, version_id: str, title: str, course_name: str, toc: tuple[dict[str, Any], ...]
 ) -> dict[str, Any]:
@@ -61,9 +72,7 @@ def _slide_lesson(
     m = _LESSON_NO.match(title)
     first = db.scalar(select(Chunk.text).where(Chunk.version_id == version_id).order_by(Chunk.ordinal).limit(1)) or ""
     lines = [ln.strip().lstrip("◼").strip() for ln in first.splitlines() if ln.strip()]
-    name = next(
-        (ln for ln in lines[:4] if ln.lower() != course_name.lower() and not re.match(r"(?i)^chapter \d+$", ln)), None
-    )
+    name = next((ln for ln in lines[:4] if _meaningful(ln, course_name)), None)
     sections: list[str] = []
     if "Nội dung" in lines:
         for ln in lines[lines.index("Nội dung") + 1 :]:

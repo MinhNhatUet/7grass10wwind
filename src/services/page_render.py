@@ -26,6 +26,20 @@ _NOT_CHAPTER = re.compile(
 )
 _NOT_SECTION = re.compile(r"^(\d+\.\s*)?(exercises?|problems|notes|summary)$", re.I)
 _NUMBERED = re.compile(r"^(\d{1,2})\.\s+(.+)$")
+# PDF xuất từ PowerPoint: mỗi slide là một mục "Slide N: tiêu đề" (PowerPoint tiếng Việt: "Trang chiếu N: …"; slide
+# không có tiêu đề → chỉ "Trang chiếu N"). Bỏ tiền tố; mục rỗng / chung chung / chỉ là "Chương N" không làm chủ đề.
+_SLIDE_PREFIX = re.compile(r"^(slide(\s+number)?|trang chiếu)\s*\d+\s*:?\s*", re.I)
+GENERIC_TITLE = re.compile(
+    r"^(nội dung( chi tiết)?|giới thiệu|tổng kết|tóm tắt|mục tiêu|câu hỏi|thảo luận|tài liệu tham khảo|bài tập|"
+    r"kết luận|ví dụ|(chương|chapter|bài)\s*\d+)\W*$",
+    re.I,
+)
+
+
+def _slide_title(title: str) -> str | None:
+    """Tiêu đề mục lục đã bỏ tiền tố slide; None nếu không đủ nghĩa để làm chương/chủ đề (rỗng, "Nội dung"…)."""
+    t = re.sub(r"\s+", " ", _SLIDE_PREFIX.sub("", title)).strip()
+    return None if not t or GENERIC_TITLE.match(t) else t
 
 
 @lru_cache(maxsize=64)  # bản tài liệu bất biến (BR-07) → mục lục theo storage_key không đổi
@@ -38,7 +52,8 @@ def chapters(storage_key: str) -> tuple[dict[str, Any], ...]:
                 for it in pdf.get_toc(max_depth=2)
             ]
     out: list[dict[str, Any]] = []
-    for level, title, page in toc:
+    for level, raw, page in toc:
+        title = _slide_title(raw)
         if level == 0:
             if not title or _NOT_CHAPTER.match(title):
                 out.append({"skip": True})
@@ -46,9 +61,11 @@ def chapters(storage_key: str) -> tuple[dict[str, Any], ...]:
             m = _NUMBERED.match(title)
             out.append({"chapter": m.group(1) if m else str(sum(1 for c in out if not c.get("skip")) + 1),
                         "title": m.group(2) if m else title, "page": page, "sections": []})  # fmt: skip
-        elif level == 1 and out and not out[-1].get("skip") and not _NOT_SECTION.match(title):
+        elif level == 1 and title and out and not out[-1].get("skip") and not _NOT_SECTION.match(title):
             m = _NUMBERED.match(title)
-            out[-1]["sections"].append(m.group(2) if m else title)
+            section = m.group(2) if m else title
+            if section.casefold() != out[-1]["title"].casefold() and section not in out[-1]["sections"]:
+                out[-1]["sections"].append(section)
     return tuple(c for c in out if not c.get("skip"))
 
 

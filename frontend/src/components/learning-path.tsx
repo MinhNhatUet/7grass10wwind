@@ -33,7 +33,7 @@ type Result = {
 };
 type Assessment = { id: string; purpose: string; status: string; path_id: string | null; step_id: string | null; scope: { lessons: { id: string; title: string; order: number }[] }; questions: Question[]; result: Result | null };
 type Step = { id: string; order: number; kind: string; title: string; lesson_title?: string | null; topic_titles?: string[]; objectives: string[]; activities: { type: string; label: string }[]; sources: Ref[]; minutes: number; status: string; locked?: boolean; needs_update?: boolean; unlock?: string; concepts?: string[]; remediation?: number; round?: number; result?: { score_pct: number | null; passed: boolean } };
-type Path = { id: string; strategy: string; status: string; summary: { title: string; description: string; total_minutes: number }; steps: Step[]; done: number; total: number; next_step_id: string | null };
+type Path = { id: string; strategy: string; status: string; summary: { title: string; description: string; total_minutes: number }; steps: Step[]; done: number; total: number; next_step_id: string | null; curriculum_outdated?: boolean };
 type Row = { id: string; status: string; title?: string; purpose?: string; score_pct?: number | null; created_at: string };
 
 const card = "rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#12181f] p-5";
@@ -462,12 +462,20 @@ function PathPanel({ path, courseId, busy, onStep, onDelete, onCheckpoint, onPra
       <button type="button" className={`${btn2} shrink-0 text-red-600`} disabled={busy} onClick={onDelete}>🗑 Xoá</button>
     </div>
   );
+  // tài liệu môn đã cập nhật → có chương trình học mới; lộ trình này vẫn chạy theo bản cũ cho tới khi người học tạo lại
+  const outdated = path.curriculum_outdated && (
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-300">
+      <span>Tài liệu môn đã cập nhật nên chương trình học đã đổi. Lộ trình này vẫn theo bản cũ.</span>
+      <button type="button" className={`${btn2} py-0.5`} disabled={busy} onClick={onDelete}>Tạo lộ trình mới</button>
+    </div>
+  );
   const kindOf = (x: Step) => (x.remediation ? "Ôn lại" : STEP_KIND[x.kind] ?? x.kind);
 
   if (!started) {
     return (
       <div className="rounded-xl border border-black/10 dark:border-white/10 p-3">
         {header}
+        {outdated}
         <p className="mt-3 text-[13px] font-medium">Khung lộ trình — {steps.length} bước. Xem qua rồi xác nhận để bắt đầu làm từng bước:</p>
         <p className={`mt-1 text-[12px] ${muted}`}>Cách đi: ôn tập → kiểm tra → đạt ≥ {PASS_PCT}% mới mở bài mới (đạt thì phần ôn tập trước đó được tính là xong); chưa đạt thì ôn lại rồi kiểm tra lại. Sang bài mới vẫn quay lại được bài cũ.</p>
         <ol className="mt-2 space-y-1 text-[13px]">
@@ -503,6 +511,7 @@ function PathPanel({ path, courseId, busy, onStep, onDelete, onCheckpoint, onPra
   return (
     <div className="rounded-xl border border-black/10 dark:border-white/10 p-3">
       {header}
+      {outdated}
       <ol className="mt-3 flex flex-wrap gap-1.5" aria-label="Các bước của lộ trình">
         {steps.map((x, k) => (
           <li key={x.id}>

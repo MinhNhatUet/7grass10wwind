@@ -516,6 +516,8 @@ def _run_job(job_id: str) -> None:
         else:  # loại job không hỗ trợ: KHÔNG được rơi vào index/phát hành (BR-01)
             job.status, job.error_code = "failed", f"UNSUPPORTED_JOB_{job.kind}"[:100]
         db.commit()
+        if job.kind == "index" and version.state == PUBLISHED:
+            _curriculum_changed(db.get(Document, version.document_id).course_id)
         for pending in db.scalars(
             select(IngestionJob).where(
                 IngestionJob.version_id == version.id, IngestionJob.kind == "embed", IngestionJob.status == "queued"
@@ -768,7 +770,15 @@ def withdraw(
         course_id=document.course_id, reason=reason, detail={"replacement_version_id": replacement_version_id},
     )  # fmt: skip
     db.commit()
+    _curriculum_changed(document.course_id)
     return version
+
+
+def _curriculum_changed(course_id: str) -> None:
+    """Tài liệu Published của môn đổi → dựng lại chương trình học chạy nền (lộ trình đang có giữ bản cũ)."""
+    from src.services.learning_path import generated
+
+    generated.schedule(course_id)
 
 
 def emergency_lock(db: Session, admin: User, document_id: str, locked: bool, reason: str) -> Document:
@@ -786,4 +796,5 @@ def emergency_lock(db: Session, admin: User, document_id: str, locked: bool, rea
         object_id=document.id, course_id=document.course_id, reason=reason,
     )  # fmt: skip
     db.commit()
+    _curriculum_changed(document.course_id)
     return document

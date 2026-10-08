@@ -239,6 +239,17 @@ def search(db: Session, user: User, course_id: str, query: str, k: int | None = 
     return hits
 
 
+def best_score(db: Session, version_ids: list[str], query: str) -> float:
+    """Điểm cao nhất (cùng thang với search) của `query` trong các version cho trước. KHÔNG lọc quyền — chỉ dùng cho
+    tác vụ nội bộ đã tự chọn version Published (vd kiểm chủ đề của chương trình học sinh tự động có nguồn)."""
+    data = [(vid, _matrix(db, vid)) for vid in version_ids]
+    if not any(ix.ids for _v, ix in data):
+        return 0.0
+    cos = _cosine(db, data, embed_query(query))
+    score = cos + _lexical_boost(query, [ix for _v, ix in data], cos)
+    return float(np.nanmax(score)) if not np.isnan(score).all() else 0.0
+
+
 def _cosine(db: Session, data: list[tuple[str, _Index]], q: np.ndarray) -> np.ndarray:
     """Cosine từng chunk (thứ tự như `data`), CHỈ trên các version đã qua ACL; chunk embed bằng model khác số chiều → nan.
     Postgres (D-84): pgvector trong SQL, quét exact theo các version của môn (không index ANN).

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +27,11 @@ from src.db import REPO_ROOT
 from src.models.orm import User
 from src.services.assistants import dedupe_key
 from src.services.course_outline import course_chapters
+from src.services.learning_path import generated
 from src.services.retrieval import servable_versions
 
 CURRICULA_DIR = REPO_ROOT / "config" / "curricula"
+DERIVED = "derived"  # phiên bản ghim của lộ trình tạo từ chương trình suy ra (kể cả lộ trình có trước bản LLM sinh)
 MAX_DERIVED_TOPICS = 8  # bộ slide có thể có ~20 tiêu đề slide; giữ phần đầu (mục "Nội dung") cho bài đánh giá gọn
 _ID = re.compile(r"^[A-Za-z0-9_.:\-]{1,120}$")
 
@@ -68,9 +70,10 @@ class Lesson:
 @dataclass(frozen=True)
 class Curriculum:
     course_id: str
-    source: str  # authored | derived
+    source: str  # authored | generated | derived
     lessons: tuple[Lesson, ...]
     notes: tuple[str, ...] = field(default=())
+    version: str | None = None  # phiên bản chương trình LLM sinh (lộ trình/bài đánh giá ghim bản này)
 
     def lesson(self, lesson_id: str) -> Lesson | None:
         return next((x for x in self.lessons if x.id == lesson_id), None)
@@ -98,6 +101,7 @@ class Curriculum:
         return {
             "course_id": self.course_id,
             "source": self.source,
+            "version": self.version,
             "notes": list(self.notes),
             "lessons": [asdict(x) for x in self.lessons],
         }
@@ -237,16 +241,41 @@ def derive(course_id: str, chapters: list[dict[str, Any]]) -> Curriculum:
     return Curriculum(course_id, "derived", tuple(lessons), notes if lessons else ())
 
 
-def load_curriculum(db: Session, user: User, course_id: str) -> Curriculum:
-    """Chương trình học user được thấy (rỗng nếu không có quyền môn — gọi sau khi đã kiểm can_read_course)."""
+def load_curriculum(db: Session, user: User, course_id: str, version: str | None = None) -> Curriculum:
+    """Chương trình học user được thấy (rỗng nếu không có quyền môn — gọi sau khi đã kiểm can_read_course).
+    Ưu tiên: đề cương giảng viên soạn → bản LLM sinh (`version` = bản lộ trình/bài đánh giá đã ghim, None = mới nhất)
+    → suy ra từ mục lục (tạm dùng khi chưa sinh xong). Bản mới nhất lệch tài liệu hiện hành → xếp tạo lại chạy nền."""
     path = _authored_file(course_id)
+    docs: dict[str, tuple[str, str]] = {}
+    for _v, d in servable_versions(db, user, course_id):
+        docs[d.id] = docs[d.title] = (d.id, d.title)
     if path is not None:
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as e:
             raise CurriculumError(f"YAML lỗi: {e}") from e
-        docs: dict[str, tuple[str, str]] = {}
-        for _v, d in servable_versions(db, user, course_id):
-            docs[d.id] = docs[d.title] = (d.id, d.title)
         return parse_authored(raw, course_id, docs)
+    if generated.enabled() and version != DERIVED:
+        record = generated.stored(course_id, version)
+        if version is None and generated.is_stale(db, course_id, record):
+            generated.schedule(course_id)
+        if record is not None:
+            # tài liệu user không còn đọc được → bài vẫn hiện nhưng không truy xuất (như đề cương soạn tay)
+            cur = parse_authored(record, course_id, docs)
+            note = ("Chương trình học do AI dựng từ đề mục tài liệu của môn (tự cập nhật khi tài liệu thay đổi) — giảng "
+                    "viên có thể soạn đề cương config/curricula/<mã môn>.yaml để chốt mục tiêu và thứ tự.")  # fmt: skip
+            return replace(cur, source="generated", version=record["version"], notes=(note, *cur.notes))
     return derive(course_id, course_chapters(db, user, course_id))
+
+
+def pin_of(curriculum: Curriculum) -> str | None:
+    """Giá trị ghim vào lộ trình/bài đánh giá để lần sau nạp đúng chương trình lúc tạo."""
+    return curriculum.version or (DERIVED if curriculum.source == "derived" else None)
+
+
+def newer_available(course_id: str, pinned: str | None) -> bool:
+    """Có bản chương trình LLM sinh mới hơn bản lộ trình đang ghim → nhắc người học tạo lộ trình mới."""
+    if _authored_file(course_id) is not None or not generated.enabled():
+        return False
+    record = generated.stored(course_id)
+    return record is not None and record["version"] != pinned

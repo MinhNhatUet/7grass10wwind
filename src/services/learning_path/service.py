@@ -13,7 +13,7 @@ import copy
 import json
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextvars import copy_context
 from datetime import UTC, datetime
 from typing import Any
@@ -53,11 +53,14 @@ from src.services.formatting import iso
 from src.services.learning_path import diagnosis, roadmap
 from src.services.learning_path.blueprint import Blueprint, Slot, build_blueprint
 from src.services.learning_path.curriculum import (
+    DERIVED,
     Curriculum,
     CurriculumError,
     Topic,
     expand_abbreviations,
     load_curriculum,
+    newer_available,
+    pin_of,
 )
 from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
 from src.services.retrieval import (
@@ -71,6 +74,7 @@ from src.services.retrieval import (
 
 HITS_PER_TOPIC = 2
 SLOTS_PER_CALL = 2  # lô nhỏ + gọi song song: độ trễ ≈ một lô 2 câu (~10 s) thay vì cả đề
+GEN_DEADLINE_S = 40  # lô bình thường xong trong 7–32 s (log thật); quá mốc này coi như provider treo
 STEP_STATUSES = ("not_started", "in_progress", "done")
 NOT_ASSESSED_REASON = {
     "quota": "Vượt số câu tối đa của một lượt — sẽ được hỏi ở lượt kiểm tra sau.",
@@ -83,13 +87,23 @@ NOT_ASSESSED_REASON = {
 # ---------------------------------------------------------------- phạm vi, chương trình học, tiến độ
 
 
-def _course_curriculum(db: Session, user: User, course_id: str) -> Curriculum:
+def _course_curriculum(db: Session, user: User, course_id: str, version: str | None = None) -> Curriculum:
+    """`version`: phiên bản chương trình lộ trình/bài đánh giá đã ghim lúc tạo (None = bản hiện hành)."""
     if not acl.can_read_course(db, user, course_id):
         raise not_found()
     try:
-        return load_curriculum(db, user, course_id)
+        return load_curriculum(db, user, course_id, version)
     except CurriculumError as e:
         raise AppError("CURRICULUM_INVALID", 409, message=f"Đề cương môn học không hợp lệ: {e}") from e
+
+
+def _path_pin(path: LearningPath) -> str | None:
+    # lộ trình tạo trước khi có chương trình LLM sinh: dựng từ chương trình suy ra → giữ nguyên để không hỏng
+    return (path.summary or {}).get("curriculum_version", DERIVED)
+
+
+def _assessment_pin(a: LearningAssessment) -> str | None:
+    return (a.scope or {}).get("curriculum_version", DERIVED)
 
 
 CHAT_ENTRY_MESSAGE = (
@@ -315,12 +329,21 @@ def _generate(
         batches.append((batch, hits, allowed, prompt))
     # Các lô độc lập → gọi LLM song song (độ trễ ≈ lô chậm nhất thay vì tổng các lô). Mỗi luồng một bản context để
     # track_usage vẫn đếm token; kiểm câu (dùng db) làm tuần tự ở luồng chính.
-    with ThreadPoolExecutor(max_workers=len(batches) or 1) as pool:
-        futures = [pool.submit(copy_context().run, call_json, BASE_POLICY, p, 0.3) for *_, p in batches]
-        results = [f.result() for f in futures]
+    # Provider đôi khi treo MỘT lượt tới hết timeout × thử lại (~2 phút) → cả bài lỗi. Chờ tối đa GEN_DEADLINE_S: lô chưa
+    # xong / lỗi thì bỏ (ô để trống như câu không đạt kiểm); chỉ báo lỗi khi KHÔNG lô nào xong.
+    pool = ThreadPoolExecutor(max_workers=len(batches) or 1)
+    futures = [pool.submit(copy_context().run, call_json, BASE_POLICY, p, 0.3) for *_, p in batches]
+    done, _late = wait(futures, timeout=GEN_DEADLINE_S)
+    pool.shutdown(wait=False, cancel_futures=True)  # không chờ lượt treo; luồng tự kết thúc khi provider trả/timeout
+    results = [f.result() if f in done and f.exception() is None else None for f in futures]
+    if all(r is None for r in results):
+        failed = next((f.exception() for f in futures if f in done and f.exception() is not None), None)
+        raise failed if isinstance(failed, LlmError) else LlmError("TIMEOUT")
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for (batch, hits, allowed, _), data in zip(batches, results, strict=True):
+        if data is None:
+            continue
         by_slot = {s.id: s for s in batch}
         for it in json_dicts(data, "items"):
             slot = by_slot.pop(str(it.get("slot") or ""), None)
@@ -380,7 +403,8 @@ def create_assessment(
 ) -> dict[str, Any]:
     """Bài đánh giá CHỈ trong phạm vi đã học. Checkpoint của lộ trình (path_id + step_id) lấy chủ đề của bước đó
     (vẫn giao với phạm vi đã học — bài mới chỉ được hỏi sau khi người học đánh dấu đã học)."""
-    curriculum = _course_curriculum(db, user, course_id)
+    pinned = _path_pin(_owned_path(db, user, path_id)) if path_id else None  # checkpoint: chương trình của lộ trình
+    curriculum = _course_curriculum(db, user, course_id, pinned)
     if not curriculum.lessons:
         raise AppError("CURRICULUM_UNAVAILABLE", 409, message="Môn chưa có tài liệu/đề cương để dựng chương trình học.")
     progress = _progress_row(db, user, course_id)
@@ -459,7 +483,7 @@ def create_assessment(
         user_id=user.id, course_id=course_id, purpose=purpose, path_id=path_id, step_id=step_id,
         scope={"lesson_ids": sorted(covered), "focus": topic_ids, "topic_ids": sorted(asked),
                "not_assessed": not_assessed, "excluded_out_of_scope": bp.excluded,
-               "curriculum_source": curriculum.source},
+               "curriculum_source": curriculum.source, "curriculum_version": pin_of(curriculum)},
         questions=questions,
     )  # fmt: skip
     db.add(a)
@@ -570,7 +594,7 @@ def _result_view(result: dict[str, Any] | None, refs: _Refs) -> dict[str, Any] |
 
 def assessment_view(db: Session, user: User, a: LearningAssessment) -> dict[str, Any]:
     """Trước khi nộp: KHÔNG có đáp án/giải thích/hiểu nhầm/nguồn. Sau khi nộp: thêm kết quả và phần xem lại."""
-    curriculum = _course_curriculum(db, user, a.course_id)
+    curriculum = _course_curriculum(db, user, a.course_id, _assessment_pin(a))
     hidden = _unservable(db, user, a.questions)
     refs = _Refs(db, user, a.course_id)
     questions = []
@@ -690,7 +714,7 @@ def submit_assessment(db: Session, user: User, assessment_id: str, answers: dict
     a = _owned_assessment(db, user, assessment_id)
     if a.status != "Open":
         raise AppError("ALREADY_SUBMITTED", 409)
-    curriculum = _course_curriculum(db, user, a.course_id)
+    curriculum = _course_curriculum(db, user, a.course_id, _assessment_pin(a))
     a.answers = _clean_answers(a, answers)
     hidden = _unservable(db, user, a.questions)
     if not any(q["id"] in a.answers for q in a.questions if q["id"] not in hidden):
@@ -762,7 +786,7 @@ def choose_path(db: Session, user: User, assessment_id: str, strategy: str) -> d
     a = _owned_assessment(db, user, assessment_id)
     if a.status != "Submitted":
         raise AppError("ASSESSMENT_NOT_SUBMITTED", 409)
-    curriculum = _course_curriculum(db, user, a.course_id)
+    curriculum = _course_curriculum(db, user, a.course_id, _assessment_pin(a))
     covered = _covered(curriculum, _progress_row(db, user, a.course_id))
     hidden = _unservable(db, user, a.questions)
     refs = diagnosis.source_refs(a.questions, hidden)
@@ -779,7 +803,8 @@ def choose_path(db: Session, user: User, assessment_id: str, strategy: str) -> d
         old.status = "Superseded"  # giữ dấu vết bản trước (FR-03.12)
     path = LearningPath(
         user_id=user.id, course_id=a.course_id, assessment_id=a.id, strategy=strategy, steps=built["steps"],
-        summary={k: built[k] for k in ("title", "description")} | built["summary"],
+        summary={k: built[k] for k in ("title", "description")} | built["summary"]
+        | {"curriculum_version": pin_of(curriculum)},
     )  # fmt: skip
     db.add(path)
     db.commit()
@@ -794,7 +819,7 @@ def _unlock_text(steps: list[dict[str, Any]], step: dict[str, Any]) -> str:
 def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
     """Bước trỏ tới bài/chủ đề không còn trong chương trình user được thấy (tài liệu thu hồi/mất quyền) bị ẩn nội dung;
     nguồn từng bước được kiểm lại (BR-03, BR-10)."""
-    curriculum = _course_curriculum(db, user, path.course_id)
+    curriculum = _course_curriculum(db, user, path.course_id, _path_pin(path))
     known_topics = {t.id for t in curriculum.topics()}
     refs = _Refs(db, user, path.course_id)
     steps = []
@@ -816,6 +841,8 @@ def path_view(db: Session, user: User, path: LearningPath) -> dict[str, Any]:
         "status": path.status, "summary": path.summary, "steps": steps,
         "done": sum(1 for s in steps if s["status"] == "done"), "total": len(steps),
         "next_step_id": nxt["id"] if nxt else None,
+        # tài liệu môn đã cập nhật → chương trình học mới; lộ trình này vẫn chạy theo bản cũ, nhắc tạo lộ trình mới
+        "curriculum_outdated": path.status == "Active" and newer_available(path.course_id, _path_pin(path)),
         "created_at": iso(path.created_at), "updated_at": iso(path.updated_at),
     }  # fmt: skip
 
@@ -875,7 +902,7 @@ def update_step(db: Session, user: User, path_id: str, step_id: str, status: str
         raise AppError("STEP_LOCKED", 409, message="Cần đạt bài kiểm tra trước đó để mở bước này.")
     step["status"] = status  # theo thao tác người học (FR-03.10)
     if step["kind"] == "learn" and status == "done":
-        curriculum = _course_curriculum(db, user, path.course_id)
+        curriculum = _course_curriculum(db, user, path.course_id, _path_pin(path))
         covered = _covered(curriculum, _progress_row(db, user, path.course_id)) | {step["completes_lesson"]}
         _save_progress(db, user, curriculum, covered)  # học xong bài mới → mở rộng PHẠM VI (chưa phải nắm vững)
     _finish(path, steps)
@@ -924,7 +951,7 @@ def _with_remediation(
     a: LearningAssessment | None,
     mastery: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    curriculum = _course_curriculum(db, user, path.course_id)
+    curriculum = _course_curriculum(db, user, path.course_id, _path_pin(path))
     questions, answers = (a.questions, a.answers) if a else ([], {})
     hidden = _unservable(db, user, questions)
     new = roadmap.remediation(curriculum, steps, failed, mastery, diagnosis.source_refs(questions, hidden),
