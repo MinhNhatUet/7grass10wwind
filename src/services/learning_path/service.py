@@ -13,6 +13,8 @@ import copy
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import UTC, datetime
 from typing import Any
 
@@ -58,10 +60,17 @@ from src.services.learning_path.curriculum import (
     load_curriculum,
 )
 from src.services.policy import INSUFFICIENT_MESSAGE, SOURCE_WITHDRAWN_MESSAGE
-from src.services.retrieval import EmbeddingUnavailableError, Hit, document_scope, servable_versions, still_servable
+from src.services.retrieval import (
+    EmbeddingUnavailableError,
+    Hit,
+    document_scope,
+    prefetch_queries,
+    servable_versions,
+    still_servable,
+)
 
 HITS_PER_TOPIC = 2
-SLOTS_PER_CALL = 8
+SLOTS_PER_CALL = 2  # lô nhỏ + gọi song song: độ trễ ≈ một lô 2 câu (~10 s) thay vì cả đề
 STEP_STATUSES = ("not_started", "in_progress", "done")
 NOT_ASSESSED_REASON = {
     "quota": "Vượt số câu tối đa của một lượt — sẽ được hỏi ở lượt kiểm tra sau.",
@@ -281,8 +290,7 @@ def _generate(
 ) -> list[dict[str, Any]]:
     """Gọi LLM theo lô ô; mỗi câu được kiểm: ô hợp lệ, nguồn thuộc ĐÚNG chủ đề của ô và còn phục vụ, câu trích chứng
     minh có thật. Câu không đạt bị loại — ô đó để trống (không thay bằng câu không căn cứ)."""
-    out: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    batches = []
     for start in range(0, len(slots), SLOTS_PER_CALL):
         batch = slots[start : start + SLOTS_PER_CALL]
         hits: list[Hit] = []
@@ -303,11 +311,16 @@ def _generate(
             obj = next(o.text for o in t.objectives if o.id == s.objective_id)
             lines.append(f'<o slot="{s.id}" bai="{curriculum.lesson_of(t).title}" chu_de="{t.title}" '
                          f'muc_tieu="{obj}" nguon="{",".join(map(str, allowed[s.topic_id]))}"/>')  # fmt: skip
-        data = call_json(
-            BASE_POLICY,
-            f"{GENERATE_INSTRUCTION}\n\nCÁC Ô:\n" + "\n".join(lines) + f"\n\nNGUỒN:\n{format_sources(hits)}",
-            temperature=0.3,
-        )
+        prompt = f"{GENERATE_INSTRUCTION}\n\nCÁC Ô:\n" + "\n".join(lines) + f"\n\nNGUỒN:\n{format_sources(hits)}"
+        batches.append((batch, hits, allowed, prompt))
+    # Các lô độc lập → gọi LLM song song (độ trễ ≈ lô chậm nhất thay vì tổng các lô). Mỗi luồng một bản context để
+    # track_usage vẫn đếm token; kiểm câu (dùng db) làm tuần tự ở luồng chính.
+    with ThreadPoolExecutor(max_workers=len(batches) or 1) as pool:
+        futures = [pool.submit(copy_context().run, call_json, BASE_POLICY, p, 0.3) for *_, p in batches]
+        results = [f.result() for f in futures]
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for (batch, hits, allowed, _), data in zip(batches, results, strict=True):
         by_slot = {s.id: s for s in batch}
         for it in json_dicts(data, "items"):
             slot = by_slot.pop(str(it.get("slot") or ""), None)
@@ -414,10 +427,10 @@ def create_assessment(
     with track_usage() as tokens:
         try:
             hits_by_topic: dict[str, list[Hit]] = {}
-            for tid in dict.fromkeys(s.topic_id for s in remaining):
-                topic = curriculum.topic(tid)
-                assert topic is not None
-                hits_by_topic[tid] = _topic_hits(db, user, course_id, curriculum, topic)
+            topics = [t for tid in dict.fromkeys(s.topic_id for s in remaining) if (t := curriculum.topic(tid))]
+            with prefetch_queries([t.query or t.title for t in topics]):  # embed song song, không tuần tự từng chủ đề
+                for topic in topics:
+                    hits_by_topic[topic.id] = _topic_hits(db, user, course_id, curriculum, topic)
             pending = [s for s in remaining if hits_by_topic.get(s.topic_id)]
             if pending:
                 questions += _generate(db, user, curriculum, pending, hits_by_topic)
