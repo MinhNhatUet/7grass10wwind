@@ -6,8 +6,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PIP_DEFAULT_TIMEOUT=120
+ENV PIP_RETRIES=10
+RUN pip install --upgrade pip --index-url https://pypi.org/simple --trusted-host pypi.org --trusted-host files.pythonhosted.org
+RUN pip install --no-cache-dir --index-url https://pypi.org/simple --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
 
 # ---- Stage 2: Production ----
 FROM python:3.11-slim
