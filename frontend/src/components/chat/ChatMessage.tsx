@@ -81,16 +81,16 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
       className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
     >
       {msg.role === 'assistant' && (
-        <div className="w-[32px] h-[32px] shrink-0 rounded-full bg-primary flex items-center justify-center mt-1 shadow-sm">
+        <div className="w-[32px] h-[32px] shrink-0 rounded-xl bg-gradient-to-tr from-primary to-primary/85 flex items-center justify-center mt-1 shadow-[0_2px_10px_rgba(99,102,241,0.25)] ring-1 ring-white/20">
           <Zap size={16} className="text-primary-foreground" />
         </div>
       )}
 
-      <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-secondary text-secondary-foreground rounded-[24px] px-5 py-3' : 'bg-transparent border border-border text-foreground rounded-[24px] px-5 py-4 shadow-sm relative overflow-hidden'}`}>
+      <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-gradient-to-br from-primary to-primary/90 text-primary-foreground rounded-[22px] rounded-br-[6px] px-5 py-3.5 shadow-xs' : 'bg-card/85 backdrop-blur-md border border-border/80 text-foreground rounded-[22px] rounded-bl-[6px] px-5 py-4 shadow-ambient relative overflow-hidden'}`}>
 
         {/* Ambient glow effect for assistant messages (Glassmorphism hint) */}
         {msg.role === 'assistant' && (
-           <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
+           <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-primary/[0.06] to-transparent pointer-events-none" />
         )}
 
         <div className="relative z-10">
@@ -165,17 +165,17 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
           )}
 
           {msg.role === 'assistant' && (
-            <div className="mt-3 flex items-center gap-2 border-t border-border/50 pt-2">
+            <div className="mt-3 flex items-center gap-2 border-t border-border/40 pt-2.5">
               <button
                 onClick={() => handleFeedback("helpful")}
-                className={`p-1.5 rounded-md hover:bg-secondary transition-colors ${feedbackSent === 'helpful' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}
+                className={`p-1.5 rounded-lg hover:bg-secondary active:scale-95 transition-all cursor-pointer ${feedbackSent === 'helpful' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'text-muted-foreground hover:text-foreground'}`}
                 title="Hữu ích"
               >
                 <ThumbsUp size={14} className={feedbackSent === 'helpful' ? 'fill-current' : ''} />
               </button>
               <button
                 onClick={() => handleFeedback("not_helpful")}
-                className={`p-1.5 rounded-md hover:bg-secondary transition-colors ${feedbackSent === 'not_helpful' ? 'text-red-500' : 'text-muted-foreground'}`}
+                className={`p-1.5 rounded-lg hover:bg-secondary active:scale-95 transition-all cursor-pointer ${feedbackSent === 'not_helpful' ? 'text-rose-500 bg-rose-500/10' : 'text-muted-foreground hover:text-foreground'}`}
                 title="Không hữu ích"
               >
                 <ThumbsDown size={14} className={feedbackSent === 'not_helpful' ? 'fill-current' : ''} />

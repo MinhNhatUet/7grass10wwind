@@ -1,19 +1,29 @@
 .library-page {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color-scheme: light;
+  letter-spacing: -0.01em;
 }
 
 .library-page button:not(:disabled),
 .library-page select:not(:disabled) {
   cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.18s ease,
+              border-color 0.18s ease,
+              color 0.18s ease;
+}
+
+.library-page button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .library-page :is(a, button, select, input):focus-visible {
-  outline: 2px solid #64748b;
-  outline-offset: 3px;
+  outline: 2px solid hsl(var(--primary) / 0.7);
+  outline-offset: 2px;
 }
 
+/* Document Reader Viewport: Studio inspection surface with tactile depth */
 .library-page .scroll-reader-viewport {
   position: relative;
   height: calc(100dvh - 200px);
@@ -21,14 +31,17 @@
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding: 20px 12px;
-  background: #e8ecf0;
+  padding: 24px 16px;
+  background: #f1f4f8;
+  background-image: radial-gradient(rgba(100, 116, 139, 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 .library-page .scroll-reader-pages {
   margin-inline: auto;
 }
 
+/* Physical Document Sheet styling with authentic paper drop shadow */
 .library-page .scroll-reader-sheet {
   display: flex;
   align-items: center;
@@ -36,44 +49,78 @@
   width: 100%;
   aspect-ratio: 1 / 1.4142;
   overflow: hidden;
-  background: white;
-  box-shadow: 0 2px 10px #0f172a15;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.04),
+              0 16px 28px -4px rgba(15, 23, 42, 0.08),
+              0 0 0 1px rgba(15, 23, 42, 0.05);
+  transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Scoped palette keeps the library and its reader consistent with the app theme. */
+.library-page .scroll-reader-sheet:hover {
+  box-shadow: 0 8px 12px -2px rgba(15, 23, 42, 0.06),
+              0 24px 38px -6px rgba(15, 23, 42, 0.12),
+              0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+
+/* Scoped Dark Palette: Sleek Obsidian Studio with fine luminous borders */
 .dark .library-page {
   color-scheme: dark;
-  background: #101114;
+  background: #090b10;
   color: #f1f5f9;
 }
-.dark .library-page .bg-white { background-color: #191b20; }
-.dark .library-page .bg-slate-50 { background-color: #151619; }
-.dark .library-page .bg-slate-100 { background-color: #252830; }
-.dark .library-page .bg-slate-900 { background-color: #343044; }
-.dark .library-page :is(.border-slate-100, .border-slate-200) { border-color: #ffffff14; }
-.dark .library-page .border-slate-800 { border-color: #a78bfa; }
-.dark .library-page :is(.text-slate-900, .text-slate-700) { color: #e2e8f0; }
-.dark .library-page .text-slate-600 { color: #b5bfce; }
-.dark .library-page .text-slate-500 { color: #a0aec0; }
-.dark .library-page .text-slate-400 { color: #94a3b8; }
-.dark .library-page .text-slate-300 { color: #64748b; }
-.dark .library-page :is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-200):hover { background-color: #ffffff0d; }
-.dark .library-page .hover\:bg-slate-700:hover { background-color: #49405f; }
-.dark .library-page :is(.hover\:text-black, .hover\:text-slate-900, .hover\:text-slate-700):hover { color: #f8fafc; }
-.dark .library-page .bg-blue-50 { background-color: #3b82f61a; }
-.dark .library-page .text-blue-600 { color: #60a5fa; }
-.dark .library-page .bg-violet-50 { background-color: #8b5cf61a; }
-.dark .library-page .text-violet-600 { color: #a78bfa; }
-.dark .library-page :is(.bg-emerald-50, .bg-emerald-50\/60) { background-color: #10b98112; }
-.dark .library-page .border-emerald-100 { border-color: #10b98130; }
+
+.dark .library-page .bg-white { background-color: #11141c; }
+.dark .library-page .bg-slate-50 { background-color: #0d0f15; }
+.dark .library-page .bg-slate-100 { background-color: #1a1e2a; }
+.dark .library-page .bg-slate-900 { background-color: #2e2a3d; }
+
+.dark .library-page :is(.border-slate-100, .border-slate-200) {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.dark .library-page .border-slate-800 {
+  border-color: #8b5cf6;
+}
+
+.dark .library-page :is(.text-slate-900, .text-slate-700) { color: #f1f5f9; }
+.dark .library-page .text-slate-600 { color: #cbd5e1; }
+.dark .library-page .text-slate-500 { color: #94a3b8; }
+.dark .library-page .text-slate-400 { color: #64748b; }
+.dark .library-page .text-slate-300 { color: #475569; }
+
+.dark .library-page :is(.hover\:bg-slate-50, .hover\:bg-slate-100, .hover\:bg-slate-200):hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .library-page .hover\:bg-slate-700:hover { background-color: #4338ca; }
+.dark .library-page :is(.hover\:text-black, .hover\:text-slate-900, .hover\:text-slate-700):hover { color: #ffffff; }
+
+/* Status Badges */
+.dark .library-page .bg-blue-50 { background-color: rgba(59, 130, 246, 0.12); }
+.dark .library-page .text-blue-600 { color: #93c5fd; }
+.dark .library-page .bg-violet-50 { background-color: rgba(139, 92, 246, 0.14); }
+.dark .library-page .text-violet-600 { color: #c4b5fd; }
+.dark .library-page :is(.bg-emerald-50, .bg-emerald-50\/60) { background-color: rgba(16, 185, 129, 0.12); }
+.dark .library-page .border-emerald-100 { border-color: rgba(16, 185, 129, 0.25); }
 .dark .library-page :is(.text-emerald-600, .text-emerald-700, .text-emerald-800) { color: #6ee7b7; }
-.dark .library-page .bg-red-50 { background-color: #ef444419; }
-.dark .library-page .border-red-200 { border-color: #ef444440; }
+.dark .library-page .bg-red-50 { background-color: rgba(239, 68, 68, 0.12); }
+.dark .library-page .border-red-200 { border-color: rgba(239, 68, 68, 0.25); }
 .dark .library-page .text-red-700 { color: #fca5a5; }
-.dark .library-page .text-amber-700 { color: #fcd34d; }
-.dark .library-page .scroll-reader-viewport { background: #0d0f12; }
-/* Original document pages stay white and readable in either theme. */
-.library-page .scroll-reader-sheet { color-scheme: light; color: #0f172a; }
+.dark .library-page .text-amber-700 { color: #fde68a; }
+
+.dark .library-page .scroll-reader-viewport {
+  background: #080a0e;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Original document pages stay pristine white and readable in either theme */
+.library-page .scroll-reader-sheet {
+  color-scheme: light;
+  color: #0f172a;
+}
+
 .dark .library-page .scroll-reader-sheet :is(.text-slate-400, .text-slate-500) { color: #64748b; }
 .dark .library-page .scroll-reader-sheet .text-red-700 { color: #b91c1c; }
 .dark .library-page .scroll-reader-sheet .text-amber-700 { color: #b45309; }

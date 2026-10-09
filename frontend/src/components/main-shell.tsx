@@ -41,7 +41,7 @@ async function call(path: string, init: RequestInit = {}) {
 function NavItem({ href, icon, label, active }: { href: string; icon: ReactNode; label: string; active: boolean }) {
   return (
     <Link href={href} aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[14px] transition-colors no-underline ${active ? "bg-black/[0.07] dark:bg-white/10 font-semibold text-black dark:text-white" : "text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/5 hover:text-black dark:hover:text-white"}`}>
+      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13.5px] tracking-[-0.01em] transition-all duration-200 no-underline ${active ? "bg-primary/10 dark:bg-primary/15 font-semibold text-primary dark:text-primary shadow-2xs" : "text-foreground/70 hover:bg-secondary/80 hover:text-foreground active:scale-[0.99]"}`}>
       {icon} {label}
     </Link>
   );
@@ -139,23 +139,23 @@ export function MainShell({ children }: { children: ReactNode }) {
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", bounce: 0, duration: 0.35 }}
             aria-label="Điều hướng"
-            className="h-full bg-white/95 dark:bg-[#0c1219]/95 backdrop-blur-2xl border-r border-black/5 dark:border-white/5 flex flex-col shrink-0 z-40 overflow-hidden fixed md:relative inset-y-0 left-0"
+            className="h-full bg-sidebar/95 backdrop-blur-2xl border-r border-sidebar-border flex flex-col shrink-0 z-40 overflow-hidden fixed md:relative inset-y-0 left-0 shadow-subtle"
           >
             <div className="p-3 w-[260px] flex justify-between items-center shrink-0">
               <button type="button" onClick={() => toggle(false)} aria-label="Thu gọn thanh bên"
-                className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white bg-transparent border-0 cursor-pointer rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
+                className="p-2 text-muted-foreground hover:text-foreground bg-transparent border-0 cursor-pointer rounded-lg hover:bg-secondary/80 active:scale-95 transition-all">
                 <Menu size={20} />
               </button>
             </div>
 
             <div className="px-3 pb-3 w-[260px] shrink-0">
               <button type="button" onClick={() => { router.push(`/?new=${Date.now()}`); afterNavigate(); }}
-                className="w-full flex items-center justify-between border border-black/5 dark:border-white/10 text-black/90 dark:text-white/90 px-3 py-2.5 rounded-lg cursor-pointer text-[14px] font-medium bg-transparent hover:bg-black/5 dark:hover:bg-white/10">
-                <span className="flex items-center gap-2">
-                  <span className="w-[20px] h-[20px] rounded-full bg-gradient-to-br from-[#c69aff] to-[#8c55db] flex items-center justify-center"><Zap size={12} className="text-white" /></span>
+                className="w-full flex items-center justify-between border border-sidebar-border text-foreground px-3.5 py-2.5 rounded-xl cursor-pointer text-[13.5px] font-medium bg-card/60 hover:bg-secondary/80 hover:border-primary/30 active:scale-[0.985] shadow-2xs transition-all">
+                <span className="flex items-center gap-2.5">
+                  <span className="w-[22px] h-[22px] rounded-lg bg-gradient-to-tr from-primary to-primary/80 flex items-center justify-center shadow-xs ring-1 ring-white/20"><Zap size={12} className="text-primary-foreground" /></span>
                   Chat mới
                 </span>
-                <Plus size={16} className="text-black/50 dark:text-white/50" />
+                <Plus size={16} className="text-muted-foreground" />
               </button>
             </div>
 
@@ -222,18 +222,18 @@ export function MainShell({ children }: { children: ReactNode }) {
               ))}
             </div>
 
-            <div className="p-3 border-t border-black/10 dark:border-white/10 flex items-center justify-between shrink-0 w-[260px]">
+            <div className="p-3 border-t border-sidebar-border flex items-center justify-between shrink-0 w-[260px] bg-sidebar/50 backdrop-blur-md">
               {/* D-62: bỏ trang hồ sơ cá nhân — chỉ hiện tên người dùng */}
-              <span className="min-w-0 truncate p-1.5 text-sm font-medium text-black dark:text-white">{user?.display_name || "Khách"}</span>
-              <div className="flex items-center">
+              <span className="min-w-0 truncate p-1.5 text-[13px] font-semibold tracking-tight text-foreground/90">{user?.display_name || "Khách"}</span>
+              <div className="flex items-center gap-0.5">
                 <button type="button" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} aria-label="Chuyển giao diện sáng/tối"
-                  className="p-2 text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-lg border-0 cursor-pointer bg-transparent">
-                  <Sun size={18} className="hidden dark:block" /><Moon size={18} className="block dark:hidden" />
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary/80 active:scale-95 transition-all rounded-lg border-0 cursor-pointer bg-transparent">
+                  <Sun size={17} className="hidden dark:block text-amber-400" /><Moon size={17} className="block dark:hidden" />
                 </button>
                 <button type="button" aria-label="Đăng xuất" title="Đăng xuất"
                   onClick={() => { localStorage.removeItem("token"); localStorage.removeItem("user"); window.location.href = "/login"; }}
-                  className="p-2 text-black/50 dark:text-white/50 hover:text-[#ff6b6b] hover:bg-[#ff6b6b]/10 rounded-lg border-0 cursor-pointer bg-transparent">
-                  <LogOut size={18} />
+                  className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-all rounded-lg border-0 cursor-pointer bg-transparent">
+                  <LogOut size={17} />
                 </button>
               </div>
             </div>

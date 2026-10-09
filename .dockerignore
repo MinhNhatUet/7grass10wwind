@@ -23,3 +23,13 @@ docker-compose.yml
 chroma_data/
 venv/
 frontend/
+data/
+.agents/
+.gemini/
+.ai-log/
+backup/
+logs/
+scratch/
+test_artifacts/
+pytest_tmp/
+embedding_tmp/
