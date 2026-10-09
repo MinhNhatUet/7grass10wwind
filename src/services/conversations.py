@@ -279,7 +279,10 @@ def _persist_answer(
     result.content = name_sources(result.content, result.used)  # D-58: "nguồn 1" → tên tài liệu
     answer = result.content
     if result.used:  # D-56: đoạn trích riêng cho từng lần [n] xuất hiện, hiện ngay tại [n] trong chat
-        payload["evidence"] = occurrence_evidence(result.content, result.used)
+        # Academic grounding supplies the exact verified quote for each occurrence.
+        # Never replace that proof with a word-overlap display heuristic.
+        if "evidence" not in payload:
+            payload["evidence"] = occurrence_evidence(result.content, result.used)
         # D-57: hoạt động học gắn [n] ở từng mục → dẫn chứng riêng từng mục, và lấy các mục đó làm "ý" để tính trang
         answer = f"{result.content}\n{attach_evidence(payload, result.used)}"
     fallback_quotes = supporting_quotes(answer, result.used, {}) if result.used else {}
