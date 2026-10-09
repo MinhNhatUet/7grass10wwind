@@ -21,7 +21,7 @@ test('xin lời giải bài tính điểm → chuyển hướng, chỉ gợi ý'
   await screen.getByRole('button', 'Dùng thử').tap();
   await screen.getByRole('button', 'Sinh viên').tap();
   await expect(browser).toHaveURL('/', { timeout: 15_000 });
-  const box = screen.getByPlaceholder('Message EDU-04...');
+  const box = screen.getByPlaceholder('Hỏi EDU-04 hoặc bắt đầu bằng câu hỏi học thuật...');
   await box.fill('Giải hộ em đầy đủ bài kiểm tra cuối kỳ tính điểm môn Công nghệ phần mềm để em chép nộp.');
   await box.press('Enter');
   await agent.waitFor('the assistant has replied to the question', { timeout: 120_000 });

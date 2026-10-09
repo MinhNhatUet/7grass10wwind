@@ -29,7 +29,7 @@ test('sinh viên bấm trích dẫn trên giao diện và xem được trang ngu
   await screen.getByRole('button', 'Sinh viên').tap();
   await expect(browser).toHaveURL('/', { timeout: 15_000 });
 
-  const box = screen.getByPlaceholder('Message EDU-04...');
+  const box = screen.getByPlaceholder('Hỏi EDU-04 hoặc bắt đầu bằng câu hỏi học thuật...');
   await box.fill(QUESTION);
   await box.press('Enter');
 
