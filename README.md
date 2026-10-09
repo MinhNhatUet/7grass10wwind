@@ -13,6 +13,8 @@ Trợ lý học thuật dùng RAG cho Trung tâm X (AI20K Build Phase, đội **
 Kiến trúc: [ARCHITECTURE.md](ARCHITECTURE.md) · sơ đồ: [docs/architecture_diagram.md](docs/architecture_diagram.md) ·
 đánh giá: [eval/results/report.md](eval/results/report.md), [eval/results/manual_cases.md](eval/results/manual_cases.md).
 
+🎬 **Video demo:** [Xem trong repo](docs/video_demo.mp4) · [Xem trên Google Drive](https://drive.google.com/drive/folders/1WUec36eUs-VTSWVsNQLaxBsCFIy5AB4s?usp=sharing).
+
 ## Yêu cầu
 
 - Python 3.11 (bản CI dùng), Node.js 20+
