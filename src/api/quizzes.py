@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,12 +14,14 @@ from src.api.deps import current_user, require_role
 from src.config import get_settings
 from src.db import get_db
 from src.models.orm import Conversation, Message, StudyPlan, User
+from src.services import acl
 from src.services import conversations as plan_svc
 from src.services import course_quiz as svc
 from src.services.assistants.study_tools import lessons_label
 from src.services.course_outline import course_chapters
 from src.services.errors import AppError
 from src.services.formatting import iso
+from src.services.learning_path.curriculum import load_curriculum
 
 router = APIRouter()
 
@@ -79,6 +81,7 @@ def generate_quiz(
     quiz_id: str,
     file: UploadFile = File(...),
     count: int = Form(10),
+    mode: Literal["exam", "material"] = Form("material"),  # exam: chép đề có sẵn; material: AI soạn từ tài liệu
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -88,8 +91,25 @@ def generate_quiz(
     data = file.file.read(limit + 1)
     if len(data) > limit:
         raise AppError("FILE_TOO_LARGE", 413)
-    quiz, added = svc.generate_from_pdf(db, user, quiz_id, data, count)
+    quiz, added = svc.generate_from_pdf(db, user, quiz_id, data, count, mode)
     return svc.view(quiz, staff=True) | {"added": added}
+
+
+@router.get("/course-quizzes/{quiz_id}/questions/{question_id}/source-image")
+def quiz_source_image(
+    quiz_id: str,
+    question_id: str,
+    width: int = 1000,
+    page: int | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Ảnh trang PDF gốc của câu đã chép (GV đối chiếu khi duyệt đề). `page`: trang khác của cùng file (cuộn đề gốc).
+    Chỉ người quản lý đề; không cache."""
+    if page is not None and page < 1:
+        raise AppError("PAGE_OUT_OF_RANGE", 404)
+    image = svc.source_image(db, user, quiz_id, question_id, max(400, min(width, 1600)), page)
+    return Response(image, media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/course-quizzes/{quiz_id}/status")
@@ -194,9 +214,17 @@ def my_self_checks(user: User = Depends(current_user), db: Session = Depends(get
 
 @router.get("/learning/topics")
 def course_topics(course_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Chủ đề ôn tập = CHƯƠNG của các tài liệu đang phục vụ mà user được đọc (lọc quyền trước, BR-03; D-44).
-
-    Lấy từ mục lục PDF (chương + các mục con); tài liệu không có mục lục → gom tiêu đề mục trong text theo số chương.
-    Không gọi LLM.
-    """
-    return {"items": course_chapters(db, user, course_id)}
+    """Bài để ôn tập = các BÀI của chương trình học môn (cùng nguồn với trang Lộ trình, D-82): đánh số 1…N, mỗi bài
+    gồm các chủ đề. Trước đây lấy mục lục từng file PDF → slide không có số chương thành "Bài 0", mỗi file một "bài"
+    trùng tên. Chương trình học rỗng (môn chưa có tài liệu dựng được) → mục lục tài liệu như cũ. Lọc quyền như
+    load_curriculum (BR-03); không gọi LLM ở lượt này (bản LLM dựng đã lưu sẵn)."""
+    cur = load_curriculum(db, user, course_id) if acl.can_read_course(db, user, course_id) else None
+    if not cur or not cur.lessons:
+        return {"items": course_chapters(db, user, course_id)}
+    return {
+        "items": [
+            {"chapter": str(lesson.order), "title": lesson.title, "document": "Chương trình học",
+             "page": lesson.page, "sections": [t.title for t in lesson.topics], "kind": "lesson"}
+            for lesson in cur.lessons
+        ]
+    }  # fmt: skip

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import math
@@ -455,6 +456,24 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
         if attempt == 1:
             raise LlmError("INVALID_JSON")
     raise LlmError("INVALID_JSON")  # không tới được; giữ cho kiểu trả về rõ ràng
+
+
+def call_vision_text(system: str, prompt: str, png: bytes) -> str:
+    """Gửi một ảnh PNG + lời dặn cho LLM (model phải đọc được ảnh), trả văn bản. Lỗi provider → LlmError."""
+    from src.services.llm import get_llm
+
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}
+    try:
+        resp = get_llm(temperature=0).invoke(
+            [SystemMessage(content=system), HumanMessage(content=[{"type": "text", "text": prompt}, image])]
+        )
+    except Exception as e:  # noqa: BLE001 — timeout/401/5xx của provider, model không nhận ảnh
+        logger.warning("LLM provider lỗi (ảnh): %s", type(e).__name__, extra={
+            "event": "llm.provider_error", "error_type": type(e).__name__})  # fmt: skip
+        raise LlmError(type(e).__name__) from e
+    text = resp.content if isinstance(resp.content, str) else str(resp.content)
+    _count_usage(resp, len(system) + len(prompt) + 1000, text)  # ponytail: ước ~1000 token/ảnh khi provider không báo
+    return text
 
 
 GEN_BATCH = 12  # mục mỗi lượt gọi LLM: 50 câu trong MỘT lượt → JSON output rất dài, dễ bị cắt cụt/hỏng

@@ -3,12 +3,13 @@
 // Quiz Builder cho giảng viên/người duyệt (D-38): giữ bố cục mockup của TV4 (3 cột: danh sách câu · soạn câu · cài đặt)
 // nhưng nối API thật. Quyền do server quyết định (chỉ môn phụ trách); đáp án chỉ người phụ trách thấy.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Copy, FileUp, HelpCircle, Info, Plus, Trash2 } from "lucide-react";
-import { ApiError, api, json, type CourseItem } from "@/lib/api";
+import { ApiError, api, fetchObjectUrl, json, openFile, type CourseItem } from "@/lib/api";
 import { MSG, errorMessage } from "@/lib/messages";
 
-type Q = { id?: string; text: string; options: string[]; correct: number | null; explanation: string };
+// source_page: câu chép/soạn từ PDF đã tải lên → trang gốc (server lưu file, GV đối chiếu bằng ảnh trang)
+type Q = { id?: string; text: string; options: string[]; correct: number | null; explanation: string; source_page?: number; source_pages?: number | null };
 type Quiz = {
   id: string; course_id: string; title: string; kind: string; time_limit_s: number | null; status: string;
   question_count: number; questions: Q[];
@@ -25,7 +26,9 @@ const TIMES: [string, number | null][] = [
   ["45 phút", 2700], ["60 phút", 3600], ["90 phút", 5400], ["120 phút", 7200],
 ];
 const emptyQ = (): Q => ({ text: "", options: ["", "", "", ""], correct: null, explanation: "" });
-const complete = (q: Q) => !!q.text.trim() && q.options.every((o) => o.trim()) && q.correct !== null;
+const complete = (q: Q) =>
+  !!q.text.trim() && q.options.length >= 2 && q.options.every((o) => o.trim()) && q.correct !== null && q.correct < q.options.length;
+const LETTERS = "ABCD";
 const card = "bg-white dark:bg-[#12181f] rounded-2xl shadow-sm border border-slate-100 dark:border-white/10";
 const errText = (e: unknown) => (e instanceof ApiError ? e.detail || errorMessage(e.code) : MSG.serviceError);
 const GEN_COUNTS = [5, 10, 15, 20, 30, 40, 50];
@@ -41,6 +44,96 @@ function PdfButton({ busy, label, onFile, className }: { busy: boolean; label: s
   );
 }
 
+/** Một trang của đề gốc: chỉ tải ảnh khi sắp lọt vào khung cuộn (đề nhiều trang vẫn nhẹ); giữ chỗ tỷ lệ A4 để vị trí
+ *  cuộn không nhảy khi ảnh về. */
+function SourcePageImage({ src, page, mark, zoom, root }: { src: string; page: number; mark: boolean; zoom: boolean; root: HTMLElement | null }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !root) return;
+    let live = true;
+    let made: string | null = null;
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      fetchObjectUrl(`${src}&page=${page}`)
+        .then((u) => { made = u; if (live) setUrl(u); else URL.revokeObjectURL(u); })
+        .catch(() => { if (live) setFailed(true); });
+    }, { root, rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => { live = false; io.disconnect(); if (made) URL.revokeObjectURL(made); };
+  }, [src, page, root]);
+  return (
+    <div ref={box} data-page={page} className={`overflow-hidden rounded-lg bg-white ${mark ? "ring-2 ring-[#134d8b] dark:ring-[#7fb3ea]" : "ring-1 ring-black/5"}`}>
+      {/* nhãn trang nằm TRÊN ảnh (không đè lên nội dung đề) */}
+      <div className={`px-2 py-1 text-[11px] font-semibold ${mark ? "bg-[#134d8b] text-white" : "bg-slate-100 text-slate-500 dark:bg-white/10"}`}>
+        Trang {page}{mark ? " · câu đang sửa" : ""}
+      </div>
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element -- blob URL có xác thực, không qua next/image
+        <img src={url} alt={`Trang ${page} của đề gốc`} className={zoom ? "w-[200%] max-w-none" : "w-full"} />
+      ) : (
+        <div className="grid aspect-[1/1.414] w-full place-items-center text-[12px] text-slate-400">
+          {failed ? "Không tải được ảnh trang." : "Đang tải…"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Đề gốc đã tải lên, CUỘN qua mọi trang — mở sẵn ở trang của câu đang sửa để đối chiếu (OCR/AI có thể chép sai).
+ *  Dùng với key={q.id}: đổi câu → component mới, tự cuộn tới trang của câu mới. */
+function SourcePage({ quizId, q }: { quizId: string; q: Q }) {
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [current, setCurrent] = useState(q.source_page ?? 1);
+  const [zoom, setZoom] = useState(false); // cả trang A4 thu vừa cột → chữ nhỏ; ×2 + cuộn ngang để so từng chữ
+  const total = q.source_pages ?? q.source_page ?? 1; // đề tạo trước khi lưu số trang → chỉ biết tới trang của câu
+  const src = `/course-quizzes/${quizId}/questions/${encodeURIComponent(q.id ?? "")}/source-image?width=1200`;
+
+  const go = useCallback((page: number) => {
+    const el = scroller?.querySelector<HTMLElement>(`[data-page="${page}"]`);
+    if (scroller && el) scroller.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
+  }, [scroller]);
+  useEffect(() => { // mở sẵn ở trang của câu (không animation)
+    const el = scroller?.querySelector<HTMLElement>(`[data-page="${q.source_page}"]`);
+    if (scroller && el) scroller.scrollTo({ top: el.offsetTop - 8, behavior: "instant" });
+  }, [scroller, q.source_page]);
+  const onScroll = () => {
+    if (!scroller) return;
+    const pages = Array.from(scroller.querySelectorAll<HTMLElement>("[data-page]"));
+    const mid = scroller.scrollTop + scroller.clientHeight / 3;
+    const seen = pages.filter((el) => el.offsetTop <= mid).pop();
+    if (seen) setCurrent(Number(seen.dataset.page));
+  };
+  if (!q.id || !q.source_page) return null;
+  const link = "cursor-pointer border-0 bg-transparent p-0 text-[#134d8b] dark:text-[#7fb3ea] hover:underline disabled:opacity-30 disabled:no-underline";
+  return (
+    <figure className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-2">
+      <figcaption className="mb-1.5 flex flex-wrap items-center justify-between gap-2 px-1 text-[12px] text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <button type="button" aria-label="Trang trước" disabled={current <= 1} onClick={() => go(current - 1)} className={`${link} px-1`}>▲</button>
+          <span>Trang <strong>{current}</strong> / {total}</span>
+          <button type="button" aria-label="Trang sau" disabled={current >= total} onClick={() => go(current + 1)} className={`${link} px-1`}>▼</button>
+          {current !== q.source_page && (
+            <button type="button" onClick={() => go(q.source_page!)} className={`${link} ml-1`}>Về trang của câu (tr. {q.source_page})</button>
+          )}
+        </span>
+        <span className="flex gap-3">
+          <button type="button" onClick={() => setZoom((z) => !z)} className={link}>{zoom ? "Thu nhỏ" : "Phóng to ×2"}</button>
+          <button type="button" onClick={() => void openFile(`${src}&page=${current}`)} className={link}>Mở tab mới</button>
+        </span>
+      </figcaption>
+      <div ref={setScroller} onScroll={onScroll} className="relative max-h-[calc(100vh-260px)] space-y-3 overflow-auto rounded-lg p-1">
+        {Array.from({ length: total }, (_, i) => i + 1).map((page) => (
+          <SourcePageImage key={page} src={src} page={page} mark={page === q.source_page} zoom={zoom} root={scroller} />
+        ))}
+      </div>
+    </figure>
+  );
+}
+
 export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
   const managed = courses.filter((c) => c.can_upload || c.can_review);
   const [courseId, setCourseId] = useState(managed[0]?.id ?? "");
@@ -52,6 +145,7 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
   const [results, setResults] = useState<Results | null>(null);
   const [busy, setBusy] = useState(false);
   const [genCount, setGenCount] = useState(10);
+  const [side, setSide] = useState<"source" | "settings">("source"); // cột phải: ảnh trang gốc hay cài đặt đề
 
   const loadList = useCallback(async () => {
     if (!courseId) return;
@@ -157,11 +251,14 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
     }
   }
 
-  /** Tải PDF (đề có sẵn hoặc tài liệu) → LLM tạo câu A–D vào đề Nháp. Không truyền quizId → tạo đề mới theo tên file. */
-  async function fromPdf(file: File, quizId?: string) {
+  /** Tải PDF vào đề Nháp. mode "exam": đề có sẵn (kể cả bản scan) → chép đúng các câu trong đề, không soạn thêm;
+   *  "material": tài liệu học → AI soạn câu A–D. Không truyền quizId → tạo đề mới theo tên file. */
+  async function fromPdf(file: File, mode: "exam" | "material", quizId?: string) {
     if (dirty && !confirm("Bỏ các thay đổi chưa lưu?")) return;
     setBusy(true);
-    setMsg({ ok: true, text: `Đang đọc “${file.name}” và tạo câu hỏi… (có thể mất 30–60 giây)` });
+    setMsg({ ok: true, text: mode === "exam"
+      ? `Đang đọc đề “${file.name}” (bản scan sẽ được nhận dạng chữ)… có thể mất 30–90 giây`
+      : `Đang đọc “${file.name}” và soạn câu hỏi… (có thể mất 30–60 giây)` });
     try {
       let id = quizId;
       if (!id) {
@@ -174,6 +271,7 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
       const body = new FormData();
       body.set("file", file);
       body.set("count", String(genCount));
+      body.set("mode", mode);
       const q = await api<Quiz & { added: number }>(`/course-quizzes/${id}/generate`, { method: "POST", body });
       setQuiz({ ...q, questions: q.questions.length ? q.questions : [emptyQ()] });
       setActive(Math.max(0, q.questions.length - q.added));
@@ -204,6 +302,7 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
   }
 
   const q = quiz?.questions[active];
+  const showSource = !!q?.source_page; // câu chép từ PDF → cột phải rộng cho ảnh trang gốc
   return (
     <div className="space-y-4">
       {/* Thanh chọn môn + đề */}
@@ -224,8 +323,10 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
           ))}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <PdfButton busy={busy} label="Tạo đề từ PDF" onFile={(f) => void fromPdf(f)}
+          <PdfButton busy={busy} label="Tải đề có sẵn" onFile={(f) => void fromPdf(f, "exam")}
             className="rounded-full bg-[#4f2b96] px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90" />
+          <PdfButton busy={busy} label="AI soạn từ tài liệu" onFile={(f) => void fromPdf(f, "material")}
+            className="rounded-full border-2 border-[#4f2b96] px-4 py-1.5 text-sm font-semibold text-[#4f2b96] hover:bg-[#f5f3ff]" />
           <button type="button" disabled={busy} onClick={() => void createNew()}
             className="rounded-full border-2 border-[#4f2b96] px-4 py-1.5 text-sm font-semibold text-[#4f2b96] hover:bg-[#f5f3ff] cursor-pointer bg-transparent flex items-center gap-1">
             <Plus size={16} /> Đề trống
@@ -238,16 +339,16 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
       {!quiz ? (
         <div className={`${card} p-10 text-center text-slate-500 space-y-2`}>
           <FileUp size={32} className="mx-auto text-[#4f2b96]" />
-          <p>Bấm <strong>Tạo đề từ PDF</strong>: tải lên đề có sẵn (AI chép câu hỏi và đáp án) hoặc tài liệu học (AI soạn câu hỏi từ nội dung).</p>
+          <p><strong>Tải đề có sẵn</strong>: chép đúng các câu trắc nghiệm trong đề PDF (cả bản scan/ảnh chụp) kèm đáp án nếu đề có — không soạn thêm câu. <strong>AI soạn từ tài liệu</strong>: AI soạn câu hỏi từ giáo trình/slide.</p>
           <p className="text-[13px]">Đề tạo ra ở trạng thái Nháp để bạn kiểm tra, sửa rồi mới phát hành. Hoặc chọn một đề ở trên / bấm &quot;Đề trống&quot; để tự soạn.</p>
-          <label className="inline-flex items-center gap-2 text-[13px]">Số câu tối đa
+          <label className="inline-flex items-center gap-2 text-[13px]">Số câu tối đa khi AI soạn
             <select value={genCount} onChange={(e) => setGenCount(Number(e.target.value))} className="rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-2 py-1">
               {GEN_COUNTS.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-4 items-start">
+        <div className={`grid grid-cols-1 gap-4 items-start ${showSource ? "lg:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)_minmax(0,1.2fr)]" : "lg:grid-cols-[280px_1fr_300px]"}`}>
           {/* TRÁI: danh sách câu */}
           <div className={`${card} flex flex-col lg:h-[calc(100vh-220px)]`}>
             <div className="p-4 border-b border-slate-100 dark:border-white/10 font-bold">Câu hỏi ({quiz.questions.length})</div>
@@ -287,7 +388,11 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
 
           {/* GIỮA: soạn câu */}
           <div className={`${card} p-6`}>
-            <h2 className="font-bold text-lg mb-4">Câu {active + 1}</h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="font-bold text-lg">Câu {active + 1}{q && q.options.length === 2 ? <span className="ml-2 text-[12px] font-medium text-slate-500">2 lựa chọn</span> : null}</h2>
+              {/* Lưu ngay tại đây — khi cột phải đang mở "Trang gốc" thì nút Lưu ở tab Cài đặt bị khuất */}
+              {draft && dirty && <button type="button" disabled={busy} onClick={() => void save()} className="rounded-full bg-[#134d8b] px-4 py-1.5 text-sm font-semibold text-white border-0 cursor-pointer disabled:opacity-40">Lưu</button>}
+            </div>
             {!draft && <p className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-950 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">Đề đang {STATUS[quiz.status]} — chỉ xem. Đưa về Nháp để sửa (chỉ được khi chưa có bài làm).</p>}
             {q && (
               <div className="space-y-4">
@@ -297,18 +402,36 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
                     className="w-full p-3 pl-0 min-h-[100px] outline-none resize-none bg-transparent" />
                 </div>
                 <div className="space-y-3">
-                  {["A", "B", "C", "D"].map((letter, i) => (
-                    <div key={letter} className={`flex items-center gap-3 rounded-xl border p-1.5 ${q.correct === i ? "border-green-500 bg-green-50/60 dark:bg-green-950/40" : "border-slate-200 dark:border-white/10"}`}>
-                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-white/10 font-bold flex items-center justify-center text-sm ml-1 shrink-0">{letter}</div>
-                      <input value={q.options[i] ?? ""} disabled={!draft} placeholder={`Lựa chọn ${letter}`}
+                  {q.options.map((opt, i) => (
+                    <div key={i} className={`flex items-center gap-3 rounded-xl border p-1.5 ${q.correct === i ? "border-green-500 bg-green-50/60 dark:bg-green-950/40" : "border-slate-200 dark:border-white/10"}`}>
+                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-white/10 font-bold flex items-center justify-center text-sm ml-1 shrink-0">{LETTERS[i]}</div>
+                      {/* tự giãn theo nội dung (field-sizing) — lựa chọn dài không bị cắt khi đối chiếu với đề gốc */}
+                      <textarea value={opt} disabled={!draft} placeholder={`Lựa chọn ${LETTERS[i]}`} rows={1}
                         onChange={(e) => editQ(active, { options: q.options.map((o, k) => (k === i ? e.target.value : o)) })}
-                        className="flex-1 p-2 outline-none bg-transparent" />
+                        className="min-w-0 flex-1 resize-none p-2 leading-snug outline-none bg-transparent [field-sizing:content]" />
+                      {draft && q.options.length > 2 && (
+                        <button type="button" title="Bỏ lựa chọn này" aria-label={`Bỏ lựa chọn ${LETTERS[i]}`}
+                          onClick={() => editQ(active, { options: q.options.filter((_, k) => k !== i), correct: q.correct === i ? null : q.correct !== null && q.correct > i ? q.correct - 1 : q.correct })}
+                          className="border-0 bg-transparent p-1 text-slate-400 hover:text-red-500 cursor-pointer">×</button>
+                      )}
                       <button type="button" disabled={!draft} onClick={() => editQ(active, { correct: i })} title="Đặt làm đáp án đúng"
-                        aria-label={`Đáp án đúng là ${letter}`}
-                        className={`mr-3 w-5 h-5 rounded-full border-2 p-0 cursor-pointer ${q.correct === i ? "border-green-600 bg-green-600" : "border-slate-300 bg-transparent hover:border-[#4f2b96]"}`} />
+                        aria-label={`Đáp án đúng là ${LETTERS[i]}`}
+                        className={`mr-3 w-5 h-5 shrink-0 rounded-full border-2 p-0 cursor-pointer ${q.correct === i ? "border-green-600 bg-green-600" : "border-slate-300 bg-transparent hover:border-[#4f2b96]"}`} />
                     </div>
                   ))}
-                  <p className="text-[12px] text-slate-500">Bấm vòng tròn bên phải để chọn đáp án đúng.</p>
+                  {draft && (
+                    <div className="flex flex-wrap gap-2 text-[12.5px]">
+                      {q.options.length < 4 && (
+                        <button type="button" onClick={() => editQ(active, { options: [...q.options, ""] })}
+                          className="rounded-full border border-slate-200 dark:border-white/15 bg-transparent px-3 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5">+ Thêm lựa chọn</button>
+                      )}
+                      {!(q.options.length === 2 && q.options[0] === "Đúng" && q.options[1] === "Sai") && (
+                        <button type="button" onClick={() => editQ(active, { options: ["Đúng", "Sai"], correct: null })}
+                          className="rounded-full border border-slate-200 dark:border-white/15 bg-transparent px-3 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5">Đổi thành câu Đúng/Sai</button>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[12px] text-slate-500">Bấm vòng tròn bên phải để chọn đáp án đúng. Câu có 2–4 lựa chọn (Đúng/Sai = 2).</p>
                 </div>
                 <div className="rounded-xl border border-slate-200 dark:border-white/10 p-1 flex items-start focus-within:border-[#4f2b96]">
                   <div className="p-3 text-slate-400"><Info size={20} /></div>
@@ -320,8 +443,21 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
             )}
           </div>
 
-          {/* PHẢI: cài đặt + thao tác */}
-          <div className="space-y-4">
+          {/* PHẢI: trang gốc (câu chép từ PDF) hoặc cài đặt + thao tác */}
+          <div className={`space-y-4 ${showSource && side === "source" ? "lg:sticky lg:top-4" : ""}`}>
+            {q?.source_page && (
+              <div role="tablist" aria-label="Cột phải" className={`${card} flex gap-1 p-1`}>
+                {([["source", `Trang gốc (tr. ${q.source_page})`], ["settings", "Cài đặt đề"]] as const).map(([k, label]) => (
+                  <button key={k} type="button" role="tab" aria-selected={side === k} onClick={() => setSide(k)}
+                    className={`flex-1 rounded-xl px-3 py-1.5 text-sm font-semibold cursor-pointer border-0 ${side === k ? "bg-[#134d8b] text-white" : "bg-transparent text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5"}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {showSource && side === "source" && quiz && q ? (
+              <SourcePage key={q.id} quizId={quiz.id} q={q} />
+            ) : (<>
             <div className={`${card} p-5 space-y-3`}>
               <h3 className="font-bold">Thông tin đề</h3>
               <input value={quiz.title} disabled={!draft} onChange={(e) => edit({ title: e.target.value })} aria-label="Tên đề"
@@ -340,13 +476,15 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
             {draft && (
               <div className={`${card} p-5 space-y-3`}>
                 <h3 className="font-bold">Thêm câu từ PDF</h3>
-                <p className="text-[12px] text-slate-500">Đề có sẵn → AI chép câu hỏi + đáp án; tài liệu học → AI soạn câu mới. Câu được thêm vào cuối đề.</p>
+                <p className="text-[12px] text-slate-500">Đề có sẵn (cả bản scan) → chép đúng các câu trong đề; tài liệu học → AI soạn câu mới. Câu được thêm vào cuối đề.</p>
+                <PdfButton busy={busy} label="Tải đề có sẵn" onFile={(f) => void fromPdf(f, "exam", quiz.id)}
+                  className="w-full rounded-full bg-[#4f2b96] text-white py-2 text-sm font-semibold hover:opacity-90" />
                 <div className="flex items-center gap-2">
                   <select value={genCount} onChange={(e) => setGenCount(Number(e.target.value))} aria-label="Số câu tối đa"
                     className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-2 py-2 text-sm">
                     {GEN_COUNTS.map((n) => <option key={n} value={n}>{n} câu</option>)}
                   </select>
-                  <PdfButton busy={busy} label="Chọn file PDF" onFile={(f) => void fromPdf(f, quiz.id)}
+                  <PdfButton busy={busy} label="AI soạn từ tài liệu" onFile={(f) => void fromPdf(f, "material", quiz.id)}
                     className="flex-1 rounded-full border-2 border-[#4f2b96] text-[#4f2b96] py-2 text-sm font-semibold hover:bg-[#f5f3ff]" />
                 </div>
               </div>
@@ -387,6 +525,7 @@ export function QuizBuilder({ courses }: { courses: CourseItem[] }) {
                 )}
               </div>
             )}
+            </>)}
           </div>
         </div>
       )}

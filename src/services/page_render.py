@@ -93,6 +93,49 @@ def pdf_text(data: bytes, max_chars: int) -> str:
     return "\n\n".join(parts)[:max_chars]
 
 
+def pdf_page_count(data: bytes) -> int:
+    """Số trang của một PDF tải lên (không lưu file). PDF hỏng → ValueError."""
+    with _lock:
+        try:
+            pdf = pdfium.PdfDocument(data)
+        except pdfium.PdfiumError as e:
+            raise ValueError("PDF không đọc được") from e
+        with pdf:
+            return len(pdf)
+
+
+def pdf_page_pngs(data: bytes, max_pages: int, width: int = 1400) -> list[bytes]:
+    """Ảnh PNG các trang đầu của một PDF tải lên (không lưu file) — để OCR bản scan. PDF hỏng → ValueError."""
+    out: list[bytes] = []
+    with _lock:
+        try:
+            pdf = pdfium.PdfDocument(data)
+        except pdfium.PdfiumError as e:
+            raise ValueError("PDF không đọc được") from e
+        with pdf:
+            for i in range(min(len(pdf), max_pages)):
+                page = pdf[i]
+                try:
+                    bitmap = page.render(scale=width / page.get_size()[0])
+                    image = bitmap.to_pil()
+                    buf = io.BytesIO()
+                    image.save(buf, format="PNG")
+                    out.append(buf.getvalue())
+                    image.close()
+                    bitmap.close()
+                finally:
+                    page.close()
+    return out
+
+
+@lru_cache(maxsize=256)  # file lưu theo checksum, bất biến → số trang theo storage_key không đổi
+def stored_page_count(storage_key: str) -> int:
+    """Số trang của một PDF đã lưu (đề tạo trước khi ghi số trang vào source)."""
+    with _lock:
+        with pdfium.PdfDocument(str(storage.path_of(storage_key))) as pdf:
+            return len(pdf)
+
+
 def render_png(storage_key: str, page: int, width: int = 1000) -> bytes:
     with _lock:
         with pdfium.PdfDocument(str(storage.path_of(storage_key))) as pdf:
