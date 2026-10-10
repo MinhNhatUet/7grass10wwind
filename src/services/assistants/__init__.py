@@ -459,12 +459,14 @@ def call_json(system: str, user: str, temperature: float = 0.2) -> dict[str, Any
 
 
 def call_vision_text(system: str, prompt: str, png: bytes) -> str:
-    """Gửi một ảnh PNG + lời dặn cho LLM (model phải đọc được ảnh), trả văn bản. Lỗi provider → LlmError."""
+    """Gửi một ảnh PNG + lời dặn cho LLM đọc ảnh, trả văn bản. Lỗi provider → LlmError.
+    Dùng VISION_MODEL nếu đặt (đo trên đề scan UET 519: gemini-3.8-flash chép đúng 3/3, gpt-6-luna 0/9)."""
+    from src.config import get_settings
     from src.services.llm import get_llm
 
     image = {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}
     try:
-        resp = get_llm(temperature=0).invoke(
+        resp = get_llm(temperature=0, model=get_settings().vision_model or None).invoke(
             [SystemMessage(content=system), HumanMessage(content=[{"type": "text", "text": prompt}, image])]
         )
     except Exception as e:  # noqa: BLE001 — timeout/401/5xx của provider, model không nhận ảnh

@@ -247,7 +247,7 @@ khi nhiều phương án nằm NGANG trên cùng một dòng thì vẫn chép đ
 
 def _ocr_pdf(data: bytes) -> str:
     """PDF không có lớp chữ (scan/ảnh chụp): vẽ từng trang thành ảnh → LLM đọc ảnh chép chữ, các trang chạy song song."""
-    pages = page_render.pdf_page_pngs(data, MAX_OCR_PAGES)
+    pages = page_render.pdf_page_pngs(data, MAX_OCR_PAGES, width=2000)  # 1400 px: chữ đậm scan mờ hay bị đọc sai
     with ThreadPoolExecutor(max_workers=min(8, len(pages) or 1)) as pool:
         # copy_context ở luồng gọi (mỗi trang một bản) để token OCR cộng vào track_usage của lượt này
         futures = [pool.submit(copy_context().run, call_vision_text, OCR_SYSTEM, OCR_PROMPT, png) for png in pages]
