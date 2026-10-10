@@ -6,30 +6,10 @@ import gsap from "gsap";
 import {
   ArrowRight, BookOpenCheck, Eye, EyeOff, GraduationCap, MessageSquareQuote, PlayCircle, Presentation, Route,
 } from "lucide-react";
+import { BrandLogo, HEAD_FONT, NAVY, RED } from "@/components/brand-logo";
 
-// Bảng màu theo kiểu trang đăng nhập VLearn: xanh navy chủ đạo, đỏ nhấn
-const NAVY = "#134d8b";
-const RED = "#c72127";
-const head = { fontFamily: "var(--font-login-head), ui-sans-serif, system-ui, sans-serif" };
-
-/** Logo VAssistant: khung hội thoại navy chứa chữ V + chấm đỏ, vạch ngăn, chữ "V" đỏ "Assistant" navy. */
-function BrandLogo({ size = 44 }: { size?: number }) {
-  return (
-    <span className="inline-flex items-center gap-3 select-none" role="img" aria-label="VAssistant">
-      <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
-        <path d="M10 4h28a8 8 0 0 1 8 8v18a8 8 0 0 1-8 8H22l-9 8v-8h-3a8 8 0 0 1-8-8V12a8 8 0 0 1 8-8z" fill={NAVY} />
-        <path d="M14 13l10 19 10-19" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="38" cy="10" r="5" fill={RED} stroke="#fff" strokeWidth="2" />
-      </svg>
-      {/* logo luôn nằm trên ảnh (có dải tối phía sau) → chữ trắng, "V" đỏ sáng */}
-      <span className="h-[0.9em] w-px bg-white/45" style={{ fontSize: size }} />
-      <span className="font-extrabold leading-none tracking-[-0.01em] drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)]" style={{ ...head, fontSize: size * 0.62 }}>
-        <span className="text-[#ff5a60]">V</span>
-        <span className="text-white">Assistant</span>
-      </span>
-    </span>
-  );
-}
+// Nhận diện VAssistant dùng chung với khu quản trị (components/brand-logo)
+const head = HEAD_FONT;
 
 const FEATURES = [
   { Icon: MessageSquareQuote, text: "Hỏi đáp học thuật, mỗi ý đều có trích nguồn" },
@@ -177,11 +157,11 @@ export default function LoginPage() {
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-[62%] bg-gradient-to-t from-black/85 via-black/45 to-transparent lg:h-[55%]" />
 
         <header className="login-fade-up relative">
-          <BrandLogo size={44} />
+          <BrandLogo size={44} onDark />
         </header>
 
         <div className="relative max-w-[600px]">
-          <h1 className="login-fade-up text-[24px] font-extrabold leading-[1.15] tracking-[-0.02em] lg:text-[38px]" style={head}>
+          <h1 className="login-fade-up text-[24px] font-extrabold text-white leading-[1.15] tracking-[-0.02em] lg:text-[38px]" style={head}>
             Kho tri thức hỗ trợ học thuật
           </h1>
           <p className="login-fade-up mt-2 text-[14px] leading-relaxed text-white/85 lg:mt-3 lg:text-[17px]">

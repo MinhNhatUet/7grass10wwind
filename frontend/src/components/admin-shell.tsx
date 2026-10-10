@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Activity, BookOpen, Coins, ChevronRight, FileText, History, Home, LogOut, Menu, Moon, ShieldCheck, SlidersHorizontal, Sun, Users, X } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import "./admin-shell.css";
 
 export const managementSections = [
@@ -63,7 +64,7 @@ export default function AdminShell({ children, managementTab }: { children: Reac
 
   const sidebar = <>
     <div className="flex h-20 shrink-0 items-center justify-between border-b border-slate-100 px-6 dark:border-white/5">
-      <Link href="/admin" className="flex items-center gap-3 text-2xl font-extrabold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900"><BookOpen size={21} /></span>Vedu</Link>
+      <Link href="/admin" aria-label="VAssistant — Quản trị"><BrandLogo size={34} /></Link>
       <button onClick={() => setMobileOpen(false)} aria-label="Đóng điều hướng" className="rounded-lg p-2 text-slate-500 lg:hidden"><X size={18} /></button>
     </div>
     <nav aria-label="Điều hướng quản trị" className="flex-1 space-y-2 overflow-y-auto p-4 text-sm font-medium">
@@ -75,7 +76,7 @@ export default function AdminShell({ children, managementTab }: { children: Reac
         })}
       </div>)}
     </nav>
-    <div className="m-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5"><ShieldCheck size={21} className="mb-3 text-violet-500" /><p className="text-sm font-semibold">Quản trị viên</p><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">Quản lý truy cập, tài nguyên và theo dõi hoạt động của hệ thống.</p></div>
+    <div className="m-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5"><ShieldCheck size={21} className="mb-3 text-[#134d8b] dark:text-[#7fb3ea]" /><p className="text-sm font-semibold">Quản trị viên</p><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">Quản lý truy cập, tài nguyên và theo dõi hoạt động của hệ thống.</p></div>
   </>;
 
   return <div className="admin-shell flex h-dvh overflow-hidden bg-[#f8f9fa] text-slate-900 dark:bg-[#101114] dark:text-slate-100">

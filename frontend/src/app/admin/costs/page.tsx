@@ -129,7 +129,7 @@ export default function AdminCostsPage() {
                 {data.by_day.map((d) => (
                   <div key={d.date} className="flex h-full min-w-[14px] flex-1 flex-col justify-end"
                     title={`${d.date}: ${usd(d.cost_usd)} ≈ ${num(Math.round(d.cost_usd * vnd))}₫ · ${num(d.requests)} lượt · ${num(d.tokens_input + d.tokens_output)} token`}>
-                    <div className="rounded-t bg-violet-500/80 hover:bg-violet-600" style={{ height: `${Math.max(2, (d.cost_usd / maxDay) * 100)}%` }} />
+                    <div className="rounded-t bg-[#134d8b]/80 hover:bg-[#134d8b] dark:bg-[#7fb3ea]/80 dark:hover:bg-[#7fb3ea]" style={{ height: `${Math.max(2, (d.cost_usd / maxDay) * 100)}%` }} />
                     <span className="mt-1 text-center text-[10px] text-slate-400">{d.date.slice(8)}/{d.date.slice(5, 7)}</span>
                   </div>
                 ))}
