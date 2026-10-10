@@ -87,6 +87,7 @@ export function errorMessage(code: string): string {
     MISSING_ACL: "Chưa chọn đối tượng được đọc.",
     NO_EXTRACTED_TEXT: "Tài liệu không có nội dung đọc được — cần sửa/thay tệp trước khi gửi duyệt.",
     QUALITY_WARNINGS_NOT_ACKNOWLEDGED: "Cần xác nhận đã kiểm tra các trang có cảnh báo trước khi gửi duyệt.",
+    ENRICH_IN_PROGRESS: "Đang OCR trang scan/kiểm tra công thức — chờ xử lý xong rồi gửi duyệt.",
     REASON_REQUIRED: "Cần nhập lý do.",
     UPLOAD_NOT_ALLOWED: "Bạn không được phân công tải tài liệu cho môn này.",
     WITHDRAW_NOT_ALLOWED: "Bạn không có quyền thu hồi trong môn này.",

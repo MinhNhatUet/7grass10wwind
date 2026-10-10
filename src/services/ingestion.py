@@ -5,6 +5,8 @@
 - Trang/slide rỗng hoặc gần rỗng được đánh dấu theo vị trí, không điền nội dung suy đoán (FR-07.4).
 - Không OCR (Should BL-33): PDF scan sẽ vào NeedsReview.
 - Text được làm sạch theo từng trang trước khi chia chunk (src/services/text_cleaning.py, D-29).
+- Phân loại từng trang PDF: trang scan (không có text dùng được nhưng có ảnh) và trang nhiều công thức được liệt kê
+  trong Extraction.enrich để job nền page_enrichment OCR/kiểm tra bằng vision LLM. Trích xuất nhanh không bị chậm lại.
 """
 
 from __future__ import annotations
@@ -15,11 +17,21 @@ import zipfile
 from dataclasses import dataclass, field
 
 from src.config import get_settings
+from src.ingestion.quality.text_quality import evaluate_native_text
 from src.services.text_cleaning import SUB, SUP, clean_pages
 
 MIN_TEXT_CHARS = 40  # dưới ngưỡng này coi là trang gần rỗng (đề xuất)
+SCAN_CORRUPTION_RATIO = 0.2  # lớp text của bản scan bị hỏng quá ngưỡng này → coi như không có text (đề xuất)
 
 BIG_OPS = set("∑∏∫∮⋃⋂⨁⨂")  # toán tử lớn có baseline riêng — không dùng làm baseline dòng
+# Ký hiệu đánh dấu trang có công thức: toán tử, quan hệ, logic, chữ Hy Lạp và chỉ số dưới/trên dựng lại từ pdfium
+SCRIPT_CHARS = set(SUB.values()) | set(SUP.values())
+SCRIPT_RUN = re.compile(f"[{re.escape(''.join(sorted(SCRIPT_CHARS)))}]+")
+MATH_SYMBOLS = (
+    set("∑∏∫∮√∞≤≥≠≈≡∼≅∝∈∉∋⊂⊆⊃⊇∪∩∅∀∃¬∧∨⊕⊗→←↔⇒⇐⇔↦∂∇±∓×÷∘⌊⌋⌈⌉′‖⊥")
+    | set("αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ")
+    | SCRIPT_CHARS
+)
 
 
 def _font_name(pdfium_c, raw, index: int) -> str:  # noqa: ANN001
@@ -101,6 +113,37 @@ class Extraction:
     chunks: list[ExtractedChunk]
     warnings: list[dict] = field(default_factory=list)
     cleaning: dict = field(default_factory=dict)  # thống kê làm sạch (ghi vào audit)
+    enrich: list[dict] = field(default_factory=list)  # [{"locator_value": n, "kind": "scan"|"formula"}]
+
+
+def math_symbol_count(text: str) -> int:
+    """Số ký hiệu toán; mỗi cụm chỉ số dưới/trên tính là một. Bỏ qua "từ" có chỉ số kiểu rác do chữ nhỏ bị dựng nhầm
+    thành chỉ số (₍McGᵣₐw₋Hᵢₗₗ, ₂₀₀₉₎): ≥3 chữ cái chỉ số hoặc ≥4 chữ số chỉ số trong một từ — chỉ số thật thì ngắn."""
+    count = 0
+    for token in text.split():
+        count += sum(1 for ch in token if ch in MATH_SYMBOLS and ch not in SCRIPT_CHARS)
+        runs = SCRIPT_RUN.findall(token)
+        letters = sum(1 for ch in token if ch in SCRIPT_CHARS and ch.isalpha())
+        digits = sum(1 for ch in token if ch in SCRIPT_CHARS and ch.isnumeric())
+        if runs and letters < 3 and digits < 4:
+            count += len(runs)
+    return count
+
+
+def classify_page(cleaned: str, has_image: bool, raw: str | None = None) -> str:
+    """'scan' | 'formula' | 'text' — chỉ dựa trên text pdfium và việc trang có ảnh, không tốn thêm lượt đọc file.
+
+    Đếm ký hiệu trên text ĐÃ làm sạch: header/footer lặp (vd. dòng chữ nhỏ bị dựng nhầm thành chỉ số) không làm
+    trang bị coi là trang công thức. Tỷ lệ ký tự hỏng đo trên text thô vì bước làm sạch đã bỏ ký tự điều khiển.
+    """
+    text = _normalize(cleaned)
+    corrupted = evaluate_native_text(raw).corruption_ratio > SCAN_CORRUPTION_RATIO if raw and raw.strip() else False
+    unreadable = len(text) < MIN_TEXT_CHARS or corrupted
+    if unreadable and has_image:
+        return "scan"
+    if math_symbol_count(text) >= get_settings().enrich_formula_min_symbols:
+        return "formula"
+    return "text"
 
 
 def detect_file_type(content: bytes) -> str:
@@ -148,7 +191,9 @@ def _split(text: str, max_chars: int, overlap: int) -> list[str]:
     return [p for p in parts if p]
 
 
-def _page_chunks(locator_type: str, number: int, raw: str) -> tuple[list[ExtractedChunk], dict | None]:
+def _page_chunks(
+    locator_type: str, number: int, raw: str, quality: str = "ok"
+) -> tuple[list[ExtractedChunk], dict | None]:
     s = get_settings()
     text = _normalize(raw)
     if len(text) < MIN_TEXT_CHARS:
@@ -157,8 +202,13 @@ def _page_chunks(locator_type: str, number: int, raw: str) -> tuple[list[Extract
             return [], warning
         return [ExtractedChunk(locator_type, number, text, "low")], warning
     return [
-        ExtractedChunk(locator_type, number, p, "ok") for p in _split(text, s.chunk_max_chars, s.chunk_overlap_chars)
+        ExtractedChunk(locator_type, number, p, quality) for p in _split(text, s.chunk_max_chars, s.chunk_overlap_chars)
     ], None
+
+
+def page_chunks(locator_type: str, number: int, text: str, quality: str) -> list[ExtractedChunk]:
+    """Chia chunk một trang đã được OCR/bổ sung (page_enrichment) theo đúng quy tắc của trích xuất nhanh."""
+    return _page_chunks(locator_type, number, text, quality)[0]
 
 
 def extract_pdf(content: bytes) -> Extraction:
@@ -184,14 +234,17 @@ def extract_pdf(content: bytes) -> Extraction:
     except Exception:  # noqa: BLE001
         pdf = None
     raw_pages = []
+    images: dict[int, bool] = {}
     for i, page in enumerate(pages, start=1):
         raw = ""
+        has_image = False
         if pdf is not None:
             try:
                 pdf_page = pdf[i - 1]
                 textpage = pdf_page.get_textpage()
                 try:
                     raw = _pdfium_page_text(textpage)
+                    has_image = _has_image(pdf_page)
                 finally:
                     textpage.close()
                     pdf_page.close()
@@ -203,9 +256,16 @@ def extract_pdf(content: bytes) -> Extraction:
             except Exception:  # noqa: BLE001 — một trang lỗi không làm hỏng cả file; đánh dấu vị trí
                 raw = ""
         raw_pages.append(("page", i, raw))
+        images[i] = has_image
     if pdf is not None:
         pdf.close()
-    return _build("pdf", count, raw_pages)
+    return _build("pdf", count, raw_pages, images)
+
+
+def _has_image(pdf_page) -> bool:  # noqa: ANN001 — pypdfium2.PdfPage
+    import pypdfium2.raw as pdfium_c
+
+    return next(iter(pdf_page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=2)), None) is not None
 
 
 def extract_pptx(content: bytes) -> Extraction:
@@ -231,11 +291,15 @@ def extract_pptx(content: bytes) -> Extraction:
     return _build("pptx", len(slides), raw_pages)
 
 
-def _build(file_type: str, count: int, raw_pages: list[tuple[str, int, str]]) -> Extraction:
+def _build(
+    file_type: str, count: int, raw_pages: list[tuple[str, int, str]], images: dict[int, bool] | None = None
+) -> Extraction:
     """Làm sạch toàn tài liệu (cần thống kê header lặp giữa các trang) rồi chia chunk theo từng trang."""
+    s = get_settings()
     cleaned, stats = clean_pages(raw_pages)
+    raw_by_number = {number: raw for _, number, raw in raw_pages}
     toc = set(stats.toc_pages) | set(stats.index_pages)
-    chunks, warnings = [], []
+    chunks, warnings, enrich = [], [], []
     for loc_type, number, text in cleaned:
         if number in toc:
             continue  # trang mục lục/chỉ mục: không phải nội dung học, không index
@@ -243,7 +307,15 @@ def _build(file_type: str, count: int, raw_pages: list[tuple[str, int, str]]) ->
         chunks += cs
         if w:
             warnings.append(w)
-    return Extraction(file_type, count, chunks, warnings, stats.as_dict())
+        if images is None or not s.enrich_enabled:  # PPTX: chưa hỗ trợ bổ sung
+            continue
+        kind = classify_page(text, images.get(number, False), raw_by_number.get(number))
+        if kind != "text":
+            if len(enrich) < s.enrich_max_pages:
+                enrich.append({"locator_value": number, "kind": kind})
+            else:  # vượt trần chi phí: không OCR/kiểm tra, để người duyệt xem trang này
+                warnings.append({"locator_type": loc_type, "locator_value": number, "issue": f"{kind}_not_enriched"})
+    return Extraction(file_type, count, chunks, warnings, stats.as_dict(), enrich)
 
 
 def extract(content: bytes) -> Extraction:

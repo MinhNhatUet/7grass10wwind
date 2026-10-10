@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextvars
 import logging
 import threading
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -344,10 +345,17 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
             )
         )
     version.page_count = ext.page_count
-    version.quality_warnings = ext.warnings
+    # Trang scan/công thức chờ job enrich; mục "enrich_pending" được thay bằng kết quả của từng trang
+    pending = [
+        {"locator_type": "page", "locator_value": p["locator_value"], "issue": ENRICH_PENDING, "kind": p["kind"]}
+        for p in ext.enrich
+    ]
+    version.quality_warnings = ext.warnings + pending
     version.state = NEEDS_REVIEW if ingestion.needs_review(ext) else DRAFT
     job.status, job.stage, job.progress = "succeeded", "extracted", 1.0
-    if ext.chunks and get_settings().embed_on_upload:
+    if pending:
+        db.add(IngestionJob(version_id=version.id, kind="enrich"))  # embed chạy sau enrich để không embed chunk sắp đổi
+    elif ext.chunks and get_settings().embed_on_upload:
         # D-34: embedding sẵn ngay khi tải lên. Chỉ mục tạm KHÔNG tham gia tìm kiếm (retrieval chỉ lấy bản Published);
         # duyệt xong, job index chỉ còn phần thiếu nên phát hành gần như ngay (PRD 9.2, FR-08)
         db.add(IngestionJob(version_id=version.id, kind="embed"))
@@ -355,11 +363,130 @@ def _run_extract(db: Session, job: IngestionJob, version: DocumentVersion) -> No
     audit.record(
         db, actor_id=None, action="extract", object_type="version", object_id=version.id,
         course_id=document.course_id if document else None,
-        detail={"chunks": len(ext.chunks), "cleaning": ext.cleaning},
+        detail={"chunks": len(ext.chunks), "cleaning": ext.cleaning, "enrich_pages": len(pending)},
     )  # fmt: skip
 
 
 PRE_EMBED_STATES = (DRAFT, NEEDS_REVIEW, PENDING)
+ENRICH_PENDING = "enrich_pending"
+ENRICH_REVIEW_ISSUES = ("ocr_machine_read", "formula_needs_check", "enrich_failed")
+
+
+def _run_enrich(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
+    """OCR trang scan và kiểm tra công thức bằng vision LLM (page_enrichment) cho các trang "enrich_pending".
+
+    Chỉ thay chunk của đúng trang đó (locator giữ nguyên). Lỗi provider ở một trang → trang giữ text trích xuất nhanh
+    và gắn "enrich_failed". Mỗi trang commit riêng nên job chạy lại (resume) chỉ làm tiếp các trang còn pending.
+    Gọi LLM song song nhưng không giữ transaction DB trong lúc chờ provider.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from src.services import page_enrichment, page_render
+
+    s = get_settings()
+    pending = [w for w in version.quality_warnings if w.get("issue") == ENRICH_PENDING]
+    # Worker chỉ nhận chuỗi chụp sẵn: session ORM không an toàn giữa các thread, và ngữ cảnh trang kề phải là text gốc
+    # chứ không phải text vừa được trang khác sửa trong lúc job chạy
+    texts: dict[int, list[str]] = {}
+    for c in db.scalars(select(Chunk).where(Chunk.version_id == version.id).order_by(Chunk.ordinal)):
+        texts.setdefault(c.locator_value, []).append(c.text)
+    page_text = {number: "\n".join(parts) for number, parts in texts.items()}
+    storage_key = version.storage_key
+    db.commit()  # không giữ transaction đọc trong lúc gọi provider
+
+    def work(number: int, kind: str) -> page_enrichment.PageResult:
+        image = page_render.render_png(storage_key, number, width=s.enrich_render_width)
+        return page_enrichment.enrich_page(
+            number, kind, image, page_text.get(number, ""), page_text.get(number - 1, ""),
+            page_text.get(number + 1, ""),
+        )  # fmt: skip
+
+    totals: Counter[str] = Counter()
+    done = 0
+    with ThreadPoolExecutor(max_workers=s.enrich_concurrency, thread_name_prefix=f"enrich-{job.id}") as pool:
+        futures = {pool.submit(work, w["locator_value"], w["kind"]): w for w in pending}
+        for future in as_completed(futures):
+            entry = futures[future]
+            db.refresh(version)
+            if version.state not in PRE_EMBED_STATES:  # bản đã rời trạng thái chờ duyệt (vd. bị thu hồi) → dừng
+                for f in futures:
+                    f.cancel()
+                job.status, job.stage, job.error_code = "failed", "stopped", "ENRICH_SUPERSEDED"
+                return
+            number = entry["locator_value"]
+            try:
+                result = future.result()
+                warning = _apply_enrichment(db, version, result)
+                totals.update(result.counts)
+                totals[f"{result.kind}_pages"] += 1
+                # Kết quả mới thay cảnh báo "trang rỗng" của trích xuất nhanh (trang scan đã có chữ hoặc vẫn rỗng)
+                replaced = {ENRICH_PENDING, "empty_or_no_text"} if warning else {ENRICH_PENDING}
+            except Exception as e:  # noqa: BLE001 — một trang lỗi không làm hỏng các trang khác; trang giữ text cũ
+                db.rollback()
+                db.refresh(version)
+                code = e.code if isinstance(e, page_enrichment.EnrichError) else f"INTERNAL_{type(e).__name__}"[:100]
+                if not isinstance(e, page_enrichment.EnrichError):
+                    log.exception("enrich trang %s của %s lỗi", number, version.id)
+                warning = {"locator_type": "page", "locator_value": number, "issue": "enrich_failed",
+                           "kind": entry["kind"], "error": code}  # fmt: skip
+                replaced = {ENRICH_PENDING}
+                totals["failed_pages"] += 1
+            version.quality_warnings = [
+                w
+                for w in version.quality_warnings
+                if w.get("locator_value") != number or w.get("issue") not in replaced
+            ] + ([warning] if warning else [])
+            done += 1
+            job.progress = done / max(len(pending), 1)
+            db.commit()
+    _renumber_chunks(db, version)
+    db.refresh(version)
+    if version.state == DRAFT and any(w.get("issue") in ENRICH_REVIEW_ISSUES for w in version.quality_warnings):
+        version.state = NEEDS_REVIEW  # trang OCR máy đọc / công thức chưa chắc → người duyệt phải xác nhận
+    job.status, job.stage, job.progress = "succeeded", "enriched", 1.0
+    if s.embed_on_upload and db.scalar(select(Chunk.id).where(Chunk.version_id == version.id).limit(1)):
+        db.add(IngestionJob(version_id=version.id, kind="embed"))
+    document = db.get(Document, version.document_id)
+    audit.record(
+        db, actor_id=None, action="enrich", object_type="version", object_id=version.id,
+        course_id=document.course_id if document else None,
+        detail={**dict(totals), "pages": len(pending), "prompt_version": page_enrichment.PROMPT_VERSION,
+                "model": s.vision_model or s.llm_model},
+    )  # fmt: skip
+
+
+def _apply_enrichment(db: Session, version: DocumentVersion, result) -> dict | None:  # noqa: ANN001 — PageResult
+    """Ghi kết quả một trang: trang công thức thay span bằng $latex$ trong chunk sẵn có; trang scan thay toàn bộ chunk."""
+    page_chunks = list(
+        db.scalars(select(Chunk).where(Chunk.version_id == version.id, Chunk.locator_value == result.locator_value))
+    )
+    if result.kind == "formula":
+        from src.services.page_enrichment import apply_replacements
+
+        quality = "formula_review" if result.warning() else "formula_checked"
+        for c in page_chunks:
+            text = apply_replacements(c.text, result.replacements)
+            if text != c.text:
+                c.text, c.embedding, c.extraction_quality = text, None, quality
+        return result.warning()
+    new_chunks = ingestion.page_chunks("page", result.locator_value, result.text or "", "ocr")
+    if not new_chunks:  # OCR không ra chữ → giữ nguyên chunk cũ (nếu có), trang vẫn được cảnh báo
+        return result.warning()
+    for c in page_chunks:
+        db.delete(c)
+    for i, c in enumerate(new_chunks):
+        db.add(Chunk(version_id=version.id, ordinal=i, locator_type=c.locator_type, locator_value=c.locator_value,
+                     text=c.text, extraction_quality=c.quality))  # fmt: skip
+    db.flush()
+    return result.warning()
+
+
+def _renumber_chunks(db: Session, version: DocumentVersion) -> None:
+    """Chunk OCR mới chèn giữa tài liệu → đánh lại thứ tự theo trang, giữ thứ tự cũ trong cùng trang."""
+    chunks = list(db.scalars(select(Chunk).where(Chunk.version_id == version.id)))
+    for i, c in enumerate(sorted(chunks, key=lambda c: (c.locator_value, c.ordinal))):
+        c.ordinal = i
+    db.commit()
 
 
 def _run_embed(db: Session, job: IngestionJob, version: DocumentVersion) -> None:
@@ -509,6 +636,8 @@ def _run_job(job_id: str) -> None:
         db.commit()
         if job.kind == "extract":
             _run_extract(db, job, version)
+        elif job.kind == "enrich":
+            _run_enrich(db, job, version)
         elif job.kind == "embed":
             _run_embed(db, job, version)
         elif job.kind == "index":
@@ -520,7 +649,9 @@ def _run_job(job_id: str) -> None:
             _curriculum_changed(db.get(Document, version.document_id).course_id)
         for pending in db.scalars(
             select(IngestionJob).where(
-                IngestionJob.version_id == version.id, IngestionJob.kind == "embed", IngestionJob.status == "queued"
+                IngestionJob.version_id == version.id,
+                IngestionJob.kind.in_(("enrich", "embed")),
+                IngestionJob.status == "queued",
             )
         ):
             start_job(pending.id)
@@ -662,6 +793,13 @@ def submit(db: Session, user: User, version_id: str, acknowledge_warnings: bool)
         raise not_found()
     if version.state not in (DRAFT, NEEDS_REVIEW, REJECTED):
         raise conflict("INVALID_STATE")
+    enriching = select(IngestionJob.id).where(
+        IngestionJob.version_id == version.id,
+        IngestionJob.kind == "enrich",
+        IngestionJob.status.in_(("queued", "running")),
+    )
+    if db.scalar(enriching.limit(1)):
+        raise conflict("ENRICH_IN_PROGRESS")  # đang OCR/kiểm tra công thức: nội dung chưa chốt, chưa cho gửi duyệt
     if version.state == NEEDS_REVIEW and not acknowledge_warnings:
         raise bad_request("QUALITY_WARNINGS_NOT_ACKNOWLEDGED")
     if not db.scalar(select(Chunk.id).where(Chunk.version_id == version.id).limit(1)):

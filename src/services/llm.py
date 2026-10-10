@@ -6,10 +6,10 @@ from src.config import get_settings
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
-def get_llm(temperature: float | None = None) -> ChatOpenAI:
+def get_llm(temperature: float | None = None, model: str | None = None) -> ChatOpenAI:
     settings = get_settings()
     return ChatOpenAI(
-        model=settings.llm_model,
+        model=model or settings.llm_model,
         api_key=settings.llm_api_key,
         base_url=settings.ai_base_url or None,
         temperature=settings.llm_temperature if temperature is None else temperature,

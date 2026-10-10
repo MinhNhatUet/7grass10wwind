@@ -79,6 +79,16 @@ class Settings(BaseSettings):
     # D-34: embedding ngay sau trích xuất (chỉ mục tạm, KHÔNG tham gia tìm kiếm tới khi Published — PRD 9.2)
     embed_on_upload: bool = True
     job_max_workers: int = Field(default=2, gt=0)  # số job tài liệu chạy đồng thời; job thừa xếp hàng
+    # BL-10/BL-33: bổ sung trang công thức / OCR trang scan bằng vision LLM (job "enrich" sau trích xuất nhanh).
+    # Các ngưỡng là ĐỀ XUẤT, cần chốt.
+    enrich_enabled: bool = True
+    vision_model: str = ""  # để trống → dùng llm_model; cần model có hỗ trợ ảnh
+    enrich_max_pages: int = Field(default=40, ge=0)  # trần số trang/tài liệu gọi vision LLM (chi phí); vượt → cảnh báo
+    enrich_formula_min_symbols: int = Field(default=3, gt=0)  # ≥ n ký hiệu toán trên trang → trang công thức
+    enrich_concurrency: int = Field(default=4, gt=0)  # số trang xử lý song song trong một job
+    enrich_render_width: int = Field(default=1400, gt=0)  # bề rộng ảnh trang gửi vision LLM (px)
+    enrich_max_retries: int = Field(default=3, ge=0)  # chỉ cho lỗi 429
+    enrich_backoff_seconds: float = Field(default=5, ge=0)  # chờ 5, 10, 20… giây (tối đa 120)
     retrieval_top_k: int = Field(default=6, gt=0)  # PRD 10.2: 5–8 đoạn sau rerank
     retrieval_min_score: float = Field(default=0.55, ge=-1, le=1)  # evidence gate, hiệu chỉnh trên dev
     chat_max_input_chars: int = Field(default=5000, gt=0)

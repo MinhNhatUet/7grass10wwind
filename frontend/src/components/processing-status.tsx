@@ -9,7 +9,7 @@ export type ProcessingInfo = {
 export default function ProcessingStatus({ version, compact = false }: { version: ProcessingInfo; compact?: boolean }) {
   const job = version.job;
   if (!job) return null;
-  const stages: Record<string, string> = { queued: "Đang chờ xử lý", extract: "Đang trích xuất văn bản", extracted: "Đã trích xuất — chờ gửi duyệt", index: "Đang lập chỉ mục", embedding: "Đang tạo embedding", publishing: "Đang phát hành", published: "Đã xử lý và phát hành" };
+  const stages: Record<string, string> = { queued: "Đang chờ xử lý", extract: "Đang trích xuất văn bản", extracted: "Đã trích xuất — chờ gửi duyệt", enrich: "Đang OCR trang scan và kiểm tra công thức", enriched: "Đã OCR/kiểm tra công thức — chờ gửi duyệt", index: "Đang lập chỉ mục", embedding: "Đang tạo embedding", publishing: "Đang phát hành", published: "Đã xử lý và phát hành" };
   const working = ["queued", "running"].includes(job.status);
   const percent = Math.round(Math.max(0, Math.min(1, job.progress)) * 100);
   return <div className={compact ? "mt-3 space-y-1 text-xs" : "my-4 space-y-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-sm"}>
