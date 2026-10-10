@@ -53,7 +53,13 @@ Trả về DUY NHẤT JSON:
  "level":"short|step|detailed|null","goal":"mục tiêu/chủ đề cho lộ trình hoặc null","topic":"chủ đề/khái niệm chính (quiz, diagnose, flashcards, cloze) hoặc null",
  "search_terms":"thuật ngữ chuyên ngành chính của yêu cầu KÈM tên tiếng Anh (vd \"cây khung spanning tree\")",
  "days":số_ngày_hoặc_null,"minutes_per_day":số_phút_mỗi_ngày_hoặc_null,
- "clarification":"câu hỏi làm rõ ngắn nếu clarify, ngược lại null","reason":"lý do ngắn"}
+ "question":"YÊU CẦU MỚI viết lại thành câu hỏi ĐẦY ĐỦ, tự hiểu được không cần ngữ cảnh — ghép NGỮ CẢNH GẦN NHẤT khi
+   yêu cầu mới là câu trả lời ngắn cho câu hỏi làm rõ hoặc câu nối tiếp (vd ngữ cảnh hỏi 'giải thích khái niệm nào',
+   yêu cầu mới 'Bài 8: Nguyên lý thiết kế' → 'Giải thích các khái niệm chính trong bài Nguyên lý thiết kế phần mềm');
+   yêu cầu đã đầy đủ thì chép nguyên; KHÔNG trả lời, KHÔNG thêm ý người dùng không nói",
+ "clarification":"câu hỏi làm rõ ngắn nếu clarify, ngược lại null",
+ "choices":["2–4 lựa chọn NGẮN người dùng bấm để trả lời câu làm rõ (chỉ khi clarify; không đề xuất làm bài/giải đề hộ), ngược lại []"],
+ "reason":"lý do ngắn"}
 Chỉ điền days/minutes_per_day khi người dùng NÓI RÕ con số; không tự đoán."""
 
 ASSISTANTS = ("academic", "learning", "hub", "clarify")
@@ -107,6 +113,17 @@ def _ask_course(state: OrchestratorState) -> str:
     return "Câu hỏi của bạn thuộc môn nào: " + ", ".join(name for _, name in state["courses"]) + "?"
 
 
+# Nút vô nghĩa ("Khác", "Môn khác" — muốn khác thì gõ) hoặc dẫn tới làm bài hộ (bấm là bị chặn BR-06) → bỏ
+_BAD_CHOICE = re.compile(r"(?:^|\s)khác$|giải (?:bài|đề)|làm (?:bài|hộ)|đáp án|lời giải", re.I)
+
+
+def _choices(raw: Any) -> list[str] | None:
+    if not isinstance(raw, list):
+        return None
+    out = [str(c).strip()[:80] for c in raw if str(c).strip()]
+    return [c for c in out if not _BAD_CHOICE.search(c)][:4] or None
+
+
 def router_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     allowed = {cid for cid, _ in state["courses"]}
     single = next(iter(allowed)) if len(allowed) == 1 else None
@@ -142,14 +159,19 @@ def router_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, A
         "days": _int(data.get("days")),
         "minutes_per_day": _int(data.get("minutes_per_day")),
         "clarification": (str(data["clarification"]).strip() or None) if data.get("clarification") else None,
+        "choices": _choices(data.get("choices")),
         "reason": str(data.get("reason") or "")[:300],
     }
     if assistant == "learning" and route["learning_action"] is None:
         route["learning_action"] = "explain"
     if course_id is None and assistant != "clarify":
         # BR-02/FR-01.3: chưa xác định được môn thì không truy xuất; hỏi người dùng
-        route["assistant"], route["clarification"] = "clarify", _ask_course(state)
-    return {"route": route, "course_id": course_id, "steps": _step(state, f"router:{route['assistant']}@{course_id}")}
+        route["assistant"], route["clarification"], route["ask_course"] = "clarify", _ask_course(state), True
+    out: dict[str, Any] = {"route": route, "course_id": course_id}
+    rewritten = str(data.get("question") or "").strip()[:1000]
+    if rewritten and rewritten != state["question"] and not is_integrity_violation(rewritten):
+        out["question"] = rewritten  # câu trả lời ngắn cho câu làm rõ → câu hỏi đầy đủ cho trợ lý (không cộng dồn chuỗi)
+    return out | {"steps": _step(state, f"router:{route['assistant']}@{course_id}")}
 
 
 def _manual(state: OrchestratorState, course_id: str | None, reason: str, search_terms: Any = None) -> dict[str, Any]:
@@ -161,15 +183,29 @@ def _manual(state: OrchestratorState, course_id: str | None, reason: str, search
     if state["mode"] == "learning":
         route["learning_action"] = opts.get("action") if opts.get("action") in ACTIONS else "explain"
     if course_id is None:
-        route["assistant"], route["clarification"] = "clarify", _ask_course(state)
+        route["assistant"], route["clarification"], route["ask_course"] = "clarify", _ask_course(state), True
     return {"route": route, "course_id": course_id, "steps": _step(state, f"manual:{route['assistant']}@{course_id}")}
 
 
+INTENT_CHOICES = (("Trả lời câu hỏi kiến thức", "academic"), ("Giải thích / lập lộ trình học", "learning"),
+                  ("Tìm tài liệu", "hub"))  # fmt: skip
+
+
 def clarify_node(state: OrchestratorState) -> dict[str, Any]:
-    question = state["route"].get("clarification") or (
+    """Hỏi lại kèm nút lựa chọn (payload "choices": label + nội dung gửi tiếp + trợ lý ép nếu có) — bấm là chạy tiếp
+    câu hỏi gốc, không phải gõ lại."""
+    route, asked = state["route"], state["question"]
+    question = route.get("clarification") or (
         "Bạn muốn mình trả lời câu hỏi kiến thức, giải thích/lập lộ trình học, hay tìm tài liệu?"
     )
-    return {"result": AssistantResult(status="needs_clarification", content=question), "steps": _step(state, "clarify")}
+    if route.get("ask_course") or not state.get("course_id"):  # chưa biết môn → luôn đưa đủ các môn user được đọc
+        choices = [{"label": name, "send": f"Môn {name}"} for _, name in state["courses"]]
+    elif route.get("choices"):
+        choices = [{"label": c, "send": c} for c in route["choices"]]
+    else:
+        choices = [{"label": label, "send": asked, "assistant": mode} for label, mode in INTENT_CHOICES]
+    result = AssistantResult(status="needs_clarification", content=question, payload={"choices": choices})
+    return {"result": result, "steps": _step(state, "clarify")}
 
 
 def _retrieval_query(text: str, route: RouteDecision) -> str:
@@ -184,6 +220,7 @@ def academic_node(state: OrchestratorState, config: RunnableConfig) -> dict[str,
     result = academic.answer(
         d["db"], d["user"], state["course_id"], state["question"], state.get("history", []),
         retrieval_query=_retrieval_query(state["question"], state["route"]),
+        search_terms=state["route"].get("search_terms"),
     )  # fmt: skip
     return {"result": result, "steps": _step(state, "academic")}
 

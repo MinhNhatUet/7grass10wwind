@@ -37,7 +37,9 @@ function linkCites(text: string, ids: Set<string>): string {
   });
 }
 
-type Evidence = Record<string, { quote: string; page: number; page_end?: number }[]>; // D-70: page_end khi đoạn trải nhiều trang
+type Choice = { label: string; send: string; assistant?: string }; // nút trả lời câu hỏi làm rõ (backend clarify_node)
+
+type Evidence =Record<string, { quote: string; page: number; page_end?: number }[]>; // D-70: page_end khi đoạn trải nhiều trang
 
 /** D-67: số hiển thị theo ĐOẠN dẫn chứng (nguồn + trang + đoạn trích), đánh 1, 2, 3… theo thứ tự xuất hiện — một nguồn
  *  trải nhiều trang/ý không còn hiện toàn "1"; trích lại đúng đoạn cũ thì dùng lại số cũ. Khóa "n-k" như href #cite-n-k. */
@@ -64,6 +66,7 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
   const [feedbackSent, setFeedbackSent] = useState<string | null>(null);
   const hideSources = HIDE_SOURCE_KINDS.includes(msg.meta?.kind ?? "");
   const sourceIds = new Set((msg.sources ?? []).map((x) => String(x.id)));
+  const choices = ((msg.meta as { choices?: Choice[] } | undefined)?.choices ?? []).filter((c) => c?.label && c?.send);
   const content = citesOutOfMath(msg.content); // [n] lẫn trong công thức → ra ngoài trước khi đánh số/gắn link
   const labels = citeLabels(content, sourceIds, (msg.meta as { evidence?: Evidence } | undefined)?.evidence);
   // Có nguồn nhưng câu trả lời không gắn [n] nào → vẫn cho xem nguồn bằng hàng chip nhỏ (không mất nguồn)
@@ -134,6 +137,19 @@ export function ChatMessage({ msg, onSourceClick, onSubmitFeedback, onChanged, o
               >
                 {mathDelims(hideSources ? noCite(content) : linkCites(content, sourceIds), true)}
               </ReactMarkdown>
+            </div>
+          )}
+
+          {/* Trợ lý hỏi lại (môn nào / muốn làm gì…): lựa chọn thành nút — bấm là gửi tiếp câu hỏi gốc, không phải gõ lại */}
+          {msg.role === 'assistant' && choices.length > 0 && (
+            <div role="group" aria-label="Lựa chọn" className="mt-3 flex flex-wrap gap-2">
+              {choices.map((c) => (
+                <button key={c.label} type="button"
+                  onClick={() => onSend(c.send, { content: c.send, ...(c.assistant ? { assistant: c.assistant } : {}) })}
+                  className="rounded-full border border-primary/40 bg-primary/5 px-3 py-1.5 text-[13px] font-medium text-primary hover:bg-primary/10 cursor-pointer transition-colors">
+                  {c.label}
+                </button>
+              ))}
             </div>
           )}
 

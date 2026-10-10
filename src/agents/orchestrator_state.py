@@ -24,6 +24,8 @@ class RouteDecision(TypedDict, total=False):
     days: int | None
     minutes_per_day: int | None
     clarification: str | None
+    choices: list[str] | None  # lựa chọn ngắn router đưa kèm câu hỏi làm rõ → nút bấm trên giao diện
+    ask_course: bool  # đang hỏi lại môn → nút = các môn user được đọc
     reason: str
 
 
