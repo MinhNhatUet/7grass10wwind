@@ -16,6 +16,9 @@ env/
 .env
 .env.local
 .env.production
+# bản sao/backup .env (vd .env.bak-sqlite) chứa khóa thật — không commit; mẫu .env.example vẫn được track
+.env.*
+!.env.example
 
 # IDE
 .vscode/
