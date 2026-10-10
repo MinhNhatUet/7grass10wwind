@@ -27,12 +27,91 @@ const KIND: Record<string, string> = { practice: "Luyện tập", exam: "Kiểm 
 const PLAN_STATUS: Record<string, string> = { Draft: "Nháp", Confirmed: "Đã xác nhận", InProgress: "Đang học", Paused: "Tạm dừng", Completed: "Hoàn thành", Cancelled: "Đã hủy" };
 const errText = (e: unknown) => (e instanceof ApiError ? e.detail || errorMessage(e.code) : MSG.serviceError);
 
-const QUICK = [
-  { label: "Lập lộ trình học", q: "Lập lộ trình học … trong 7 ngày, mỗi ngày 45 phút" },
-  { label: "Tự kiểm tra một chủ đề", q: "Cho tôi câu hỏi tự kiểm tra về " },
-  { label: "Chẩn đoán kiến thức nền", q: "Tôi mới học, không biết bắt đầu từ đâu — kiểm tra nhanh kiến thức nền giúp mình" },
-  { label: "Flashcard", q: "Tạo flashcard về " },
+// `topic`: câu cần một chủ đề → mở khung chọn môn/bài/chủ đề (gợi ý từ chương trình học) hoặc tự gõ, rồi mới mở chat.
+const QUICK: { label: string; q: (topic: string) => string; topic: boolean }[] = [
+  { label: "Giải thích một chủ đề", q: (t) => `Giải thích từng bước về ${t}`, topic: true },
+  { label: "Tự kiểm tra một chủ đề", q: (t) => `Cho tôi câu hỏi tự kiểm tra về ${t}`, topic: true },
+  { label: "Flashcard", q: (t) => `Tạo flashcard về ${t}`, topic: true },
+  { label: "Lập lộ trình học", q: (t) => `Lập lộ trình học ${t} trong 7 ngày, mỗi ngày 45 phút`, topic: true },
+  { label: "Chẩn đoán kiến thức nền", q: () => "Tôi mới học, không biết bắt đầu từ đâu — kiểm tra nhanh kiến thức nền giúp mình", topic: false },
 ];
+
+type LessonTopics = { chapter: string; title: string; sections: string[] };
+
+/** "Bắt đầu nhanh": nút cần chủ đề mở khung chọn — môn → bài → chủ đề gợi ý (chương trình học), hoặc tự gõ. */
+function QuickStart({ courses }: { courses: CourseItem[] }) {
+  const router = useRouter();
+  const [pick, setPick] = useState<(typeof QUICK)[number] | null>(null);
+  const [courseId, setCourseId] = useState(courses[0]?.id ?? "");
+  const [lessons, setLessons] = useState<LessonTopics[] | null>(null);
+  const [lesson, setLesson] = useState(0);
+  const [topic, setTopic] = useState("");
+
+  useEffect(() => {
+    if (!pick || !courseId) return;
+    let live = true;
+    api<{ items: LessonTopics[] }>(`/learning/topics?course_id=${encodeURIComponent(courseId)}`)
+      .then((r) => { if (live) { setLessons(r.items); setLesson(0); } })
+      .catch(() => { if (live) setLessons([]); });
+    return () => { live = false; };
+  }, [pick, courseId]);
+
+  const start = (text: string) => goToChat(router, text, { content: text }, pick?.topic ? courseId : undefined);
+  const cur = lessons?.[lesson];
+  const chip = (t: string) => (
+    <button key={t} type="button" onClick={() => setTopic(t)}
+      className={`rounded-full px-3 py-1 text-[12.5px] cursor-pointer border ${topic === t ? "border-[#134d8b] bg-[#134d8b]/10 text-[#134d8b] dark:border-[#7fb3ea] dark:text-[#7fb3ea]" : "border-black/10 dark:border-white/15 bg-transparent hover:bg-black/5 dark:hover:bg-white/10"}`}>
+      {t}
+    </button>
+  );
+
+  return (
+    <section className={card}>
+      <h2 className="flex items-center gap-2 font-semibold"><Sparkles size={18} /> Bắt đầu nhanh</h2>
+      <p className={`mt-1 text-sm ${muted}`}>Chọn việc muốn làm — trợ lý học tập trả lời kèm nguồn từ tài liệu môn học.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {QUICK.map((x) => (
+          <button key={x.label} type="button" aria-pressed={pick?.label === x.label}
+            className={`${btn2} ${pick?.label === x.label ? "!border-[#134d8b] !bg-[#134d8b]/10 text-[#134d8b] dark:!border-[#7fb3ea] dark:text-[#7fb3ea]" : ""}`}
+            onClick={() => { if (!x.topic) start(x.q("")); else { setPick(pick?.label === x.label ? null : x); setTopic(""); } }}>
+            {x.label}
+          </button>
+        ))}
+      </div>
+
+      {pick && (
+        <div className="mt-4 space-y-3 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] p-4">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <select aria-label="Môn của chủ đề" value={courseId} onChange={(e) => { setCourseId(e.target.value); setLessons(null); setTopic(""); }}
+              className="rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1.5">
+              {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {lessons && lessons.length > 0 && (
+              <select aria-label="Bài gợi ý chủ đề" value={lesson} onChange={(e) => setLesson(Number(e.target.value))}
+                className="max-w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1.5">
+                {lessons.map((l, i) => <option key={l.chapter + l.title} value={i}>Bài {l.chapter}: {l.title}</option>)}
+              </select>
+            )}
+          </div>
+          <div>
+            <p className={`mb-1.5 text-[12px] ${muted}`}>Gợi ý chủ đề {cur ? `trong Bài ${cur.chapter}` : ""} — bấm để chọn, hoặc tự gõ bên dưới</p>
+            <div className="flex flex-wrap gap-1.5">
+              {lessons === null ? <span className={`text-[12.5px] ${muted}`}>Đang tải gợi ý…</span>
+                : !cur ? <span className={`text-[12.5px] ${muted}`}>Môn này chưa có chương trình học — hãy tự gõ chủ đề.</span>
+                : [cur.title, ...cur.sections].map(chip)}
+            </div>
+          </div>
+          <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (topic.trim()) start(pick.q(topic.trim())); }}>
+            <input aria-label="Chủ đề" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Tự gõ chủ đề, vd. Kiểm thử hộp đen"
+              className="min-w-0 flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-black/30 px-3 py-1.5 text-sm" />
+            <button type="submit" disabled={!topic.trim()} className={btn}>Bắt đầu</button>
+          </form>
+          {topic.trim() && <p className={`text-[12px] ${muted}`}>Sẽ gửi: “{pick.q(topic.trim())}”</p>}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function LearningHub({ courses }: { courses: CourseItem[] }) {
   const router = useRouter();
@@ -83,15 +162,7 @@ export function LearningHub({ courses }: { courses: CourseItem[] }) {
     <div className="space-y-6">
       {err && <p className="rounded-xl bg-red-50 dark:bg-red-950 px-4 py-2 text-sm text-red-700 dark:text-red-200">{err}</p>}
 
-      <section className={card}>
-        <h2 className="flex items-center gap-2 font-semibold"><Sparkles size={18} /> Bắt đầu nhanh</h2>
-        <p className={`mt-1 text-sm ${muted}`}>Mở chat với câu mẫu — trợ lý học tập trả lời kèm nguồn từ tài liệu môn học.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {QUICK.map((x) => (
-            <button key={x.label} type="button" className={btn2} onClick={() => router.push(`/?q=${encodeURIComponent(x.q)}`)}>{x.label}</button>
-          ))}
-        </div>
-      </section>
+      <QuickStart courses={courses} />
 
       <TopicPractice courses={courses} busy={false}
         onStart={(courseId, topics, c, label) => {
